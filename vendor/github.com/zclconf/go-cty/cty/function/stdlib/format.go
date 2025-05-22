@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/apparentlymart/go-textseg/textseg"
+	"github.com/apparentlymart/go-textseg/v15/textseg"
 
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
@@ -18,6 +18,7 @@ import (
 //go:generate gofmt -w format_fsm.go
 
 var FormatFunc = function.New(&function.Spec{
+	Description: `Constructs a string by applying formatting verbs to a series of arguments, using a similar syntax to the C function \"printf\".`,
 	Params: []function.Parameter{
 		{
 			Name: "format",
@@ -25,17 +26,28 @@ var FormatFunc = function.New(&function.Spec{
 		},
 	},
 	VarParam: &function.Parameter{
-		Name:      "args",
-		Type:      cty.DynamicPseudoType,
-		AllowNull: true,
+		Name:             "args",
+		Type:             cty.DynamicPseudoType,
+		AllowNull:        true,
+		AllowUnknown:     true,
+		AllowDynamicType: true,
 	},
-	Type: function.StaticReturnType(cty.String),
+	Type:         function.StaticReturnType(cty.String),
+	RefineResult: refineNonNull,
 	Impl: func(args []cty.Value, retType cty.Type) (cty.Value, error) {
 		for _, arg := range args[1:] {
 			if !arg.IsWhollyKnown() {
 				// We require all nested values to be known because the only
 				// thing we can do for a collection/structural type is print
 				// it as JSON and that requires it to be wholly known.
+				// However, we might be able to refine the result with a
+				// known prefix, if there are literal characters before the
+				// first formatting verb.
+				f := args[0].AsString()
+				if idx := strings.IndexByte(f, '%'); idx > 0 {
+					prefix := f[:idx]
+					return cty.UnknownVal(cty.String).Refine().StringPrefix(prefix).NewValue(), nil
+				}
 				return cty.UnknownVal(cty.String), nil
 			}
 		}
@@ -45,6 +57,7 @@ var FormatFunc = function.New(&function.Spec{
 })
 
 var FormatListFunc = function.New(&function.Spec{
+	Description: `Constructs a list of strings by applying formatting verbs to a series of arguments, using a similar syntax to the C function \"printf\".`,
 	Params: []function.Parameter{
 		{
 			Name: "format",
@@ -52,12 +65,14 @@ var FormatListFunc = function.New(&function.Spec{
 		},
 	},
 	VarParam: &function.Parameter{
-		Name:         "args",
-		Type:         cty.DynamicPseudoType,
-		AllowNull:    true,
-		AllowUnknown: true,
+		Name:             "args",
+		Type:             cty.DynamicPseudoType,
+		AllowNull:        true,
+		AllowUnknown:     true,
+		AllowDynamicType: true,
 	},
-	Type: function.StaticReturnType(cty.List(cty.String)),
+	Type:         function.StaticReturnType(cty.List(cty.String)),
+	RefineResult: refineNonNull,
 	Impl: func(args []cty.Value, retType cty.Type) (cty.Value, error) {
 		fmtVal := args[0]
 		args = args[1:]
@@ -80,14 +95,16 @@ var FormatListFunc = function.New(&function.Spec{
 		lenChooser := -1
 		iterators := make([]cty.ElementIterator, len(args))
 		singleVals := make([]cty.Value, len(args))
+		unknowns := make([]bool, len(args))
 		for i, arg := range args {
 			argTy := arg.Type()
 			switch {
 			case (argTy.IsListType() || argTy.IsSetType() || argTy.IsTupleType()) && !arg.IsNull():
-				if !argTy.IsTupleType() && !arg.IsKnown() {
+				if !argTy.IsTupleType() && !(arg.IsKnown() && arg.Length().IsKnown()) {
 					// We can't iterate this one at all yet then, so we can't
 					// yet produce a result.
-					return cty.UnknownVal(retType), nil
+					unknowns[i] = true
+					continue
 				}
 				thisLen := arg.LengthInt()
 				if iterLen == -1 {
@@ -103,9 +120,25 @@ var FormatListFunc = function.New(&function.Spec{
 						)
 					}
 				}
+				if !arg.IsKnown() {
+					// We allowed an unknown tuple value to fall through in
+					// our initial check above so that we'd be able to run
+					// the above error checks against it, but we still can't
+					// iterate it if the checks pass.
+					unknowns[i] = true
+					continue
+				}
 				iterators[i] = arg.ElementIterator()
+			case arg == cty.DynamicVal:
+				unknowns[i] = true
 			default:
 				singleVals[i] = arg
+			}
+		}
+
+		for _, isUnk := range unknowns {
+			if isUnk {
+				return cty.UnknownVal(retType), nil
 			}
 		}
 
@@ -144,7 +177,7 @@ var FormatListFunc = function.New(&function.Spec{
 					// We require all nested values to be known because the only
 					// thing we can do for a collection/structural type is print
 					// it as JSON and that requires it to be wholly known.
-					ret = append(ret, cty.UnknownVal(cty.String))
+					ret = append(ret, cty.UnknownVal(cty.String).RefineNotNull())
 					continue Results
 				}
 			}
@@ -168,32 +201,32 @@ var FormatListFunc = function.New(&function.Spec{
 //
 // It supports the following "verbs":
 //
-//     %%      Literal percent sign, consuming no value
-//     %v      A default formatting of the value based on type, as described below.
-//     %#v     JSON serialization of the value
-//     %t      Converts to boolean and then produces "true" or "false"
-//     %b      Converts to number, requires integer, produces binary representation
-//     %d      Converts to number, requires integer, produces decimal representation
-//     %o      Converts to number, requires integer, produces octal representation
-//     %x      Converts to number, requires integer, produces hexadecimal representation
-//             with lowercase letters
-//     %X      Like %x but with uppercase letters
-//     %e      Converts to number, produces scientific notation like -1.234456e+78
-//     %E      Like %e but with an uppercase "E" representing the exponent
-//     %f      Converts to number, produces decimal representation with fractional
-//             part but no exponent, like 123.456
-//     %g      %e for large exponents or %f otherwise
-//     %G      %E for large exponents or %f otherwise
-//     %s      Converts to string and produces the string's characters
-//     %q      Converts to string and produces JSON-quoted string representation,
-//             like %v.
+//	%%      Literal percent sign, consuming no value
+//	%v      A default formatting of the value based on type, as described below.
+//	%#v     JSON serialization of the value
+//	%t      Converts to boolean and then produces "true" or "false"
+//	%b      Converts to number, requires integer, produces binary representation
+//	%d      Converts to number, requires integer, produces decimal representation
+//	%o      Converts to number, requires integer, produces octal representation
+//	%x      Converts to number, requires integer, produces hexadecimal representation
+//	        with lowercase letters
+//	%X      Like %x but with uppercase letters
+//	%e      Converts to number, produces scientific notation like -1.234456e+78
+//	%E      Like %e but with an uppercase "E" representing the exponent
+//	%f      Converts to number, produces decimal representation with fractional
+//	        part but no exponent, like 123.456
+//	%g      %e for large exponents or %f otherwise
+//	%G      %E for large exponents or %f otherwise
+//	%s      Converts to string and produces the string's characters
+//	%q      Converts to string and produces JSON-quoted string representation,
+//	        like %v.
 //
 // The default format selections made by %v are:
 //
-//     string  %s
-//     number  %g
-//     bool    %t
-//     other   %#v
+//	string  %s
+//	number  %g
+//	bool    %t
+//	other   %#v
 //
 // Null values produce the literal keyword "null" for %v and %#v, and produce
 // an error otherwise.
@@ -205,10 +238,10 @@ var FormatListFunc = function.New(&function.Spec{
 // is used. A period with no following number is invalid.
 // For examples:
 //
-//     %f     default width, default precision
-//     %9f    width 9, default precision
-//     %.2f   default width, precision 2
-//     %9.2f  width 9, precision 2
+//	%f     default width, default precision
+//	%9f    width 9, default precision
+//	%.2f   default width, precision 2
+//	%9.2f  width 9, precision 2
 //
 // Width and precision are measured in unicode characters (grapheme clusters).
 //
@@ -225,10 +258,10 @@ var FormatListFunc = function.New(&function.Spec{
 // The following additional symbols can be used immediately after the percent
 // introducer as flags:
 //
-//           (a space) leave a space where the sign would be if number is positive
-//     +     Include a sign for a number even if it is positive (numeric only)
-//     -     Pad with spaces on the left rather than the right
-//     0     Pad with zeros rather than spaces.
+//	      (a space) leave a space where the sign would be if number is positive
+//	+     Include a sign for a number even if it is positive (numeric only)
+//	-     Pad with spaces on the left rather than the right
+//	0     Pad with zeros rather than spaces.
 //
 // Flag characters are ignored for verbs that do not support them.
 //

@@ -1,19 +1,18 @@
 package powerdns
 
 import (
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 // Provider returns a schema.Provider for PowerDNS.
-func Provider() terraform.ResourceProvider {
+func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"api_key": {
 				Type:        schema.TypeString,
 				Required:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_API_KEY", nil),
-				Description: "REST API authentication key",
+				Description: "REST API authentication api key",
 			},
 			"server_url": {
 				Type:        schema.TypeString,
