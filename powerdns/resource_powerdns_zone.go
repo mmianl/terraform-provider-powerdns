@@ -19,7 +19,7 @@ func resourcePDNSZone() *schema.Resource {
 		Delete: resourcePDNSZoneDelete,
 		Exists: resourcePDNSZoneExists,
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			StateContext: schema.ImportStatePassthroughContext,
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -87,10 +87,10 @@ func resourcePDNSZoneCreate(d *schema.ResourceData, meta interface{}) error {
 		if len(splitIPPort) == 2 {
 			port, err := strconv.Atoi(splitIPPort[1])
 			if err != nil {
-				return fmt.Errorf("Error converting port value in masters atribute")
+				return fmt.Errorf("error converting port value in masters atribute")
 			}
 			if port < 1 || port > 65535 {
-				return fmt.Errorf("Invalid port value in masters atribute")
+				return fmt.Errorf("invalid port value in masters atribute")
 			}
 		}
 		// no matter if string contains just IP or IP:port pair, the first element in split list will be IP
@@ -123,9 +123,7 @@ func resourcePDNSZoneCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	d.SetId(createdZoneInfo.ID)
-	resourcePDNSZoneRead(d, meta)
-
-	return nil
+	return resourcePDNSZoneRead(d, meta)
 }
 
 func resourcePDNSZoneRead(d *schema.ResourceData, meta interface{}) error {
@@ -134,13 +132,28 @@ func resourcePDNSZoneRead(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[DEBUG] Reading PowerDNS Zone: %s", d.Id())
 	zoneInfo, err := client.GetZone(d.Id())
 	if err != nil {
-		return fmt.Errorf("Couldn't fetch PowerDNS Zone: %s", err)
+		return fmt.Errorf("couldn't fetch PowerDNS Zone: %s", err)
 	}
 
-	d.Set("name", zoneInfo.Name)
-	d.Set("kind", zoneInfo.Kind)
-	d.Set("account", zoneInfo.Account)
-	d.Set("soa_edit_api", zoneInfo.SoaEditAPI)
+	err = d.Set("name", zoneInfo.Name)
+	if err != nil {
+		return fmt.Errorf("error setting PowerDNS Name: %s", err)
+	}
+
+	err = d.Set("kind", zoneInfo.Kind)
+	if err != nil {
+		return fmt.Errorf("error setting PowerDNS Kind: %s", err)
+	}
+
+	err = d.Set("account", zoneInfo.Account)
+	if err != nil {
+		return fmt.Errorf("error setting PowerDNS Account: %s", err)
+	}
+
+	err = d.Set("soa_edit_api", zoneInfo.SoaEditAPI)
+	if err != nil {
+		return fmt.Errorf("error setting PowerDNS SOA Edit API: %s", err)
+	}
 
 	if zoneInfo.Kind != "Slave" {
 		nameservers, err := client.ListRecordsInRRSet(zoneInfo.Name, zoneInfo.Name, "NS")
@@ -153,11 +166,17 @@ func resourcePDNSZoneRead(d *schema.ResourceData, meta interface{}) error {
 			zoneNameservers = append(zoneNameservers, nameserver.Content)
 		}
 
-		d.Set("nameservers", zoneNameservers)
+		err = d.Set("nameservers", zoneNameservers)
+		if err != nil {
+			return fmt.Errorf("error setting PowerDNS Nameservers: %s", err)
+		}
 	}
 
 	if strings.EqualFold(zoneInfo.Kind, "Slave") {
-		d.Set("masters", zoneInfo.Masters)
+		err = d.Set("masters", zoneInfo.Masters)
+		if err != nil {
+			return fmt.Errorf("error setting PowerDNS Masters: %s", err)
+		}
 	}
 
 	return nil
@@ -175,9 +194,11 @@ func resourcePDNSZoneUpdate(d *schema.ResourceData, meta interface{}) error {
 		zoneInfo.Account = d.Get("account").(string)
 		zoneInfo.SoaEditAPI = d.Get("soa_edit_api").(string)
 
-		c := client.UpdateZone(d.Id(), zoneInfo)
-		resourcePDNSZoneRead(d, meta)
-		return c
+		err := client.UpdateZone(d.Id(), zoneInfo)
+		if err != nil {
+			return fmt.Errorf("error updating PowerDNS Zone: %s", err)
+		}
+		return resourcePDNSZoneRead(d, meta)
 	}
 	return nil
 }
@@ -189,7 +210,7 @@ func resourcePDNSZoneDelete(d *schema.ResourceData, meta interface{}) error {
 	err := client.DeleteZone(d.Id())
 
 	if err != nil {
-		return fmt.Errorf("Error deleting PowerDNS Zone: %s", err)
+		return fmt.Errorf("error deleting PowerDNS Zone: %s", err)
 	}
 	return nil
 }
@@ -201,7 +222,7 @@ func resourcePDNSZoneExists(d *schema.ResourceData, meta interface{}) (bool, err
 	exists, err := client.ZoneExists(d.Id())
 
 	if err != nil {
-		return false, fmt.Errorf("Error checking PowerDNS Zone: %s", err)
+		return false, fmt.Errorf("error checking PowerDNS Zone: %s", err)
 	}
 	return exists, nil
 }

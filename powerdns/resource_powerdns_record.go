@@ -89,7 +89,7 @@ func resourcePDNSRecordCreate(d *schema.ResourceData, meta interface{}) error {
 			log.Printf("[WARN] One or more values in 'records' contain empty '' value(s)")
 		}
 	}
-	if !(len(recs) > 0) {
+	if len(recs) <= 0 {
 		return fmt.Errorf("'records' must not be empty")
 	}
 	// end: ValidateFunc
@@ -111,7 +111,7 @@ func resourcePDNSRecordCreate(d *schema.ResourceData, meta interface{}) error {
 
 		recID, err := client.ReplaceRecordSet(zone, rrSet)
 		if err != nil {
-			return fmt.Errorf("Failed to create PowerDNS Record: %s", err)
+			return fmt.Errorf("failed to create PowerDNS Record: %s", err)
 		}
 
 		d.SetId(recID)
@@ -128,17 +128,23 @@ func resourcePDNSRecordRead(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[DEBUG] Reading PowerDNS Record: %s", d.Id())
 	records, err := client.ListRecordsByID(d.Get("zone").(string), d.Id())
 	if err != nil {
-		return fmt.Errorf("Couldn't fetch PowerDNS Record: %s", err)
+		return fmt.Errorf("couldn't fetch PowerDNS Record: %s", err)
 	}
 
 	recs := make([]string, 0, len(records))
 	for _, r := range records {
 		recs = append(recs, r.Content)
 	}
-	d.Set("records", recs)
+	err = d.Set("records", recs)
+	if err != nil {
+		return fmt.Errorf("error setting PowerDNS Records: %s", err)
+	}
 
 	if len(records) > 0 {
-		d.Set("ttl", records[0].TTL)
+		err = d.Set("ttl", records[0].TTL)
+		if err != nil {
+			return fmt.Errorf("error setting PowerDNS TTL: %s", err)
+		}
 	}
 
 	return nil
@@ -151,7 +157,7 @@ func resourcePDNSRecordDelete(d *schema.ResourceData, meta interface{}) error {
 	err := client.DeleteRecordSetByID(d.Get("zone").(string), d.Id())
 
 	if err != nil {
-		return fmt.Errorf("Error deleting PowerDNS Record: %s", err)
+		return fmt.Errorf("error deleting PowerDNS Record: %s", err)
 	}
 
 	return nil
@@ -168,7 +174,7 @@ func resourcePDNSRecordExists(d *schema.ResourceData, meta interface{}) (bool, e
 	exists, err := client.RecordExists(zone, name, tpe)
 
 	if err != nil {
-		return false, fmt.Errorf("Error checking PowerDNS Record: %s", err)
+		return false, fmt.Errorf("error checking PowerDNS Record: %s", err)
 	}
 	return exists, nil
 }
@@ -208,11 +214,31 @@ func resourcePDNSRecordImport(d *schema.ResourceData, meta interface{}) ([]*sche
 		recs = append(recs, r.Content)
 	}
 
-	d.Set("zone", zoneName)
-	d.Set("name", records[0].Name)
-	d.Set("ttl", records[0].TTL)
-	d.Set("type", records[0].Type)
-	d.Set("records", recs)
+	err = d.Set("zone", zoneName)
+	if err != nil {
+		return nil, fmt.Errorf("error setting PowerDNS Zone: %s", err)
+	}
+
+	err = d.Set("name", records[0].Name)
+	if err != nil {
+		return nil, fmt.Errorf("error setting PowerDNS Name: %s", err)
+	}
+
+	err = d.Set("ttl", records[0].TTL)
+	if err != nil {
+		return nil, fmt.Errorf("error setting PowerDNS TTL: %s", err)
+	}
+
+	err = d.Set("type", records[0].Type)
+	if err != nil {
+		return nil, fmt.Errorf("error setting PowerDNS Type: %s", err)
+	}
+
+	err = d.Set("records", recs)
+	if err != nil {
+		return nil, fmt.Errorf("error setting PowerDNS Records: %s", err)
+	}
+
 	d.SetId(recordID)
 
 	return []*schema.ResourceData{d}, nil

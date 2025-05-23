@@ -29,17 +29,14 @@ vet:
 	fi
 
 lint:
-	GO111MODULE=off GOFLAGS="" go get -u golang.org/x/lint/golint
-	GO111MODULE=off GOFLAGS="" golint -set_exit_status $(PKG_NAME)/
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell go env GOPATH)/bin v2.1.6
+	./bin/golangci-lint run
 
 fmt:
 	gofmt -w $(GOFMT_FILES)
 
 fmtcheck:
 	@sh -c "'$(CURDIR)/scripts/gofmtcheck.sh'"
-
-errcheck:
-	@sh -c "'$(CURDIR)/scripts/errcheck.sh'"
 
 test-compile:
 	@if [ "$(TEST)" = "./..." ]; then \
@@ -64,4 +61,3 @@ endif
 	@$(MAKE) -C $(GOPATH)/src/$(WEBSITE_REPO) website-provider-test PROVIDER_PATH=$(shell pwd) PROVIDER_NAME=$(PKG_NAME)
 
 .PHONY: build test testacc vet fmt fmtcheck errcheck test-compile website website-test
-
