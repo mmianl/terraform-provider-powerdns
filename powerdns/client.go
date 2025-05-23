@@ -44,13 +44,13 @@ func NewClient(serverURL string, apiKey string, configTLS *tls.Config, cacheEnab
 	httpClient.Transport.(*http.Transport).TLSClientConfig = configTLS
 
 	if err != nil {
-		return nil, fmt.Errorf("Error while creating client: %s", err)
+		return nil, fmt.Errorf("error while creating client: %s", err)
 	}
 
 	if cacheEnable {
 		cacheSize, err := strconv.Atoi(cacheSizeMB)
 		if err != nil {
-			return nil, fmt.Errorf("Error while creating client: %s", err)
+			return nil, fmt.Errorf("error while creating client: %s", err)
 		}
 		DefaultCacheSize = cacheSize * 1024 * 1024
 	}
@@ -66,7 +66,7 @@ func NewClient(serverURL string, apiKey string, configTLS *tls.Config, cacheEnab
 	}
 
 	if err := client.setServerVersion(); err != nil {
-		return nil, fmt.Errorf("Error while creating client: %s", err)
+		return nil, fmt.Errorf("error while creating client: %s", err)
 	}
 
 	return &client, nil
@@ -85,13 +85,13 @@ func sanitizeURL(URL string) (string, error) {
 	var err error
 
 	if len(URL) == 0 {
-		return "", fmt.Errorf("No URL provided")
+		return "", fmt.Errorf("no URL provided")
 	}
 
 	parsedURL, err := url.Parse(URL)
 
 	if err != nil {
-		return "", fmt.Errorf("Error while trying to parse URL: %s", err)
+		return "", fmt.Errorf("error while trying to parse URL: %s", err)
 	}
 
 	if len(parsedURL.Scheme) == 0 {
@@ -112,7 +112,7 @@ func sanitizeURL(URL string) (string, error) {
 		tryout, _ := url.Parse(schema + "://" + URL)
 
 		if len(tryout.Host) == 0 {
-			return "", fmt.Errorf("Unable to find a hostname in '%s'", URL)
+			return "", fmt.Errorf("unable to find a hostname in '%s'", URL)
 		}
 
 		host = tryout.Host
@@ -146,7 +146,7 @@ func (client *Client) newRequest(method string, endpoint string, body []byte) (*
 	}
 	url, err := url.Parse(urlStr)
 	if err != nil {
-		return nil, fmt.Errorf("Error during parsing request URL: %s", err)
+		return nil, fmt.Errorf("error during parsing request URL: %s", err)
 	}
 
 	var bodyReader io.Reader
@@ -156,7 +156,7 @@ func (client *Client) newRequest(method string, endpoint string, body []byte) (*
 
 	req, err := http.NewRequest(method, url.String(), bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("Error during creation of request: %s", err)
+		return nil, fmt.Errorf("error during creation of request: %s", err)
 	}
 
 	req.Header.Add("X-API-Key", client.APIKey)
@@ -248,7 +248,7 @@ func parseID(recID string) (string, string, error) {
 	if len(s) == 2 {
 		return s[0], s[1], nil
 	}
-	return "", "", fmt.Errorf("Unknown record ID format")
+	return "", "", fmt.Errorf("unknown record ID format")
 }
 
 // Detects the API version in use on the server
@@ -260,12 +260,12 @@ func (client *Client) detectAPIVersion() (int, error) {
 
 	url, err := url.Parse(client.ServerURL + "/api/v1/servers")
 	if err != nil {
-		return -1, fmt.Errorf("Error while trying to detect the API version, request URL: %s", err)
+		return -1, fmt.Errorf("error while trying to detect the API version, request URL: %s", err)
 	}
 
 	req, err := http.NewRequest("GET", url.String(), nil)
 	if err != nil {
-		return -1, fmt.Errorf("Error during creation of request: %s", err)
+		return -1, fmt.Errorf("error during creation of request: %s", err)
 	}
 
 	req.Header.Add("X-API-Key", client.APIKey)
@@ -276,7 +276,11 @@ func (client *Client) detectAPIVersion() (int, error) {
 		return -1, err
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 	if resp.StatusCode == 200 {
 		return 1, nil
 	}
@@ -294,7 +298,11 @@ func (client *Client) ListZones() ([]ZoneInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 
 	var zoneInfos []ZoneInfo
 
@@ -317,14 +325,18 @@ func (client *Client) GetZone(name string) (ZoneInfo, error) {
 	if err != nil {
 		return ZoneInfo{}, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return ZoneInfo{}, fmt.Errorf("Error getting zone: %s", name)
+			return ZoneInfo{}, fmt.Errorf("error getting zone: %s", name)
 		}
-		return ZoneInfo{}, fmt.Errorf("Error getting zone: %s, reason: %q", name, errorResp.ErrorMsg)
+		return ZoneInfo{}, fmt.Errorf("error getting zone: %s, reason: %q", name, errorResp.ErrorMsg)
 	}
 
 	var zoneInfo ZoneInfo
@@ -347,14 +359,18 @@ func (client *Client) ZoneExists(name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return false, fmt.Errorf("Error getting zone: %s", name)
+			return false, fmt.Errorf("error getting zone: %s", name)
 		}
-		return false, fmt.Errorf("Error getting zone: %s, reason: %q", name, errorResp.ErrorMsg)
+		return false, fmt.Errorf("error getting zone: %s, reason: %q", name, errorResp.ErrorMsg)
 	}
 
 	return resp.StatusCode == http.StatusOK, nil
@@ -376,14 +392,18 @@ func (client *Client) CreateZone(zoneInfo ZoneInfo) (ZoneInfo, error) {
 	if err != nil {
 		return ZoneInfo{}, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusCreated {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return ZoneInfo{}, fmt.Errorf("Error creating zone: %s", zoneInfo.Name)
+			return ZoneInfo{}, fmt.Errorf("error creating zone: %s", zoneInfo.Name)
 		}
-		return ZoneInfo{}, fmt.Errorf("Error creating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
+		return ZoneInfo{}, fmt.Errorf("error creating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
 	}
 
 	var createdZoneInfo ZoneInfo
@@ -411,14 +431,18 @@ func (client *Client) UpdateZone(name string, zoneInfo ZoneInfoUpd) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusNoContent {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("Error updating zone: %s", zoneInfo.Name)
+			return fmt.Errorf("error updating zone: %s", zoneInfo.Name)
 		}
-		return fmt.Errorf("Error updating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
+		return fmt.Errorf("error updating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
 	}
 
 	return nil
@@ -435,14 +459,18 @@ func (client *Client) DeleteZone(name string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != 204 {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("Error deleting zone: %s", name)
+			return fmt.Errorf("error deleting zone: %s", name)
 		}
-		return fmt.Errorf("Error deleting zone: %s, reason: %q", name, errorResp.ErrorMsg)
+		return fmt.Errorf("error deleting zone: %s, reason: %q", name, errorResp.ErrorMsg)
 	}
 	return nil
 }
@@ -483,7 +511,11 @@ func (client *Client) ListRecords(zone string) ([]Record, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("[WARN] Error closing response body: %s", err)
+			}
+		}()
 
 		zoneInfo = new(ZoneInfo)
 		err = json.NewDecoder(resp.Body).Decode(zoneInfo)
@@ -499,7 +531,7 @@ func (client *Client) ListRecords(zone string) ([]Record, error) {
 
 			err = client.Cache.Set([]byte(zone), cacheValue, client.CacheTTL)
 			if err != nil {
-				return nil, fmt.Errorf("The cache for REST API requests is enabled but the size isn't enough: cacheSize: %db \n %s",
+				return nil, fmt.Errorf("the cache for REST API requests is enabled but the size isn't enough: cacheSize: %db \n %s",
 					DefaultCacheSize, err)
 			}
 		}
@@ -588,14 +620,18 @@ func (client *Client) ReplaceRecordSet(zone string, rrSet ResourceRecordSet) (st
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return "", fmt.Errorf("Error creating record set: %s", rrSet.ID())
+			return "", fmt.Errorf("error creating record set: %s", rrSet.ID())
 		}
-		return "", fmt.Errorf("Error creating record set: %s, reason: %q", rrSet.ID(), errorResp.ErrorMsg)
+		return "", fmt.Errorf("error creating record set: %s, reason: %q", rrSet.ID(), errorResp.ErrorMsg)
 	}
 	return rrSet.ID(), nil
 }
@@ -621,14 +657,18 @@ func (client *Client) DeleteRecordSet(zone string, name string, tpe string) erro
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("Error deleting record: %s %s", name, tpe)
+			return fmt.Errorf("error deleting record: %s %s", name, tpe)
 		}
-		return fmt.Errorf("Error deleting record: %s %s, reason: %q", name, tpe, errorResp.ErrorMsg)
+		return fmt.Errorf("error deleting record: %s %s, reason: %q", name, tpe, errorResp.ErrorMsg)
 	}
 	return nil
 }
@@ -652,9 +692,15 @@ func (client *Client) setServerVersion() error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
+
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("Invalid response code from server: '%d'. Response body: %v",
+		return fmt.Errorf("invalid response code from server: '%d'. Response body: %v",
 			resp.StatusCode, resp.Body)
 	}
 
@@ -671,5 +717,5 @@ func (client *Client) setServerVersion() error {
 		return nil
 	}
 
-	return fmt.Errorf("Unable to get server version")
+	return fmt.Errorf("unable to get server version")
 }
