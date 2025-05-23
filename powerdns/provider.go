@@ -1,19 +1,30 @@
 package powerdns
 
 import (
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 // Provider returns a schema.Provider for PowerDNS.
-func Provider() terraform.ResourceProvider {
+func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"api_key": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_API_KEY", nil),
-				Description: "REST API authentication key",
+				Description: "REST API authentication api key",
+			},
+			"client_cert_file": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PDNS_CLIENT_CERT_FILE", nil),
+				Description: "REST API authentication client certificate file (.crt)",
+			},
+			"client_cert_key_file": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PDNS_CLIENT_CERT_KEY_FILE", nil),
+				Description: "REST API authentication client certificate key file (.key)",
 			},
 			"server_url": {
 				Type:        schema.TypeString,
@@ -64,13 +75,15 @@ func Provider() terraform.ResourceProvider {
 
 func providerConfigure(data *schema.ResourceData) (interface{}, error) {
 	config := Config{
-		APIKey:          data.Get("api_key").(string),
-		ServerURL:       data.Get("server_url").(string),
-		InsecureHTTPS:   data.Get("insecure_https").(bool),
-		CACertificate:   data.Get("ca_certificate").(string),
-		CacheEnable:     data.Get("cache_requests").(bool),
-		CacheMemorySize: data.Get("cache_mem_size").(string),
-		CacheTTL:        data.Get("cache_ttl").(int),
+		APIKey:            data.Get("api_key").(string),
+		ClientCertFile:    data.Get("client_cert_file").(string),
+		ClientCertKeyFile: data.Get("client_cert_key_file").(string),
+		ServerURL:         data.Get("server_url").(string),
+		InsecureHTTPS:     data.Get("insecure_https").(bool),
+		CACertificate:     data.Get("ca_certificate").(string),
+		CacheEnable:       data.Get("cache_requests").(bool),
+		CacheMemorySize:   data.Get("cache_mem_size").(string),
+		CacheTTL:          data.Get("cache_ttl").(int),
 	}
 
 	return config.Client()

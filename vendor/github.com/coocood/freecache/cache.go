@@ -5,7 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 )
 
 const (
@@ -21,6 +21,8 @@ type Cache struct {
 	locks    [segmentCount]sync.Mutex
 	segments [segmentCount]segment
 }
+
+type Updater func(value []byte, found bool) (newValue []byte, replace bool, expireSeconds int)
 
 func hashFunc(data []byte) uint64 {
 	return xxhash.Sum64(data)
@@ -84,6 +86,24 @@ func (cache *Cache) Get(key []byte) (value []byte, err error) {
 	return
 }
 
+// GetFn is equivalent to Get or GetWithBuf, but it attempts to be zero-copy,
+// calling the provided function with slice view over the current underlying
+// value of the key in memory. The slice is constrained in length and capacity.
+//
+// In moth cases, this method will not alloc a byte buffer. The only exception
+// is when the value wraps around the underlying segment ring buffer.
+//
+// The method will return ErrNotFound is there's a miss, and the function will
+// not be called. Errors returned by the function will be propagated.
+func (cache *Cache) GetFn(key []byte, fn func([]byte) error) (err error) {
+	hashVal := hashFunc(key)
+	segID := hashVal & segmentAndOpVal
+	cache.locks[segID].Lock()
+	err = cache.segments[segID].view(key, fn, hashVal, false)
+	cache.locks[segID].Unlock()
+	return
+}
+
 // GetOrSet returns existing value or if record doesn't exist
 // it sets a new key, value and expiration for a cache entry and stores it in the cache, returns nil in that case
 func (cache *Cache) GetOrSet(key, value []byte, expireSeconds int) (retValue []byte, err error) {
@@ -99,12 +119,75 @@ func (cache *Cache) GetOrSet(key, value []byte, expireSeconds int) (retValue []b
 	return
 }
 
+// SetAndGet sets a key, value and expiration for a cache entry and stores it in the cache.
+// If the key is larger than 65535 or value is larger than 1/1024 of the cache size,
+// the entry will not be written to the cache. expireSeconds <= 0 means no expire,
+// but it can be evicted when cache is full.  Returns existing value if record exists
+// with a bool value to indicate whether an existing record was found
+func (cache *Cache) SetAndGet(key, value []byte, expireSeconds int) (retValue []byte, found bool, err error) {
+	hashVal := hashFunc(key)
+	segID := hashVal & segmentAndOpVal
+	cache.locks[segID].Lock()
+	defer cache.locks[segID].Unlock()
+
+	retValue, _, err = cache.segments[segID].get(key, nil, hashVal, false)
+	if err == nil {
+		found = true
+	}
+	err = cache.segments[segID].set(key, value, hashVal, expireSeconds)
+	return
+}
+
+// Update gets value for a key, passes it to updater function that decides if set should be called as well
+// This allows for an atomic Get plus Set call using the existing value to decide on whether to call Set.
+// If the key is larger than 65535 or value is larger than 1/1024 of the cache size,
+// the entry will not be written to the cache. expireSeconds <= 0 means no expire,
+// but it can be evicted when cache is full. Returns bool value to indicate if existing record was found along with bool
+// value indicating the value was replaced and error if any
+func (cache *Cache) Update(key []byte, updater Updater) (found bool, replaced bool, err error) {
+	hashVal := hashFunc(key)
+	segID := hashVal & segmentAndOpVal
+	cache.locks[segID].Lock()
+	defer cache.locks[segID].Unlock()
+
+	retValue, _, err := cache.segments[segID].get(key, nil, hashVal, false)
+	if err == nil {
+		found = true
+	} else {
+		err = nil // Clear ErrNotFound error since we're returning found flag
+	}
+	value, replaced, expireSeconds := updater(retValue, found)
+	if !replaced {
+		return
+	}
+	err = cache.segments[segID].set(key, value, hashVal, expireSeconds)
+	return
+}
+
 // Peek returns the value or not found error, without updating access time or counters.
 func (cache *Cache) Peek(key []byte) (value []byte, err error) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal
 	cache.locks[segID].Lock()
 	value, _, err = cache.segments[segID].get(key, nil, hashVal, true)
+	cache.locks[segID].Unlock()
+	return
+}
+
+// PeekFn is equivalent to Peek, but it attempts to be zero-copy, calling the
+// provided function with slice view over the current underlying value of the
+// key in memory. The slice is constrained in length and capacity.
+//
+// In moth cases, this method will not alloc a byte buffer. The only exception
+// is when the value wraps around the underlying segment ring buffer.
+//
+// The method will return ErrNotFound is there's a miss, and the function will
+// not be called. Errors returned by the function will be propagated.
+func (cache *Cache) PeekFn(key []byte, fn func([]byte) error) (err error) {
+	hashVal := hashFunc(key)
+	segID := hashVal & segmentAndOpVal
+	cache.locks[segID].Lock()
+	err = cache.segments[segID].view(key, fn, hashVal, true)
 	cache.locks[segID].Unlock()
 	return
 }
