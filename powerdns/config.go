@@ -41,7 +41,7 @@ func (c *Config) Client() (*Client, error) {
 	if c.ClientCertFile != "" && c.ClientCertKeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(c.ClientCertFile, c.ClientCertKeyFile)
 		if err != nil {
-			log.Fatalf("Unable to load client cert: %v", err)
+			return nil, fmt.Errorf("unable to load client cert: %v", err)
 		}
 
 		tlsConfig.Certificates = []tls.Certificate{cert}

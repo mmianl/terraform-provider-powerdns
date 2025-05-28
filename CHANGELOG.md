@@ -1,3 +1,8 @@
+## 1.6.1 (May 28, 2025)
+
+FEATURES:
+  * **Fix provider config error when using client certificates that don't exist** ([#5](https://github.com/mmianl/terraform-provider-powerdns/issues/5), @mmianl)
+
 ## 1.6.0 (May 23, 2025)
 
 FEATURES:
