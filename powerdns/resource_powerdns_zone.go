@@ -155,7 +155,7 @@ func resourcePDNSZoneRead(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("error setting PowerDNS SOA Edit API: %s", err)
 	}
 
-	if zoneInfo.Kind != "Slave" {
+	if !strings.EqualFold(zoneInfo.Kind, "Slave") {
 		nameservers, err := client.ListRecordsInRRSet(zoneInfo.Name, zoneInfo.Name, "NS")
 		if err != nil {
 			return fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %v", zoneInfo.Name, err)
