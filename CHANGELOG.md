@@ -1,3 +1,8 @@
+## 1.6.2 (May 29, 2025)
+
+FEATURES:
+  * **Fix resources with upper case names not being destroyed** ([#7](https://github.com/mmianl/terraform-provider-powerdns/issues/7), @mmianl)
+
 ## 1.6.1 (May 28, 2025)
 
 FEATURES:
