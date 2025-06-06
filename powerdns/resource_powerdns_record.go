@@ -116,7 +116,6 @@ func resourcePDNSRecordCreate(d *schema.ResourceData, meta interface{}) error {
 
 		d.SetId(recID)
 		log.Printf("[INFO] Created PowerDNS Record with ID: %s", d.Id())
-
 	}
 
 	return resourcePDNSRecordRead(d, meta)

@@ -164,4 +164,3 @@ $ terraform import powerdns_record.test-a '{"zone": "test.com.", "id": "foo.test
 ```
 
 For more information on how to use terraform's `import` command, please refer to terraform's [core documentation](https://www.terraform.io/docs/import/index.html#currently-state-only).
-
