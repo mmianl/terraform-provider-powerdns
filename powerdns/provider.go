@@ -65,8 +65,10 @@ func Provider() *schema.Provider {
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"powerdns_zone":   resourcePDNSZone(),
-			"powerdns_record": resourcePDNSRecord(),
+			"powerdns_zone":         resourcePDNSZone(),
+			"powerdns_record":       resourcePDNSRecord(),
+			"powerdns_ptr_record":   resourcePDNSPTRRecord(),
+			"powerdns_reverse_zone": resourcePDNSReverseZone(),
 		},
 
 		ConfigureFunc: providerConfigure,

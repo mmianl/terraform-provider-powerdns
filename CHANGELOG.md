@@ -1,3 +1,8 @@
+## 1.7.0 (June 16, 2025)
+
+FEATURES:
+  * **introduce reverse_zone and ptr_record resources** ([#7](https://github.com/mmianl/terraform-provider-powerdns/issues/9), @mmianl)
+
 ## 1.6.2 (May 29, 2025)
 
 FEATURES:
