@@ -700,8 +700,13 @@ func (client *Client) setServerVersion() error {
 	}()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("invalid response code from server: '%d'. Response body: %v",
-			resp.StatusCode, resp.Body)
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("invalid response code from server: '%d'. Failed to read response body: %v",
+				resp.StatusCode, err)
+		}
+		return fmt.Errorf("invalid response code from server: '%d'. Response body: %s",
+			resp.StatusCode, string(bodyBytes))
 	}
 
 	serverInfo := new(serverInfo)
