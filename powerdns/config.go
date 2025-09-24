@@ -12,6 +12,7 @@ import (
 // Config describes de configuration interface of this provider
 type Config struct {
 	ServerURL         string
+	RecursorServerURL string
 	APIKey            string
 	ClientCertFile    string
 	ClientCertKeyFile string
@@ -49,7 +50,7 @@ func (c *Config) Client() (*Client, error) {
 
 	tlsConfig.InsecureSkipVerify = c.InsecureHTTPS
 
-	client, err := NewClient(c.ServerURL, c.APIKey, tlsConfig, c.CacheEnable, c.CacheMemorySize, c.CacheTTL)
+	client, err := NewClient(c.ServerURL, c.RecursorServerURL, c.APIKey, tlsConfig, c.CacheEnable, c.CacheMemorySize, c.CacheTTL)
 
 	if err != nil {
 		return nil, fmt.Errorf("error setting up PowerDNS client: %s", err)

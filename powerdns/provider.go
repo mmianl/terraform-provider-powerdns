@@ -62,13 +62,21 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_CACHE_TTL", 30),
 				Description: "Set cache TTL in seconds",
 			},
+			"recursor_server_url": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PDNS_RECURSOR_SERVER_URL", nil),
+				Description: "Location of PowerDNS recursor server",
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"powerdns_zone":         resourcePDNSZone(),
-			"powerdns_record":       resourcePDNSRecord(),
-			"powerdns_ptr_record":   resourcePDNSPTRRecord(),
-			"powerdns_reverse_zone": resourcePDNSReverseZone(),
+			"powerdns_zone":                    resourcePDNSZone(),
+			"powerdns_record":                  resourcePDNSRecord(),
+			"powerdns_ptr_record":              resourcePDNSPTRRecord(),
+			"powerdns_reverse_zone":            resourcePDNSReverseZone(),
+			"powerdns_recursor_config":         resourcePDNSRecursorConfig(),
+			"powerdns_recursor_forward_zone":   resourcePDNSRecursorForwardZone(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -85,6 +93,7 @@ func providerConfigure(data *schema.ResourceData) (interface{}, error) {
 		ClientCertFile:    data.Get("client_cert_file").(string),
 		ClientCertKeyFile: data.Get("client_cert_key_file").(string),
 		ServerURL:         data.Get("server_url").(string),
+		RecursorServerURL: data.Get("recursor_server_url").(string),
 		InsecureHTTPS:     data.Get("insecure_https").(bool),
 		CACertificate:     data.Get("ca_certificate").(string),
 		CacheEnable:       data.Get("cache_requests").(bool),
