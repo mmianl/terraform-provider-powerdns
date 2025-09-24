@@ -34,6 +34,23 @@ resource "powerdns_ptr_record" "example_ipv4" {
 }
 ```
 
+### Using Data Source for Existing Reverse Zone
+
+```hcl
+# Query an existing reverse zone (managed outside Terraform)
+data "powerdns_reverse_zone" "existing_zone" {
+  cidr = "172.16.0.0/24"
+}
+
+# Create a PTR record in the existing reverse zone
+resource "powerdns_ptr_record" "example_ipv4_existing" {
+  ip_address   = "172.16.0.20"
+  hostname     = "host02.example.com."
+  ttl          = 30
+  reverse_zone = data.powerdns_reverse_zone.existing_zone.name
+}
+```
+
 ### IPv6 PTR Record
 
 ```hcl
@@ -66,7 +83,7 @@ The following arguments are supported:
 
 - `ttl` - (Required) The TTL (Time To Live) of the record in seconds.
 
-- `reverse_zone` - (Required) The name of the reverse zone where the PTR record will be created. This should be the output of a `powerdns_reverse_zone` resource.
+- `reverse_zone` - (Required) The name of the reverse zone where the PTR record will be created. This can be the output of a `powerdns_reverse_zone` resource or a `powerdns_reverse_zone` data source.
 
 ## Notes
 
