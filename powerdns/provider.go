@@ -71,6 +71,10 @@ func Provider() *schema.Provider {
 			"powerdns_reverse_zone": resourcePDNSReverseZone(),
 		},
 
+		DataSourcesMap: map[string]*schema.Resource{
+			"powerdns_reverse_zone": dataSourcePDNSReverseZone(),
+		},
+
 		ConfigureFunc: providerConfigure,
 	}
 }
