@@ -70,5 +70,3 @@ func testAccCheckPowerDNSRecursorConfigExists(n string) resource.TestCheckFunc {
 		return nil
 	}
 }
-
-
