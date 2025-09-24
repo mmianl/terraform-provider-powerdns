@@ -71,12 +71,12 @@ func Provider() *schema.Provider {
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"powerdns_zone":                    resourcePDNSZone(),
-			"powerdns_record":                  resourcePDNSRecord(),
-			"powerdns_ptr_record":              resourcePDNSPTRRecord(),
-			"powerdns_reverse_zone":            resourcePDNSReverseZone(),
-			"powerdns_recursor_config":         resourcePDNSRecursorConfig(),
-			"powerdns_recursor_forward_zone":   resourcePDNSRecursorForwardZone(),
+			"powerdns_zone":                  resourcePDNSZone(),
+			"powerdns_record":                resourcePDNSRecord(),
+			"powerdns_ptr_record":            resourcePDNSPTRRecord(),
+			"powerdns_reverse_zone":          resourcePDNSReverseZone(),
+			"powerdns_recursor_config":       resourcePDNSRecursorConfig(),
+			"powerdns_recursor_forward_zone": resourcePDNSRecursorForwardZone(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
