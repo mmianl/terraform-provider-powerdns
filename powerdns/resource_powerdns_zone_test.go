@@ -1,11 +1,15 @@
 package powerdns
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
@@ -420,6 +424,57 @@ func testAccCheckPDNSZoneExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("Zone does not exist: %#v", rs.Primary.ID)
 		}
 		return nil
+	}
+}
+
+func TestResourcePDNSZoneCreate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/servers" {
+			w.WriteHeader(200)
+		} else if r.URL.Path == "/api/v1/servers/localhost" {
+			serverInfo := map[string]interface{}{
+				"version": "4.5.0",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			json.NewEncoder(w).Encode(serverInfo)
+		} else if r.URL.Path == "/api/v1/servers/localhost/zones" && r.Method == "POST" {
+			var zone ZoneInfo
+			json.NewDecoder(r.Body).Decode(&zone)
+			zone.ID = zone.Name
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode(zone)
+		} else if r.URL.Path == "/api/v1/servers/localhost/zones/example.com." {
+			zone := ZoneInfo{
+				ID:   "example.com.",
+				Name: "example.com.",
+				Kind: "Native",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			json.NewEncoder(w).Encode(zone)
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+
+	client, _ := NewClient(server.URL, "", "test", nil, false, "10", 300)
+
+	rd := schema.TestResourceDataRaw(t, resourcePDNSZone().Schema, map[string]interface{}{
+		"name":        "example.com.",
+		"kind":        "Native",
+		"nameservers": []interface{}{"ns1.example.com.", "ns2.example.com."},
+	})
+
+	err := resourcePDNSZoneCreate(rd, client)
+	if err != nil {
+		t.Fatalf("resourcePDNSZoneCreate failed: %v", err)
+	}
+
+	if rd.Id() != "example.com." {
+		t.Errorf("Expected ID 'example.com.', got '%s'", rd.Id())
 	}
 }
 
