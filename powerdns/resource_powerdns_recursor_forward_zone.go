@@ -48,8 +48,14 @@ func resourcePDNSRecursorForwardZoneCreate(d *schema.ResourceData, meta interfac
 	// Get current forward-zones
 	currentValue, err := client.GetRecursorConfigValue("forward-zones")
 	if err != nil {
-		// If not found, assume empty
-		currentValue = ""
+		// Only treat "not found" as empty config, other errors should fail
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
+			// Config doesn't exist, assume empty
+			currentValue = ""
+		} else {
+			// Real error (auth, connection, server error, etc.)
+			return fmt.Errorf("failed to get current forward-zones config: %s", err)
+		}
 	}
 
 	// Parse current forward-zones
@@ -84,9 +90,15 @@ func resourcePDNSRecursorForwardZoneRead(d *schema.ResourceData, meta interface{
 
 	value, err := client.GetRecursorConfigValue("forward-zones")
 	if err != nil {
-		log.Printf("[WARN] Recursor forward-zones config not found, removing from state: %s", zone)
-		d.SetId("")
-		return nil
+		// Only treat "not found" as removing from state, other errors should fail
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
+			log.Printf("[WARN] Recursor forward-zones config not found, removing from state: %s", zone)
+			d.SetId("")
+			return nil
+		} else {
+			// Real error (auth, connection, server error, etc.)
+			return fmt.Errorf("failed to get forward-zones config: %s", err)
+		}
 	}
 
 	forwardZones := parseForwardZones(value)
