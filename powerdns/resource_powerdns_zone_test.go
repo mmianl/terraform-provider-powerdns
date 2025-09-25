@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAccPDNSZoneNative(t *testing.T) {
@@ -437,14 +438,17 @@ func TestResourcePDNSZoneCreate(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(serverInfo)
+			err := json.NewEncoder(w).Encode(serverInfo)
+			assert.NoError(t, err)
 		} else if r.URL.Path == "/api/v1/servers/localhost/zones" && r.Method == "POST" {
 			var zone ZoneInfo
-			json.NewDecoder(r.Body).Decode(&zone)
+			err := json.NewDecoder(r.Body).Decode(&zone)
+			assert.NoError(t, err)
 			zone.ID = zone.Name
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(201)
-			json.NewEncoder(w).Encode(zone)
+			err = json.NewEncoder(w).Encode(zone)
+			assert.NoError(t, err)
 		} else if r.URL.Path == "/api/v1/servers/localhost/zones/example.com." {
 			zone := ZoneInfo{
 				ID:   "example.com.",
@@ -453,7 +457,8 @@ func TestResourcePDNSZoneCreate(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(zone)
+			err := json.NewEncoder(w).Encode(zone)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
