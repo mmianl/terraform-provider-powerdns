@@ -1,9 +1,9 @@
 package powerdns
 
 import (
+	"errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -62,7 +62,7 @@ func resourcePDNSRecursorConfigRead(d *schema.ResourceData, meta interface{}) er
 	value, err := client.GetRecursorConfigValue(name)
 	if err != nil {
 		// Only treat "not found" as removing from state, other errors should fail
-		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, ErrNotFound) {
 			log.Printf("[WARN] Recursor config not found, removing from state: %s", name)
 			d.SetId("")
 			return nil
