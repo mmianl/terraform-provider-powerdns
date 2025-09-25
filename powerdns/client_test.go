@@ -208,7 +208,8 @@ func TestListZones(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(zones)
+			err := json.NewEncoder(w).Encode(zones)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
@@ -261,7 +262,8 @@ func TestGetZone(t *testing.T) {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(200)
-						json.NewEncoder(w).Encode(zone)
+						err := json.NewEncoder(w).Encode(zone)
+						assert.NoError(t, err)
 					} else {
 						w.WriteHeader(tt.serverResponse)
 					}
@@ -328,7 +330,8 @@ func TestZoneExists(t *testing.T) {
 					w.WriteHeader(tt.serverResponse)
 					if tt.serverResponse == 500 {
 						w.Header().Set("Content-Type", "application/json")
-						json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Internal Server Error"})
+						err := json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Internal Server Error"})
+						assert.NoError(t, err)
 					}
 				} else {
 					w.WriteHeader(404)
@@ -384,11 +387,13 @@ func TestCreateZone(t *testing.T) {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(201)
-						json.NewEncoder(w).Encode(createdZone)
+						err := json.NewEncoder(w).Encode(createdZone)
+						assert.NoError(t, err)
 					} else {
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(400)
-						json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Bad Request"})
+						err := json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Bad Request"})
+						assert.NoError(t, err)
 					}
 				} else {
 					w.WriteHeader(404)
@@ -448,7 +453,8 @@ func TestUpdateZone(t *testing.T) {
 					} else {
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(400)
-						json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Bad Request"})
+						err := json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Bad Request"})
+						assert.NoError(t, err)
 					}
 				} else {
 					w.WriteHeader(404)
@@ -506,7 +512,8 @@ func TestDeleteZone(t *testing.T) {
 					} else {
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(500)
-						json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Internal Server Error"})
+						err := json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Internal Server Error"})
+						assert.NoError(t, err)
 					}
 				} else {
 					w.WriteHeader(404)
@@ -547,7 +554,8 @@ func TestListRecordsInRRSet(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(zone)
+			err := json.NewEncoder(w).Encode(zone)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
@@ -580,7 +588,8 @@ func TestRecordExists(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(zone)
+			err := json.NewEncoder(w).Encode(zone)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
@@ -711,7 +720,8 @@ func TestSetServerVersion(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(serverInfo)
+			err := json.NewEncoder(w).Encode(serverInfo)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
@@ -766,7 +776,8 @@ func TestListRecordsByID(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(zone)
+			err := json.NewEncoder(w).Encode(zone)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
@@ -799,7 +810,8 @@ func TestRecordExistsByID(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(zone)
+			err := json.NewEncoder(w).Encode(zone)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
@@ -910,7 +922,8 @@ func TestListRecords(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(zone)
+			err := json.NewEncoder(w).Encode(zone)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
@@ -994,7 +1007,8 @@ func TestListRecordsCacheError(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			json.NewEncoder(w).Encode(zone)
+			err := json.NewEncoder(w).Encode(zone)
+			assert.NoError(t, err)
 		} else {
 			w.WriteHeader(404)
 		}
@@ -1080,16 +1094,18 @@ func TestNewClient(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a test server for setServerVersion
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/api/v1/servers" {
+				switch r.URL.Path {
+				case "/api/v1/servers":
 					w.WriteHeader(200)
-				} else if r.URL.Path == "/api/v1/servers/localhost" {
+				case "/api/v1/servers/localhost":
 					serverInfo := serverInfo{
 						Version: "4.5.0",
 					}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(200)
-					json.NewEncoder(w).Encode(serverInfo)
-				} else {
+					err := json.NewEncoder(w).Encode(serverInfo)
+					assert.NoError(t, err)
+				default:
 					w.WriteHeader(404)
 				}
 			}))
