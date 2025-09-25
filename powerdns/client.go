@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -275,6 +276,12 @@ type serverInfo struct {
 }
 
 const idSeparator string = ":::"
+
+// Sentinel error for "not found" scenarios
+var (
+	// ErrNotFound is returned when a resource is not found
+	ErrNotFound = errors.New("not found")
+)
 
 // ID returns a record with the ID format
 func (record *Record) ID() string {
@@ -786,21 +793,27 @@ func (client *Client) GetRecursorConfig() (map[string]string, error) {
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var config map[string]string
+		err = json.NewDecoder(resp.Body).Decode(&config)
+		if err != nil {
+			return nil, err
+		}
+
+		return config, nil
+
+	case http.StatusNotFound:
+		// Map 404 to sentinel error
+		return nil, ErrNotFound
+
+	default:
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return nil, fmt.Errorf("error getting recursor config")
 		}
 		return nil, fmt.Errorf("error getting recursor config: %q", errorResp.ErrorMsg)
 	}
-
-	var config map[string]string
-	err = json.NewDecoder(resp.Body).Decode(&config)
-	if err != nil {
-		return nil, err
-	}
-
-	return config, nil
 }
 
 // GetRecursorConfigValue gets a specific recursor config value
@@ -820,21 +833,27 @@ func (client *Client) GetRecursorConfigValue(name string) (string, error) {
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var value string
+		err = json.NewDecoder(resp.Body).Decode(&value)
+		if err != nil {
+			return "", err
+		}
+
+		return value, nil
+
+	case http.StatusNotFound:
+		// Map 404 to sentinel error
+		return "", ErrNotFound
+
+	default:
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return "", fmt.Errorf("error getting recursor config %s", name)
 		}
 		return "", fmt.Errorf("error getting recursor config %s: %q", name, errorResp.ErrorMsg)
 	}
-
-	var value string
-	err = json.NewDecoder(resp.Body).Decode(&value)
-	if err != nil {
-		return "", err
-	}
-
-	return value, nil
 }
 
 // SetRecursorConfigValue sets a recursor config value
@@ -887,13 +906,19 @@ func (client *Client) DeleteRecursorConfigValue(name string) error {
 		}
 	}()
 
-	if resp.StatusCode != http.StatusNoContent {
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return nil
+
+	case http.StatusNotFound:
+		// Map 404 to sentinel error
+		return ErrNotFound
+
+	default:
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return fmt.Errorf("error deleting recursor config %s", name)
 		}
 		return fmt.Errorf("error deleting recursor config %s: %q", name, errorResp.ErrorMsg)
 	}
-
-	return nil
 }
