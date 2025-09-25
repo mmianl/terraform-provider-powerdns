@@ -1,4 +1,6 @@
-# Terraform Provider
+# terraform-provider-powerdns
+
+The Terraform PowerDNS provider allows you to manage PowerDNS zones and records using Terraform. It is maintained by mmianl.
 
 - Website: https://www.terraform.io
 - [![Gitter chat](https://badges.gitter.im/hashicorp-terraform/Lobby.png)](https://gitter.im/hashicorp-terraform/Lobby)
@@ -18,26 +20,44 @@ The Go ang Goreleaser minimum versions were set to be able to build plugin for D
 terraform {
   required_providers {
     powerdns = {
-      source = "pan-net/powerdns"
+      source = "mmianl/powerdns"
+      version = "1.7.2"
     }
   }
 }
 
 provider "powerdns" {
-  server_url = "https://host:port/"  # or use PDNS_SERVER_URL variable
-  api_key    = "secret"              # or use PDNS_API_KEY variable
+  server_url = "https://host:port/"           # authoritative server url (can also be provided with PDNS_SERVER_URL variable)
+  recursor_server_url = "https://host:port/"  # recursor server url (can also be provided with PDNS_RECURSOR_SERVER_URL variable)
+  api_key             = "secret"              # can also be provided with PDNS_API_KEY variable
 }
+
+# Note: The provider supports both PowerDNS Authoritative Server and PowerDNS Recursor.
+# Configure server_url for authoritative operations and recursor_server_url for recursor operations.
 ```
 
-For detailed usage see [provider's documentation page](https://www.terraform.io/docs/providers/powerdns/index.html)
+For detailed usage see [provider's documentation page](https://registry.terraform.io/providers/mmianl/powerdns/latest/docs)
+
+## Environment Variables
+
+The provider supports configuration via environment variables as an alternative to the provider block configuration:
+
+- `PDNS_SERVER_URL` - The URL of the PowerDNS Authoritative Server (e.g., `https://host:port/`)
+- `PDNS_API_KEY` - The API key for authenticating with the PowerDNS server
+- `PDNS_RECURSOR_SERVER_URL` - The URL of the PowerDNS Recursor Server (e.g., `https://host:port/`)
+
+When these environment variables are set, you can use the provider without explicit configuration:
+
+```hcl
+provider "powerdns" {}
+```
 
 ## Building The Provider
 
 Clone the provider repository:
 
 ```sh
-$ git clone git@github.com:terraform-providers/terraform-provider-powerdns
-```
+$ git clone git@github.com:mmianl/terraform-provider-powerdns.git
 
 Navigate to repository directory:
 
