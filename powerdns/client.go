@@ -188,7 +188,7 @@ func (client *Client) newRequestRecursor(method string, endpoint string, body []
 	} else {
 		urlStr = client.RecursorServerURL + endpoint
 	}
-	url, err := url.Parse(urlStr)
+	u, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("error during parsing request URL: %s", err)
 	}
@@ -198,7 +198,7 @@ func (client *Client) newRequestRecursor(method string, endpoint string, body []
 		bodyReader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, url.String(), bodyReader)
+	req, err := http.NewRequest(method, u.String(), bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("error during creation of request: %s", err)
 	}

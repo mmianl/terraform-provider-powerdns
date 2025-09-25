@@ -3,6 +3,7 @@ package powerdns
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -39,7 +40,7 @@ func resourcePDNSRecursorConfigCreate(d *schema.ResourceData, meta interface{}) 
 	name := d.Get("name").(string)
 	value := d.Get("value").(string)
 
-	log.Printf("[INFO] Creating recursor config: %s = %s", name, value)
+	log.Printf("[INFO] Creating recursor config: %s", name)
 
 	err := client.SetRecursorConfigValue(name, value)
 	if err != nil {
@@ -60,9 +61,15 @@ func resourcePDNSRecursorConfigRead(d *schema.ResourceData, meta interface{}) er
 
 	value, err := client.GetRecursorConfigValue(name)
 	if err != nil {
-		log.Printf("[WARN] Recursor config not found, removing from state: %s", name)
-		d.SetId("")
-		return nil
+		// Only treat "not found" as removing from state, other errors should fail
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
+			log.Printf("[WARN] Recursor config not found, removing from state: %s", name)
+			d.SetId("")
+			return nil
+		} else {
+			// Real error (auth, connection, server error, etc.)
+			return fmt.Errorf("failed to get recursor config: %s", err)
+		}
 	}
 
 	err = d.Set("name", name)
@@ -84,7 +91,7 @@ func resourcePDNSRecursorConfigUpdate(d *schema.ResourceData, meta interface{}) 
 	name := d.Id()
 	value := d.Get("value").(string)
 
-	log.Printf("[INFO] Updating recursor config: %s = %s", name, value)
+	log.Printf("[INFO] Updating recursor config: %s", name)
 
 	err := client.SetRecursorConfigValue(name, value)
 	if err != nil {
