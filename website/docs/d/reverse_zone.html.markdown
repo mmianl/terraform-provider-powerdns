@@ -30,6 +30,29 @@ output "zone_kind" {
 output "nameservers" {
   value = data.powerdns_reverse_zone.zone_172_16_0_0_16.nameservers
 }
+
+# Query the reverse zone for a /24 network
+data "powerdns_reverse_zone" "example_reverse" {
+  cidr = "192.168.1.0/24"
+}
+
+# Create a PTR record using the dynamically determined zone
+resource "powerdns_record" "webserver_ptr" {
+  zone    = data.powerdns_reverse_zone.example_reverse.name
+  name    = "10.1.168.192.in-addr.arpa."
+  type    = "PTR"
+  ttl     = 300
+  records = ["webserver.example.com."]
+}
+
+# Alternative: Create PTR record for a specific IP in the zone
+resource "powerdns_record" "mailserver_ptr" {
+  zone    = data.powerdns_reverse_zone.example_reverse.name
+  name    = "5.1.168.192.in-addr.arpa."
+  type    = "PTR"
+  ttl     = 300
+  records = ["mail.example.com."]
+}
 ```
 
 ### Querying an IPv6 reverse zone
@@ -42,20 +65,34 @@ data "powerdns_reverse_zone" "zone_2001_db8" {
 output "zone_name" {
   value = data.powerdns_reverse_zone.zone_2001_db8.name
 }
+
+# Query an IPv6 reverse zone
+data "powerdns_reverse_zone" "ipv6_reverse" {
+  cidr = "2001:db8::/32"
+}
+
+# Create PTR record for IPv6 address
+resource "powerdns_record" "ipv6_host_ptr" {
+  zone    = data.powerdns_reverse_zone.ipv6_reverse.name
+  name    = "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa."
+  type    = "PTR"
+  ttl     = 300
+  records = ["ipv6-host.example.com."]
+}
 ```
 
 ## Argument Reference
 
-The following arguments are supported:
+This resource supports the following arguments:
 
 - `cidr` - (Required) The CIDR block for the reverse zone (e.g., '172.16.0.0/16' or '2001:db8::/32'). For IPv4, must have a prefix length of 8, 16, or 24. For IPv6, must have a prefix length that is a multiple of 4 between 4 and 124.
 
 ## Attribute Reference
 
-This data source exports the following attributes:
+This resource exports the following attributes in addition to the arguments above:
 
-- `name` - The computed zone name (e.g., '16.172.in-addr.arpa.' for IPv4 or '8.b.d.0.1.0.0.2.ip6.arpa.' for IPv6).
-- `kind` - The kind of zone (Master or Slave).
+- `name` - Computed zone name (e.g., '16.172.in-addr.arpa.' for IPv4 or '8.b.d.0.1.0.0.2.ip6.arpa.' for IPv6).
+- `kind` -  Kind of zone (Master or Slave).
 - `nameservers` - List of nameservers for this zone. Each nameserver is a valid FQDN ending with a dot.
 
 ## Notes

@@ -3,12 +3,12 @@ layout: "powerdns"
 page_title: "PowerDNS: powerdns_zone"
 sidebar_current: "docs-powerdns-zone"
 description: |-
-  Provides a PowerDNS zone.
+  Manages DNS zones within a PowerDNS authoritative server. This resource supports creating, updating, and deleting zones with various configuration options including different zone types (Native, Master, Slave), nameservers, and SOA record customization.
 ---
 
 # powerdns\_zone
 
-Provides a PowerDNS zone.
+Manages DNS zones within a PowerDNS authoritative server. This resource supports creating, updating, and deleting zones with various configuration options including different zone types (Native, Master, Slave), nameservers, and SOA record customization.
 
 ## Example Usage
 
@@ -34,14 +34,14 @@ resource "powerdns_zone" "fubar" {
 
 ## Argument Reference
 
-The following arguments are supported:
+This resource supports the following arguments:
 
-* `name` - (Required) The name of zone.
-* `kind` - (Required) The kind of the zone.
-* `account` - (Optional) The account owning the zone. (Default to "admin")
-* `nameservers` - (Optional) The zone nameservers.
-* `masters` - (Optional) List of IP addresses configured as a master for this zone (“Slave” kind zones only)
-* `soa_edit_api` - (Optional) This should map to one of the [supported API values](https://doc.powerdns.com/authoritative/dnsupdate.html#soa-edit-dnsupdate-settings) *or* in [case you wish to remove the setting](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit-api), set this argument as `\"\"` (that will translate to the API value `""`).
+- `name` - (Required) The name of zone.
+- `kind` - (Required) The kind of the zone.
+- `account` - (Optional) The account owning the zone. (Default to "admin")
+- `nameservers` - (Optional) List of zone nameservers.
+- `masters` - (Optional) List of IP addresses configured as a master for this zone. This argument must be provided when `kind` is set to `Slave`.
+- `soa_edit_api` - (Optional) This should map to one of the [supported API values](https://doc.powerdns.com/authoritative/dnsupdate.html#soa-edit-dnsupdate-settings) *or* in [case you wish to remove the setting](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit-api), set this argument as `""` (that will translate to the API value `""`).
 
 ## Importing
 
