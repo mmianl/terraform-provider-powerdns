@@ -2,9 +2,11 @@
 
 The Terraform PowerDNS provider allows you to manage PowerDNS zones and records using Terraform. It is maintained by mmianl.
 
-- Website: https://www.terraform.io
-- [![Gitter chat](https://badges.gitter.im/hashicorp-terraform/Lobby.png)](https://gitter.im/hashicorp-terraform/Lobby)
-- Mailing list: [Google Groups](http://groups.google.com/group/terraform-tool)
+![Release Badge](https://img.shields.io/github/v/release/mmianl/terraform-provider-powerdns.svg)
+[![Test](https://github.com/mmianl/terraform-provider-powerdns/actions/workflows/test.yml/badge.svg)](https://github.com/mmianl/terraform-provider-powerdns/actions/workflows/test.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/terraform-providers/terraform-provider-powerdns)](https://goreportcard.com/report/github.com/terraform-providers/terraform-provider-powerdns)
+[![codecov](https://codecov.io/gh/mmianl/terraform-provider-powerdns/branch/main/graph/badge.svg)](https://codecov.io/gh/mmianl/terraform-provider-powerdns)
+
 
 ## Requirements
 
@@ -21,7 +23,7 @@ terraform {
   required_providers {
     powerdns = {
       source = "mmianl/powerdns"
-      version = "1.7.2"
+      version = "1.8.0"
     }
   }
 }
@@ -58,7 +60,7 @@ Clone the provider repository:
 
 ```sh
 $ git clone git@github.com:mmianl/terraform-provider-powerdns.git
-
+```
 Navigate to repository directory:
 
 ```sh
@@ -75,31 +77,31 @@ This will compile and place the provider binary, `terraform-provider-powerdns`, 
 
 ## Developing the Provider
 
-If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (version 1.11+ is _recommended_).
+If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (version 1.24.4 is _recommended_).
 You'll also need to have `$GOPATH/bin` in your `$PATH`.
 
 Make sure the changes you performed pass linting:
 
 ```sh
-$ make lint
+make lint
 ```
 
 To install the provider, run `make build`. This will build the provider and put the provider binary in the current working directory.
 
 ```sh
-$ make build
+make build
 ```
 
 In order to run local provider tests, you can simply run `make test`.
 
 ```sh
-$ make test
+make test
 ```
 
 For running acceptance tests locally, you'll need to use `docker-compose` to prepare the test environment:
 
 ```sh
-docker-compose run --rm setup
+docker-compose up -d
 ```
 
 After setup is done, run the acceptance tests with `make testacc` (note the env variables needed to interact with the PowerDNS container)
@@ -107,22 +109,22 @@ After setup is done, run the acceptance tests with `make testacc` (note the env 
 - HTTP
 
 ```sh
-~$  PDNS_SERVER_URL=http://localhost:8081 \
-    PDNS_API_KEY=secret \
-    make testacc
+PDNS_SERVER_URL=http://localhost:8081/ \
+PDNS_API_KEY=secret \
+make testacc
 ```
 
 - HTTPS
 
 ```sh
-~$  PDNS_SERVER_URL=localhost:4443 \
-    PDNS_API_KEY=secret \
-    PDNS_CACERT=$(cat ./tests/files/ssl/rootCA/rootCA.crt) \
-    make testacc
+PDNS_SERVER_URL=localhost:4443 \
+PDNS_API_KEY=secret \
+PDNS_CACERT=$(cat ./tests/files/ssl/rootCA/rootCA.crt) \
+make testacc
 ```
 
 And finally cleanup containers spun up by `docker-compose`:
 
 ```sh
-~$ docker-compose down
+docker-compose down
 ```
