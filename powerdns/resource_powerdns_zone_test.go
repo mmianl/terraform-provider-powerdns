@@ -438,8 +438,9 @@ func TestResourcePDNSZoneCreate(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			err := json.NewEncoder(w).Encode(serverInfo)
-			assert.NoError(t, err)
+			if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
+				t.Errorf("Failed to encode server info response: %v", err)
+			}
 		} else if r.URL.Path == "/api/v1/servers/localhost/zones" && r.Method == "POST" {
 			var zone ZoneInfo
 			err := json.NewDecoder(r.Body).Decode(&zone)
@@ -447,8 +448,9 @@ func TestResourcePDNSZoneCreate(t *testing.T) {
 			zone.ID = zone.Name
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(201)
-			err = json.NewEncoder(w).Encode(zone)
-			assert.NoError(t, err)
+			if err := json.NewEncoder(w).Encode(zone); err != nil {
+				t.Errorf("Failed to encode zone response: %v", err)
+			}
 		} else if r.URL.Path == "/api/v1/servers/localhost/zones/example.com." {
 			zone := ZoneInfo{
 				ID:   "example.com.",
@@ -457,8 +459,9 @@ func TestResourcePDNSZoneCreate(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(200)
-			err := json.NewEncoder(w).Encode(zone)
-			assert.NoError(t, err)
+			if err := json.NewEncoder(w).Encode(zone); err != nil {
+				t.Errorf("Failed to encode zone response: %v", err)
+			}
 		} else {
 			w.WriteHeader(404)
 		}
@@ -599,3 +602,314 @@ resource "powerdns_zone" "test-master-with-masters" {
 	kind = "Master"
 	masters = ["1.1.1.1", "2.2.2.2"]
 }`
+
+// Additional test functions for resource operations
+func TestResourcePDNSZoneUpdate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/servers" {
+			w.WriteHeader(200)
+		} else if r.URL.Path == "/api/v1/servers/localhost" {
+			serverInfo := map[string]interface{}{
+				"version": "4.5.0",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
+				t.Errorf("Failed to encode server info response: %v", err)
+			}
+		} else if r.URL.Path == "/api/v1/servers/localhost/zones/example.com." && r.Method == "PUT" {
+			w.WriteHeader(204)
+		} else if r.URL.Path == "/api/v1/servers/localhost/zones/example.com." {
+			zone := ZoneInfo{
+				ID:         "example.com.",
+				Name:       "example.com.",
+				Kind:       "Master",
+				Account:    "test",
+				SoaEditAPI: "DEFAULT",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			if err := json.NewEncoder(w).Encode(zone); err != nil {
+				t.Errorf("Failed to encode zone response: %v", err)
+			}
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+
+	client, _ := NewClient(server.URL, "", "test", nil, false, "10", 300)
+
+	rd := schema.TestResourceDataRaw(t, resourcePDNSZone().Schema, map[string]interface{}{
+		"name":         "example.com.",
+		"kind":         "Master",
+		"account":      "admin",
+		"soa_edit_api": "DEFAULT",
+	})
+	rd.SetId("example.com.")
+
+	err := resourcePDNSZoneUpdate(rd, client)
+	if err != nil {
+		t.Fatalf("resourcePDNSZoneUpdate failed: %v", err)
+	}
+}
+
+func TestResourcePDNSZoneDelete(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/servers" {
+			w.WriteHeader(200)
+		} else if r.URL.Path == "/api/v1/servers/localhost" {
+			serverInfo := map[string]interface{}{
+				"version": "4.5.0",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
+				t.Errorf("Failed to encode server info response: %v", err)
+			}
+		} else if r.URL.Path == "/api/v1/servers/localhost/zones/example.com." && r.Method == "DELETE" {
+			w.WriteHeader(204)
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+
+	client, _ := NewClient(server.URL, "", "test", nil, false, "10", 300)
+
+	rd := schema.TestResourceDataRaw(t, resourcePDNSZone().Schema, map[string]interface{}{
+		"name": "example.com.",
+		"kind": "Native",
+	})
+	rd.SetId("example.com.")
+
+	err := resourcePDNSZoneDelete(rd, client)
+	if err != nil {
+		t.Fatalf("resourcePDNSZoneDelete failed: %v", err)
+	}
+}
+
+func TestResourcePDNSZoneExists(t *testing.T) {
+	tests := []struct {
+		name           string
+		serverResponse int
+		expected       bool
+		expectError    bool
+	}{
+		{
+			name:           "Zone exists",
+			serverResponse: 200,
+			expected:       true,
+			expectError:    false,
+		},
+		{
+			name:           "Zone does not exist",
+			serverResponse: 404,
+			expected:       false,
+			expectError:    false,
+		},
+		{
+			name:           "Server error",
+			serverResponse: 500,
+			expected:       false,
+			expectError:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v1/servers":
+					w.WriteHeader(200)
+				case "/api/v1/servers/localhost":
+					serverInfo := map[string]interface{}{
+						"version": "4.5.0",
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(200)
+					if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
+						t.Errorf("Failed to encode server info response: %v", err)
+					}
+				case "/api/v1/servers/localhost/zones/example.com.":
+					if tt.serverResponse == 500 {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(500)
+						if err := json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Internal Server Error"}); err != nil {
+							t.Errorf("Failed to encode error response: %v", err)
+						}
+					} else {
+						w.WriteHeader(tt.serverResponse)
+					}
+				default:
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+
+			client, _ := NewClient(server.URL, "", "test", nil, false, "10", 300)
+
+			rd := schema.TestResourceDataRaw(t, resourcePDNSZone().Schema, map[string]interface{}{
+				"name": "example.com.",
+				"kind": "Native",
+			})
+			rd.SetId("example.com.")
+
+			exists, err := resourcePDNSZoneExists(rd, client)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if exists != tt.expected {
+					t.Errorf("Expected exists=%v, got %v", tt.expected, exists)
+				}
+			}
+		})
+	}
+}
+
+func TestResourcePDNSZoneCreateSlave(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/servers" {
+			w.WriteHeader(200)
+		} else if r.URL.Path == "/api/v1/servers/localhost" {
+			serverInfo := map[string]interface{}{
+				"version": "4.5.0",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
+				t.Errorf("Failed to encode server info response: %v", err)
+			}
+		} else if r.URL.Path == "/api/v1/servers/localhost/zones" && r.Method == "POST" {
+			var zone ZoneInfo
+			if err := json.NewDecoder(r.Body).Decode(&zone); err != nil {
+				t.Errorf("Failed to decode zone request: %v", err)
+			}
+			if zone.Kind == "Slave" && len(zone.Masters) > 0 {
+				zone.ID = zone.Name
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(201)
+				if err := json.NewEncoder(w).Encode(zone); err != nil {
+					t.Errorf("Failed to encode zone response: %v", err)
+				}
+			} else {
+				w.WriteHeader(400)
+			}
+		} else if r.URL.Path == "/api/v1/servers/localhost/zones/slave.example.com." {
+			zone := ZoneInfo{
+				ID:      "slave.example.com.",
+				Name:    "slave.example.com.",
+				Kind:    "Slave",
+				Masters: []string{"1.2.3.4", "5.6.7.8"},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			if err := json.NewEncoder(w).Encode(zone); err != nil {
+				t.Errorf("Failed to encode zone response: %v", err)
+			}
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+
+	client, _ := NewClient(server.URL, "", "test", nil, false, "10", 300)
+
+	rd := schema.TestResourceDataRaw(t, resourcePDNSZone().Schema, map[string]interface{}{
+		"name":    "slave.example.com.",
+		"kind":    "Slave",
+		"masters": []interface{}{"1.2.3.4", "5.6.7.8"},
+	})
+
+	err := resourcePDNSZoneCreate(rd, client)
+	if err != nil {
+		t.Fatalf("resourcePDNSZoneCreate failed: %v", err)
+	}
+
+	if rd.Id() != "slave.example.com." {
+		t.Errorf("Expected ID 'slave.example.com.', got '%s'", rd.Id())
+	}
+}
+
+func TestResourcePDNSZoneCreateError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/servers" {
+			w.WriteHeader(200)
+		} else if r.URL.Path == "/api/v1/servers/localhost" {
+			serverInfo := map[string]interface{}{
+				"version": "4.5.0",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
+				t.Errorf("Failed to encode server info response: %v", err)
+			}
+		} else if r.URL.Path == "/api/v1/servers/localhost/zones" && r.Method == "POST" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			if err := json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Zone creation failed"}); err != nil {
+				t.Errorf("Failed to encode error response: %v", err)
+			}
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+
+	client, _ := NewClient(server.URL, "", "test", nil, false, "10", 300)
+
+	rd := schema.TestResourceDataRaw(t, resourcePDNSZone().Schema, map[string]interface{}{
+		"name": "error.example.com.",
+		"kind": "Native",
+	})
+
+	err := resourcePDNSZoneCreate(rd, client)
+	if err == nil {
+		t.Fatal("Expected error but got none")
+	}
+}
+
+func TestResourcePDNSZoneReadError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/servers":
+			w.WriteHeader(200)
+		case "/api/v1/servers/localhost":
+			serverInfo := map[string]interface{}{
+				"version": "4.5.0",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
+				t.Errorf("Failed to encode server info response: %v", err)
+			}
+		case "/api/v1/servers/localhost/zones/error.example.com.":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(404)
+			if err := json.NewEncoder(w).Encode(errorResponse{ErrorMsg: "Zone not found"}); err != nil {
+				t.Errorf("Failed to encode error response: %v", err)
+			}
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+
+	client, _ := NewClient(server.URL, "", "test", nil, false, "10", 300)
+
+	rd := schema.TestResourceDataRaw(t, resourcePDNSZone().Schema, map[string]interface{}{
+		"name": "error.example.com.",
+		"kind": "Native",
+	})
+	rd.SetId("error.example.com.")
+
+	err := resourcePDNSZoneRead(rd, client)
+	if err == nil {
+		t.Fatal("Expected error but got none")
+	}
+}
