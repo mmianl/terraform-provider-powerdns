@@ -1,3 +1,9 @@
+## 1.7.2 (September 25, 2025)
+
+ENHANCEMENTS:
+  * **Bump github.com/stretchr/testify from 1.10.0 to 1.11.0**
+  * **Add dependabot config** ([#13](https://github.com/mmianl/terraform-provider-powerdns/issues/13), @mmianl)
+
 ## 1.7.1 (July 07, 2025)
 
 FEATURES:

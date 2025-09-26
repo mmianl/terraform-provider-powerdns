@@ -4,6 +4,7 @@ The Terraform PowerDNS provider allows you to manage PowerDNS zones and records 
 
 - Website: https://www.terraform.io
 - [![Gitter chat](https://badges.gitter.im/hashicorp-terraform/Lobby.png)](https://gitter.im/hashicorp-terraform/Lobby)
+- [![codecov](https://codecov.io/gh/mmianl/terraform-provider-powerdns/branch/main/graph/badge.svg)](https://codecov.io/gh/mmianl/terraform-provider-powerdns)
 - Mailing list: [Google Groups](http://groups.google.com/group/terraform-tool)
 
 ## Requirements

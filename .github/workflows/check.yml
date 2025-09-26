@@ -30,3 +30,13 @@ jobs:
           go-version: 1.24.4
       - name: Test
         run: make test
+      - name: Generate coverage report
+        run: |
+          go test -coverprofile=coverage.out ./powerdns
+          go tool cover -html=coverage.out -o coverage.html
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
