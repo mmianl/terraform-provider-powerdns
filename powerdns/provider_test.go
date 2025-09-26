@@ -37,9 +37,27 @@ func testAccPreCheck(t *testing.T) {
 	}
 }
 
+//nolint:unused // This function is intended to be used in recursor acceptance tests
 func testAccPreCheckRecursor(t *testing.T) {
 	testAccPreCheck(t)
 	if v := os.Getenv("PDNS_RECURSOR_SERVER_URL"); v == "" {
 		t.Fatal("PDNS_RECURSOR_SERVER_URL must be set for recursor acceptance tests")
+	}
+}
+
+// BenchmarkProvider benchmarks the provider creation
+func BenchmarkProvider(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Provider()
+	}
+}
+
+// BenchmarkProviderInternalValidate benchmarks the provider internal validation
+func BenchmarkProviderInternalValidate(b *testing.B) {
+	provider := Provider()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = provider.InternalValidate() // Check error return value
 	}
 }
