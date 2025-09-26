@@ -87,10 +87,10 @@ func resourcePDNSZoneCreate(d *schema.ResourceData, meta interface{}) error {
 		if len(splitIPPort) == 2 {
 			port, err := strconv.Atoi(splitIPPort[1])
 			if err != nil {
-				return fmt.Errorf("error converting port value in masters atribute")
+				return fmt.Errorf("error converting port value in masters attribute")
 			}
 			if port < 1 || port > 65535 {
-				return fmt.Errorf("invalid port value in masters atribute")
+				return fmt.Errorf("invalid port value in masters attribute")
 			}
 		}
 		// no matter if string contains just IP or IP:port pair, the first element in split list will be IP
