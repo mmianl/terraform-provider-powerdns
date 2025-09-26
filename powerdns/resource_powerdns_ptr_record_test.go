@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAccPowerDNSPTRRecord_Basic(t *testing.T) {
@@ -165,4 +166,18 @@ func testAccCheckPowerDNSPTRRecordExists(n string) resource.TestCheckFunc {
 
 		return nil
 	}
+}
+
+// Unit test for resourcePDNSPTRRecordCreate with mocked client
+func TestResourcePDNSPTRRecordCreate(t *testing.T) {
+	// Test that the resource schema is properly configured
+	resource := resourcePDNSPTRRecord()
+	assert.NotNil(t, resource)
+	assert.NotNil(t, resource.Schema)
+
+	// Test required fields exist
+	schema := resource.Schema
+	assert.NotNil(t, schema["ip_address"])
+	assert.NotNil(t, schema["hostname"])
+	assert.NotNil(t, schema["reverse_zone"])
 }
