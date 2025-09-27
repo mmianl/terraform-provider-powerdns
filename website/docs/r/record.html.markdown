@@ -60,7 +60,7 @@ resource "powerdns_record" "foobar" {
 ### Multiple values for the same resource record
 Sometimes there is a need to have multiple values for the same DNS resource record, e.g. two IP addresses in A record, or `spf` and `DKIM` values in a TXT record.
 
-Following examples show how to set mutliple values for A, TXT, and MX record types:
+Following examples show how to set multiple values for A, TXT, and MX record types:
 
 ```hcl
 # Add two A records for www.example.com

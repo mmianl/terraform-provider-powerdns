@@ -32,7 +32,7 @@ type Client struct {
 	APIKey            string // REST API Static authentication key
 	APIVersion        int    // API version to use
 	HTTP              *http.Client
-	CacheEnable       bool // Enable/Disable chache for REST API requests
+	CacheEnable       bool // Enable/Disable cache for REST API requests
 	Cache             *freecache.Cache
 	CacheTTL          int
 }
