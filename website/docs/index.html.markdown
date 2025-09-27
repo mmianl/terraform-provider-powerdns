@@ -12,7 +12,7 @@ The PowerDNS provider is used manipulate DNS records supported by PowerDNS serve
 with the proper credentials before it can be used. It supports both the [legacy API](https://doc.powerdns.com/3/httpapi/api_spec/) and the new [version 1 API](https://doc.powerdns.com/md/httpapi/api_spec/), however resources may need to be configured differently.
 
 NOTE: if you're using the sqlite3 PowerDNS backend with an outdated version of PowerDNS, you might face a problem (as described in [#75](https://github.com/pan-net/terraform-provider-powerdns/issues/75) and in [PowerDNS #14564](https://github.com/PowerDNS/pdns/issues/14564)) with terraform's
-default behavior to [run mulitple operations](https://www.terraform.io/docs/commands/apply.html#parallelism-n) in parallel. Using `-parallelism=1` can help solve the limitations of
+default behavior to [run multiple operations](https://www.terraform.io/docs/commands/apply.html#parallelism-n) in parallel. Using `-parallelism=1` can help solve the limitations of
 the sqlite3 PowerDNS Backend. This is **no longer an issue** with PowerDNS Version 4.9.
 
 Use the navigation to the left to read about the available resources.
