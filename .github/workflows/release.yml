@@ -24,23 +24,6 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Cache Go modules
-        uses: actions/cache@v4.3.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-release-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-release-
-            ${{ runner.os }}-go-
-
-      - name: Run tests before release
-        run: |
-          make test
-          make vet
-          make fmtcheck
-
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v6.3.0
         id: import_gpg
@@ -49,7 +32,9 @@ jobs:
           passphrase: ${{ secrets.PASSPHRASE }}
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6.4.0
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
           args: release --clean
         env:
           # GitHub sets the GITHUB_TOKEN secret automatically.
@@ -76,9 +61,9 @@ jobs:
             echo "First release of terraform-provider-powerdns" >> release_notes.md
           fi
 
-          echo "subject<<EOF" >> $GITHUB_OUTPUT
-          cat release_notes.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "subject<<EOF" >> "$GITHUB_OUTPUT"
+          cat release_notes.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Update release with changelog
         uses: softprops/action-gh-release@v2.3.3

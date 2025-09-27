@@ -1,4 +1,4 @@
-name: test
+name: Test
 
 on: [push, pull_request]
 
@@ -7,7 +7,7 @@ permissions:
 
 jobs:
   test:
-    name: test
+    name: Test and Coverage
     runs-on: ubuntu-latest
     services:
       # Use docker service to run containers
@@ -25,22 +25,10 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Cache Go modules
-        uses: actions/cache@v4.3.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-test-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-test-
-            ${{ runner.os }}-go-
-
       - name: Install Docker Compose
         run: |
-          curl -L "https://github.com/docker/compose/releases/download/v2.39.4/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          curl -L "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
           chmod +x /usr/local/bin/docker-compose
-          docker-compose --version
 
       - name: Build provider binary
         run: |
@@ -151,8 +139,12 @@ jobs:
              attempt=$((attempt + 1))
            done
 
+      - name: Run unit tests with coverage
+        run: |
+          echo "Running unit tests with coverage..."
+          go test -v -coverprofile=unit-coverage.out -covermode=atomic $(go list ./... | grep -v 'vendor')
 
-      - name: Run acceptance tests
+      - name: Run acceptance tests with coverage
         run: |
           # Set environment variables for acceptance tests
           export PDNS_SERVER_URL="http://localhost:8081"
@@ -160,9 +152,33 @@ jobs:
           export PDNS_RECURSOR_SERVER_URL="http://localhost:8082"
           export TF_ACC=1
 
-          # Run acceptance tests with timeout and retry logic
-          echo "Running acceptance tests..."
-          timeout 20m make testacc
+          # Run acceptance tests with coverage
+          echo "Running acceptance tests with coverage..."
+          timeout 20m go test -v -coverprofile=acceptance-coverage.out -covermode=atomic $(go list ./... | grep -v 'vendor') -parallel=5 -timeout=120m
+
+      - name: Merge coverage profiles
+        run: |
+          # Install gocovmerge if coverage files exist
+          if [ -f "unit-coverage.out" ] || [ -f "acceptance-coverage.out" ]; then
+            go install github.com/wadey/gocovmerge@latest
+            
+            # Create merged coverage file
+            gocovmerge unit-coverage.out acceptance-coverage.out > coverage.out
+            
+            # Show coverage summary
+            go tool cover -func=coverage.out
+          else
+            echo "No coverage files found to merge"
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5.5.1
+        with:
+          files: ./coverage.out
+          flags: tests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: true
 
       - name: Upload test logs on failure
         if: failure()
