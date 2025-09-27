@@ -19,7 +19,7 @@ func TestAccPowerDNSPTRRecord_Basic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPowerDNSPTRRecordExists("powerdns_ptr_record.test"),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "ip_address", "10.1.2.3"),
-					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "hostname", "host.example.com"),
+					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "hostname", "host.example.com."),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "ttl", "300"),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "reverse_zone", "10.in-addr.arpa."),
 				),
@@ -39,7 +39,7 @@ func TestAccPowerDNSPTRRecord_Update(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPowerDNSPTRRecordExists("powerdns_ptr_record.test"),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "ip_address", "10.1.2.3"),
-					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "hostname", "host.example.com"),
+					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "hostname", "host.example.com."),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "ttl", "300"),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "reverse_zone", "10.in-addr.arpa."),
 				),
@@ -49,7 +49,7 @@ func TestAccPowerDNSPTRRecord_Update(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPowerDNSPTRRecordExists("powerdns_ptr_record.test"),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "ip_address", "10.1.2.3"),
-					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "hostname", "newhost.example.com"),
+					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "hostname", "newhost.example.com."),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "ttl", "600"),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test", "reverse_zone", "10.in-addr.arpa."),
 				),
@@ -69,7 +69,7 @@ func TestAccPowerDNSPTRRecord_IPv6(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPowerDNSPTRRecordExists("powerdns_ptr_record.test_ipv6"),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test_ipv6", "ip_address", "2001:db8::1"),
-					resource.TestCheckResourceAttr("powerdns_ptr_record.test_ipv6", "hostname", "host.example.com"),
+					resource.TestCheckResourceAttr("powerdns_ptr_record.test_ipv6", "hostname", "host.example.com."),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test_ipv6", "ttl", "300"),
 					resource.TestCheckResourceAttr("powerdns_ptr_record.test_ipv6", "reverse_zone", "8.b.d.0.1.0.0.2.ip6.arpa."),
 				),
@@ -87,7 +87,7 @@ resource "powerdns_reverse_zone" "test" {
 
 resource "powerdns_ptr_record" "test" {
   ip_address   = "10.1.2.3"
-  hostname     = "host.example.com"
+  hostname     = "host.example.com."
   ttl          = 300
   reverse_zone = powerdns_reverse_zone.test.name
 }
@@ -102,7 +102,7 @@ resource "powerdns_reverse_zone" "test" {
 
 resource "powerdns_ptr_record" "test" {
   ip_address   = "10.1.2.3"
-  hostname     = "newhost.example.com"
+  hostname     = "newhost.example.com."
   ttl          = 600
   reverse_zone = powerdns_reverse_zone.test.name
 }
@@ -117,7 +117,7 @@ resource "powerdns_reverse_zone" "test_ipv6" {
 
 resource "powerdns_ptr_record" "test_ipv6" {
   ip_address   = "2001:db8::1"
-  hostname     = "host.example.com"
+  hostname     = "host.example.com."
   ttl          = 300
   reverse_zone = powerdns_reverse_zone.test_ipv6.name
 }

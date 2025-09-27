@@ -78,7 +78,8 @@ func resourcePDNSPTRRecordCreate(d *schema.ResourceData, meta interface{}) error
 		suffix = ".ip6.arpa."
 	}
 
-	// Create the PTR record with full FQDN
+	// Create the PTR record with hostname as-is
+	// PowerDNS expects PTR record content without trailing dot
 	rrSet := ResourceRecordSet{
 		Name:       ptrName + suffix,
 		Type:       "PTR",

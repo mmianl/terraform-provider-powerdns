@@ -1,5 +1,5 @@
 This root CA is used in tests and should never ever be considered for use
-in any environment besides developmet.
+in any environment besides development.
 
 * Create root CA
 ```

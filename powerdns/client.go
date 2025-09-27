@@ -32,7 +32,7 @@ type Client struct {
 	APIKey            string // REST API Static authentication key
 	APIVersion        int    // API version to use
 	HTTP              *http.Client
-	CacheEnable       bool // Enable/Disable chache for REST API requests
+	CacheEnable       bool // Enable/Disable cache for REST API requests
 	Cache             *freecache.Cache
 	CacheTTL          int
 }
@@ -176,11 +176,12 @@ func (client *Client) newRequest(method string, endpoint string, body []byte) (*
 func (client *Client) newRequestRecursor(method string, endpoint string, body []byte) (*http.Request, error) {
 	var err error
 	if client.APIVersion < 0 {
-		client.APIVersion, err = client.detectAPIVersion()
-	}
-
-	if err != nil {
-		return nil, err
+		// Try to detect API version using recursor server instead of authoritative server
+		client.APIVersion, err = client.detectRecursorAPIVersion()
+		if err != nil {
+			// If detection fails, default to API version 1 for recursor
+			client.APIVersion = 1
+		}
 	}
 
 	var urlStr string
@@ -332,6 +333,40 @@ func (client *Client) detectAPIVersion() (int, error) {
 			log.Printf("[WARN] Error closing response body: %s", err)
 		}
 	}()
+	if resp.StatusCode == 200 {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+// Detects the API version in use on the recursor server
+func (client *Client) detectRecursorAPIVersion() (int, error) {
+	httpClient := client.HTTP
+
+	url, err := url.Parse(client.RecursorServerURL + "/api/v1/servers")
+	if err != nil {
+		return -1, fmt.Errorf("error while trying to detect the recursor API version, request URL: %s", err)
+	}
+
+	req, err := http.NewRequest("GET", url.String(), nil)
+	if err != nil {
+		return -1, fmt.Errorf("error during creation of recursor request: %s", err)
+	}
+
+	req.Header.Add("X-API-Key", client.APIKey)
+	req.Header.Add("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return -1, err
+	}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] Error closing response body: %s", err)
+		}
+	}()
+
 	if resp.StatusCode == 200 {
 		return 1, nil
 	}
@@ -778,7 +813,7 @@ func (client *Client) setServerVersion() error {
 
 // GetRecursorConfig gets all recursor config
 func (client *Client) GetRecursorConfig() (map[string]string, error) {
-	req, err := client.newRequestRecursor("GET", "/servers/localhost/config", nil)
+	req, err := client.newRequestRecursor("GET", "/api/v1/servers/localhost/config", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +853,7 @@ func (client *Client) GetRecursorConfig() (map[string]string, error) {
 
 // GetRecursorConfigValue gets a specific recursor config value
 func (client *Client) GetRecursorConfigValue(name string) (string, error) {
-	req, err := client.newRequestRecursor("GET", fmt.Sprintf("/servers/localhost/config/%s", name), nil)
+	req, err := client.newRequestRecursor("GET", fmt.Sprintf("/api/v1/servers/localhost/config/%s", name), nil)
 	if err != nil {
 		return "", err
 	}
@@ -858,12 +893,10 @@ func (client *Client) GetRecursorConfigValue(name string) (string, error) {
 
 // SetRecursorConfigValue sets a recursor config value
 func (client *Client) SetRecursorConfigValue(name string, value string) error {
-	body, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
+	// Send as JSON string to match what GetRecursorConfigValue expects
+	body := []byte(fmt.Sprintf(`"%s"`, value))
 
-	req, err := client.newRequestRecursor("PUT", fmt.Sprintf("/servers/localhost/config/%s", name), body)
+	req, err := client.newRequestRecursor("PUT", fmt.Sprintf("/api/v1/servers/localhost/config/%s", name), body)
 	if err != nil {
 		return err
 	}
@@ -878,20 +911,24 @@ func (client *Client) SetRecursorConfigValue(name string, value string) error {
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
+	// Accept both 200 (OK), 201 (Created), and 204 (No Content) as success for recursor API
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error setting recursor config %s", name)
+			// If we can't decode the error response, provide more context
+			log.Printf("[DEBUG] Failed to decode error response for config %s, status: %d", name, resp.StatusCode)
+			return fmt.Errorf("error setting recursor config %s (HTTP %d)", name, resp.StatusCode)
 		}
 		return fmt.Errorf("error setting recursor config %s: %q", name, errorResp.ErrorMsg)
 	}
 
+	log.Printf("[DEBUG] Successfully set recursor config %s to %s", name, value)
 	return nil
 }
 
 // DeleteRecursorConfigValue deletes a recursor config value
 func (client *Client) DeleteRecursorConfigValue(name string) error {
-	req, err := client.newRequestRecursor("DELETE", fmt.Sprintf("/servers/localhost/config/%s", name), nil)
+	req, err := client.newRequestRecursor("DELETE", fmt.Sprintf("/api/v1/servers/localhost/config/%s", name), nil)
 	if err != nil {
 		return err
 	}
