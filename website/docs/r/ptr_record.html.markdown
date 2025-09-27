@@ -3,7 +3,7 @@ layout: "powerdns"
 page_title: "PowerDNS: powerdns_ptr_record"
 sidebar_current: "docs-powerdns-ptr-record"
 description: |-
-  Provides a PowerDNS PTR record resource for managing reverse DNS records.
+  Provides a PowerDNS PTR record resource for managing reverse DNS records. This resource is specifically designed for handling PTR records in reverse DNS zones for both IPv4 and IPv6 addresses.
 ---
 
 # powerdns_ptr_record
@@ -75,14 +75,11 @@ resource "powerdns_ptr_record" "example_ipv6" {
 
 ## Argument Reference
 
-The following arguments are supported:
+This resource supports the following arguments:
 
 - `ip_address` - (Required) The IP address for which to create the PTR record. Can be either an IPv4 or IPv6 address.
-
 - `hostname` - (Required) The hostname to which the IP address should point. Must be a valid FQDN ending with a dot.
-
 - `ttl` - (Required) The TTL (Time To Live) of the record in seconds.
-
 - `reverse_zone` - (Required) The name of the reverse zone where the PTR record will be created. This can be the output of a `powerdns_reverse_zone` resource or a `powerdns_reverse_zone` data source.
 
 ## Notes

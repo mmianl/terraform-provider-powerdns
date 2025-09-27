@@ -3,7 +3,7 @@ layout: "powerdns"
 page_title: "PowerDNS: powerdns_reverse_zone"
 sidebar_current: "docs-powerdns-reverse-zone"
 description: |-
-  Provides a PowerDNS reverse zone resource for managing in-addr.arpa and ip6.arpa zones.
+  Provides a PowerDNS reverse zone resource for managing in-addr.arpa and ip6.arpa zones. This resource is specifically designed for handling reverse DNS zones for both IPv4 and IPv6 networks.
 ---
 
 # powerdns_reverse_zone
@@ -40,19 +40,17 @@ resource "powerdns_reverse_zone" "zone_2001_db8" {
 
 ## Argument Reference
 
-The following arguments are supported:
+This resource supports the following arguments:
 
 - `cidr` - (Required) The CIDR block for the reverse zone (e.g., '172.16.0.0/16' or '2001:db8::/32'). For IPv4, must have a prefix length of 8, 16, or 24. For IPv6, must have a prefix length that is a multiple of 4 between 4 and 124.
-
 - `kind` - (Required) The kind of zone. Must be either "Master" or "Slave".
-
 - `nameservers` - (Required) List of nameservers for this zone. Each nameserver must be a valid FQDN ending with a dot.
 
 ## Attribute Reference
 
 This resource exports the following attributes in addition to the arguments above:
 
-- `name` - The computed zone name (e.g., '16.172.in-addr.arpa.' for IPv4 or '8.b.d.0.1.0.0.2.ip6.arpa.' for IPv6).
+- `name` - Computed zone name (e.g., '16.172.in-addr.arpa.' for IPv4 or '8.b.d.0.1.0.0.2.ip6.arpa.' for IPv6).
 
 ## Notes
 

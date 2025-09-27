@@ -3,7 +3,7 @@ layout: "powerdns"
 page_title: "PowerDNS: powerdns_recursor_config"
 sidebar_current: "docs-powerdns-recursor-config"
 description: |-
-  Provides a PowerDNS recursor config resource for managing PowerDNS recursor configuration settings.
+  Provides a PowerDNS recursor config resource for managing PowerDNS recursor configuration settings via the recursor API.
 ---
 
 # powerdns_recursor_config
@@ -26,10 +26,9 @@ resource "powerdns_recursor_config" "client_tcp_timeout" {
 
 ## Argument Reference
 
-The following arguments are supported:
+This resource supports the following arguments:
 
 - `name` - (Required) The name of the recursor configuration setting.
-
 - `value` - (Required) The value of the recursor configuration setting.
 
 ## Notes

@@ -3,7 +3,7 @@ layout: "powerdns"
 page_title: "PowerDNS: powerdns_recursor_forward_zone"
 sidebar_current: "docs-powerdns-recursor-forward-zone"
 description: |-
-  Provides a PowerDNS recursor forward zone resource for managing DNS forwarding configuration.
+  Provides a PowerDNS recursor forward zone resource for managing DNS forwarding configuration via the recursor API.
 ---
 
 # powerdns_recursor_forward_zone
@@ -26,10 +26,9 @@ resource "powerdns_recursor_forward_zone" "internal" {
 
 ## Argument Reference
 
-The following arguments are supported:
+This resource supports the following arguments:
 
 - `zone` - (Required) The DNS zone name to forward queries for.
-
 - `servers` - (Required) A list of DNS server IP addresses to forward queries to for this zone.
 
 ## Notes
