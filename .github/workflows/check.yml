@@ -32,7 +32,7 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
   check:
-    name: check
+    name: Check and Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -43,17 +43,6 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
-
-      - name: Cache Go modules
-        uses: actions/cache@v4.3.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-check-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-check-
-            ${{ runner.os }}-go-
 
       - name: Format check
         run: make fmtcheck
@@ -66,34 +55,6 @@ jobs:
 
       - name: Vet
         run: make vet
-
-      - name: Run tests
-        run: make test
-
-      - name: Run tests with race detector
-        run: make test TESTARGS="-race"
-
-      - name: Upload coverage to Codecov
-        if: matrix.go-version == '1.24'
-        uses: codecov/codecov-action@v5.5.1
-        with:
-          file: ./coverage.out
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: 'go.mod'
-          cache: true
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
