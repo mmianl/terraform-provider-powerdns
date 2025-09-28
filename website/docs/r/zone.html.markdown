@@ -49,8 +49,8 @@ An existing zone can be imported into this resource by supplying the zone name. 
 
 For example, to import zone `test.com.`:
 
-```
-$ terraform import powerdns_zone.test test.com.
+```bash
+terraform import powerdns_zone.test test.com.
 ```
 
 For more information on how to use terraform's `import` command, please refer to terraform's [core documentation](https://www.terraform.io/docs/import/index.html#currently-state-only).

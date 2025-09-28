@@ -1,3 +1,16 @@
+## 1.8.0 (September 28, 2025)
+
+FEATURES:
+  * **Dependency updates** ([#16](https://github.com/mmianl/terraform-provider-powerdns/pull/16), @dependabot)
+  * **Dependency updates** ([#17](https://github.com/mmianl/terraform-provider-powerdns/pull/17), @dependabot)
+  * **Add basic support for PowerDNS recursor api** ([#18](https://github.com/mmianl/terraform-provider-powerdns/issues/18), @MrKeiKun)
+  * **Introduce reverse_zone data source** ([#19](https://github.com/mmianl/terraform-provider-powerdns/issues/19), @MrKeiKun)
+
+## 1.7.2 (August 25, 2025)
+
+FEATURES:
+  * **Dependency updates** ([#15](https://github.com/mmianl/terraform-provider-powerdns/pull/15), @dependabot)
+
 ## 1.7.1 (July 07, 2025)
 
 FEATURES:
