@@ -63,8 +63,8 @@ An existing reverse zone can be imported into this resource by supplying the zon
 
 For example, to import zone `16.172.in-addr.arpa.`:
 
-```
-$ terraform import powerdns_reverse_zone.test 16.172.in-addr.arpa.
+```bash
+terraform import powerdns_reverse_zone.test 16.172.in-addr.arpa.
 ```
 
 For more information on how to use terraform's `import` command, please refer to terraform's [core documentation](https://www.terraform.io/docs/import/index.html#currently-state-only).

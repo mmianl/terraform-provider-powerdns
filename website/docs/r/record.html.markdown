@@ -6,15 +6,55 @@ description: |-
   Manages PowerDNS DNS records within Terraform. This resource supports all standard DNS record types including A, AAAA, CNAME, MX, TXT, SRV, and more, with full control over TTL values and record data.
 ---
 
-# powerdns\_record
+# powerdns_record
 
 Manages PowerDNS DNS records within Terraform. This resource supports all standard DNS record types including A, AAAA, CNAME, MX, TXT, SRV, and more, with full control over TTL values and record data.
+
+## Supported Record Types
+
+The `powerdns_record` resource supports all standard DNS record types that PowerDNS supports. Below is a comprehensive list organized by category:
+
+### Basic Address Records
+
+- **A** - IPv4 address records
+- **AAAA** - IPv6 address records
+
+### Name Resolution Records
+
+- **CNAME** - Canonical name records (alias records)
+- **ALIAS** - Alias records (PowerDNS-specific, similar to CNAME but works at zone apex)
+
+### Mail and Service Records
+
+- **MX** - Mail exchange records
+- **SRV** - Service locator records
+- **NAPTR** - Naming authority pointer records
+
+### Text and Metadata Records
+
+- **TXT** - Text records (SPF, DKIM, DMARC, etc.)
+- **SPF** - Sender Policy Framework records (deprecated, use TXT instead)
+
+### Administrative Records
+
+- **NS** - Name server records
+- **SOA** - Start of authority records
+- **HINFO** - Host information records
+- **LOC** - Location records
+- **SSHFP** - SSH public key fingerprint records
+
+### Reverse DNS Records
+
+- **PTR** - Pointer records (typically managed via `powerdns_ptr_record` resource)
 
 ## Example Usage
 
 Note that PowerDNS may internally lowercase certain records (e.g. CNAME and AAAA), which may lead to resources being marked for a change in every single plan/apply.
 
-### A record example
+### Record Type Examples
+
+#### A record example
+
 For the v1 API (PowerDNS version 4):
 
 ```hcl
@@ -28,7 +68,21 @@ resource "powerdns_record" "foobar" {
 }
 ```
 
-### PTR record example
+#### AAAA (IPv6) Records
+
+```hcl
+# IPv6 address record
+resource "powerdns_record" "ipv6_example" {
+  zone    = "example.com."
+  name    = "ipv6.example.com."
+  type    = "AAAA"
+  ttl     = 300
+  records = ["2001:db8::1", "2001:db8::2"]
+}
+```
+
+#### PTR record example
+
 An example creating PTR record:
 
 ```hcl
@@ -42,7 +96,8 @@ resource "powerdns_record" "foobar" {
 }
 ```
 
-### MX record example
+#### MX record example
+
 The following example shows, how to setup MX record with a priority of `10`.
 Please note that priority is not set as other `powerdns_record` properties; rather, it's part of the string that goes into `records` list.
 
@@ -54,102 +109,6 @@ resource "powerdns_record" "foobar" {
   type    = "MX"
   ttl     = 300
   records = ["10 mail1.example.com"]
-}
-```
-
-## Supported Record Types
-
-The `powerdns_record` resource supports all standard DNS record types that PowerDNS supports. Below is a comprehensive list organized by category:
-
-#### Basic Address Records
-- **A** - IPv4 address records
-- **AAAA** - IPv6 address records
-
-#### Name Resolution Records
-- **CNAME** - Canonical name records (alias records)
-- **ALIAS** - Alias records (PowerDNS-specific, similar to CNAME but works at zone apex)
-
-#### Mail and Service Records
-- **MX** - Mail exchange records
-- **SRV** - Service locator records
-- **NAPTR** - Naming authority pointer records
-
-#### Text and Metadata Records
-- **TXT** - Text records (SPF, DKIM, DMARC, etc.)
-- **SPF** - Sender Policy Framework records (deprecated, use TXT instead)
-
-#### Administrative Records
-- **NS** - Name server records
-- **SOA** - Start of authority records
-- **HINFO** - Host information records
-- **LOC** - Location records
-- **SSHFP** - SSH public key fingerprint records
-
-#### Reverse DNS Records
-- **PTR** - Pointer records (typically managed via `powerdns_ptr_record` resource)
-
-### Multiple Values for Records
-
-Sometimes you need multiple values for the same DNS resource record, such as multiple IP addresses for load balancing or multiple mail servers.
-
-#### A Records with Multiple IPs
-
-```hcl
-# Add multiple A records for load balancing
-resource "powerdns_record" "load_balanced" {
-  zone    = "example.com."
-  name    = "www.example.com."
-  type    = "A"
-  ttl     = 300
-  records = ["192.168.0.11", "192.168.0.12", "192.168.0.13"]
-}
-```
-
-#### TXT Records with Multiple Values
-
-```hcl
-# Multiple TXT records for SPF and DKIM
-resource "powerdns_record" "multi_txt" {
-  zone    = "example.com."
-  name    = "example.com."
-  type    = "TXT"
-  ttl     = 300
-  records = [
-    "\"v=spf1 mx -all\"",
-    "\"v=DKIM1; k=rsa; s=email; p=Msdsdfsdfsdfsdfsdfsdfsdfsdfsdfsfdfsdfsdfsdfds\""
-  ]
-}
-```
-
-#### MX Records with Multiple Mail Servers
-
-```hcl
-# Multiple MX records with different priorities
-resource "powerdns_record" "multi_mx" {
-  zone    = "example.com."
-  name    = "example.com."
-  type    = "MX"
-  ttl     = 300
-  records = [
-    "10 mail1.example.com",
-    "20 mail2.example.com",
-    "30 mail3.example.com"
-  ]
-}
-```
-
-### Record Type Examples
-
-#### AAAA (IPv6) Records
-
-```hcl
-# IPv6 address record
-resource "powerdns_record" "ipv6_example" {
-  zone    = "example.com."
-  name    = "ipv6.example.com."
-  type    = "AAAA"
-  ttl     = 300
-  records = ["2001:db8::1", "2001:db8::2"]
 }
 ```
 
@@ -272,71 +231,55 @@ resource "powerdns_record" "alias_example" {
 }
 ```
 
-## Record-Specific Formatting Guidelines
+### Multiple Values for Records
 
-Different DNS record types require specific formatting for their content. Here are the most important formatting rules:
+Sometimes you need multiple values for the same DNS resource record, such as multiple IP addresses for load balancing or multiple mail servers.
 
-#### General Rules
-- **FQDN endings**: Most records that reference other domain names should end with a dot (`.`) to indicate they are fully qualified domain names
-- **Quoting**: Text values in TXT records must be quoted with double quotes
-- **Priority values**: MX and SRV records include priority/weight values as part of their content
+#### A Records with Multiple IPs
 
-#### Record Type Specific Formatting
+```hcl
+# Add multiple A records for load balancing
+resource "powerdns_record" "load_balanced" {
+  zone    = "example.com."
+  name    = "www.example.com."
+  type    = "A"
+  ttl     = 300
+  records = ["192.168.0.11", "192.168.0.12", "192.168.0.13"]
+}
+```
 
-| Record Type | Format | Example |
-|-------------|--------|---------|
-| **A** | IPv4 address | `192.168.1.1` |
-| **AAAA** | IPv6 address | `2001:db8::1` |
-| **CNAME** | Target domain (with trailing dot) | `target.example.com.` |
-| **MX** | Priority and mail server | `10 mail.example.com.` |
-| **SRV** | Priority, weight, port, target | `10 60 5060 sip.example.com.` |
-| **TXT** | Quoted text | `"v=spf1 mx -all"` |
-| **NS** | Name server (with trailing dot) | `ns1.example.com.` |
-| **PTR** | Target domain (with trailing dot) | `host.example.com.` |
-| **HINFO** | Quoted hardware and software | `"PC-Intel-2.4ghz" "Linux"` |
-| **LOC** | Location coordinates | `51 56 0.123 N 5 54 0.000 E 4.00m 1.00m 10000.00m 10.00m` |
-| **SSHFP** | Algorithm, type, fingerprint | `1 1 123456789abcdef67890123456789abcdef67890` |
-| **NAPTR** | Order, preference, flags, service, regexp, replacement | `100 50 "s" "z3950+I2L+I2C" "" _z3950._tcp.gatech.edu.` |
+#### TXT Records with Multiple Values
 
-#### Common Formatting Mistakes to Avoid
+```hcl
+# Multiple TXT records for SPF and DKIM
+resource "powerdns_record" "multi_txt" {
+  zone    = "example.com."
+  name    = "example.com."
+  type    = "TXT"
+  ttl     = 300
+  records = [
+    "\"v=spf1 mx -all\"",
+    "\"v=DKIM1; k=rsa; s=email; p=Msdsdfsdfsdfsdfsdfsdfsdfsdfsdfsfdfsdfsdfsdfds\""
+  ]
+}
+```
 
-1. **Missing trailing dots**: `CNAME target.example.com` should be `CNAME target.example.com.`
-2. **Unquoted TXT values**: `TXT v=spf1 mx -all` should be `TXT "v=spf1 mx -all"`
-3. **Missing priority in MX**: `MX mail.example.com.` should be `MX 10 mail.example.com.`
-4. **Incorrect SRV format**: `SRV sip.example.com. 5060` should be `SRV 10 60 5060 sip.example.com.`
+#### MX Records with Multiple Mail Servers
 
-### Best Practices and Recommendations
-
-#### TTL Recommendations by Record Type
-
-| Record Type | Recommended TTL | Notes |
-|-------------|----------------|-------|
-| **A/AAAA** | 300-3600 | Address records, balance between freshness and performance |
-| **CNAME** | 300-3600 | Alias records, should match target record TTL |
-| **MX** | 300-3600 | Mail routing, important for email delivery |
-| **TXT** | 300-86400 | Text records, often cached by email systems |
-| **NS** | 86400+ | Name server records, should be stable |
-| **SOA** | 86400+ | Zone metadata, rarely changes |
-| **SRV** | 300-3600 | Service records, balance between performance and updates |
-
-#### Performance Considerations
-
-- **Use appropriate TTLs**: Lower TTLs provide faster updates but increase DNS query load
-- **Group related records**: Consider using the same TTL for records that change together
-- **Consider caching**: Email systems and CDNs may cache TXT records longer than specified TTL
-
-#### Security Considerations
-
-- **SPF records**: Use TXT records instead of deprecated SPF type
-- **DKIM/DMARC**: Store cryptographic keys in TXT records with appropriate TTL
-- **SSHFP**: Consider security implications of publishing SSH fingerprints publicly
-
-#### Troubleshooting Common Issues
-
-1. **Record not resolving**: Check for missing trailing dots in FQDN references
-2. **MX records not working**: Verify priority values are included and mail server names are correct
-3. **TXT records not validating**: Ensure proper quoting and escaping of special characters
-4. **SRV records not found**: Verify the service name format (`_service._protocol.domain`)
+```hcl
+# Multiple MX records with different priorities
+resource "powerdns_record" "multi_mx" {
+  zone    = "example.com."
+  name    = "example.com."
+  type    = "MX"
+  ttl     = 300
+  records = [
+    "10 mail1.example.com",
+    "20 mail2.example.com",
+    "30 mail3.example.com"
+  ]
+}
+```
 
 ### Automatically set PTR record for A/AAAA records
 
@@ -375,6 +318,73 @@ resource "powerdns_record" "foobar" {
 }
 ```
 
+## Record-Specific Formatting Guidelines
+
+Different DNS record types require specific formatting for their content. Here are the most important formatting rules:
+
+### General Rules
+
+- **FQDN endings**: Most records that reference other domain names should end with a dot (`.`) to indicate they are fully qualified domain names
+- **Quoting**: Text values in TXT records must be quoted with double quotes
+- **Priority values**: MX and SRV records include priority/weight values as part of their content
+
+#### Record Type Specific Formatting
+
+| Record Type | Format                                                 | Example                                                   |
+| ----------- | ------------------------------------------------------ | --------------------------------------------------------- |
+| **A**       | IPv4 address                                           | `192.168.1.1`                                             |
+| **AAAA**    | IPv6 address                                           | `2001:db8::1`                                             |
+| **CNAME**   | Target domain (with trailing dot)                      | `target.example.com.`                                     |
+| **MX**      | Priority and mail server                               | `10 mail.example.com.`                                    |
+| **SRV**     | Priority, weight, port, target                         | `10 60 5060 sip.example.com.`                             |
+| **TXT**     | Quoted text                                            | `"v=spf1 mx -all"`                                        |
+| **NS**      | Name server (with trailing dot)                        | `ns1.example.com.`                                        |
+| **PTR**     | Target domain (with trailing dot)                      | `host.example.com.`                                       |
+| **HINFO**   | Quoted hardware and software                           | `"PC-Intel-2.4ghz" "Linux"`                               |
+| **LOC**     | Location coordinates                                   | `51 56 0.123 N 5 54 0.000 E 4.00m 1.00m 10000.00m 10.00m` |
+| **SSHFP**   | Algorithm, type, fingerprint                           | `1 1 123456789abcdef67890123456789abcdef67890`            |
+| **NAPTR**   | Order, preference, flags, service, regexp, replacement | `100 50 "s" "z3950+I2L+I2C" "" _z3950._tcp.gatech.edu.`   |
+
+#### Common Formatting Mistakes to Avoid
+
+1. **Missing trailing dots**: `CNAME target.example.com` should be `CNAME target.example.com.`
+2. **Unquoted TXT values**: `TXT v=spf1 mx -all` should be `TXT "v=spf1 mx -all"`
+3. **Missing priority in MX**: `MX mail.example.com.` should be `MX 10 mail.example.com.`
+4. **Incorrect SRV format**: `SRV sip.example.com. 5060` should be `SRV 10 60 5060 sip.example.com.`
+
+## Best Practices and Recommendations
+
+### TTL Recommendations by Record Type
+
+| Record Type | Recommended TTL | Notes                                                      |
+| ----------- | --------------- | ---------------------------------------------------------- |
+| **A/AAAA**  | 300-3600        | Address records, balance between freshness and performance |
+| **CNAME**   | 300-3600        | Alias records, should match target record TTL              |
+| **MX**      | 300-3600        | Mail routing, important for email delivery                 |
+| **TXT**     | 300-86400       | Text records, often cached by email systems                |
+| **NS**      | 86400+          | Name server records, should be stable                      |
+| **SOA**     | 86400+          | Zone metadata, rarely changes                              |
+| **SRV**     | 300-3600        | Service records, balance between performance and updates   |
+
+#### Performance Considerations
+
+- **Use appropriate TTLs**: Lower TTLs provide faster updates but increase DNS query load
+- **Group related records**: Consider using the same TTL for records that change together
+- **Consider caching**: Email systems and CDNs may cache TXT records longer than specified TTL
+
+#### Security Considerations
+
+- **SPF records**: Use TXT records instead of deprecated SPF type
+- **DKIM/DMARC**: Store cryptographic keys in TXT records with appropriate TTL
+- **SSHFP**: Consider security implications of publishing SSH fingerprints publicly
+
+#### Troubleshooting Common Issues
+
+1. **Record not resolving**: Check for missing trailing dots in FQDN references
+2. **MX records not working**: Verify priority values are included and mail server names are correct
+3. **TXT records not validating**: Ensure proper quoting and escaping of special characters
+4. **SRV records not found**: Verify the service name format (`_service._protocol.domain`)
+
 ## Argument Reference
 
 The following arguments are supported:
@@ -401,8 +411,8 @@ If the record or zone is not found, or if the record is of a different type or i
 
 For example:
 
-```
-$ terraform import powerdns_record.test-a '{"zone": "test.com.", "id": "foo.test.com.:::A"}'
+```bash
+terraform import powerdns_record.test-a '{"zone": "test.com.", "id": "foo.test.com.:::A"}'
 ```
 
 For more information on how to use terraform's `import` command, please refer to terraform's [core documentation](https://www.terraform.io/docs/import/index.html#currently-state-only).
