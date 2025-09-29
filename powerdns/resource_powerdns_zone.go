@@ -1,23 +1,25 @@
 package powerdns
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"net"
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func resourcePDNSZone() *schema.Resource {
 	return &schema.Resource{
-		Create: resourcePDNSZoneCreate,
-		Read:   resourcePDNSZoneRead,
-		Update: resourcePDNSZoneUpdate,
-		Delete: resourcePDNSZoneDelete,
-		Exists: resourcePDNSZoneExists,
+		CreateContext: resourcePDNSZoneCreate,
+		ReadContext:   resourcePDNSZoneRead,
+		UpdateContext: resourcePDNSZoneUpdate,
+		DeleteContext: resourcePDNSZoneDelete,
+
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -68,7 +70,7 @@ func resourcePDNSZone() *schema.Resource {
 	}
 }
 
-func resourcePDNSZoneCreate(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
 	var nameservers []string
@@ -81,22 +83,22 @@ func resourcePDNSZoneCreate(d *schema.ResourceData, meta interface{}) error {
 		splitIPPort := strings.Split(masterIPPort.(string), ":")
 		// if there are more elements
 		if len(splitIPPort) > 2 {
-			return fmt.Errorf("more than one colon in <ip>:<port> string")
+			return diag.FromErr(fmt.Errorf("more than one colon in <ip>:<port> string"))
 		}
 		// when there are exactly 2 elements in list, assume second is port and check the port range
 		if len(splitIPPort) == 2 {
 			port, err := strconv.Atoi(splitIPPort[1])
 			if err != nil {
-				return fmt.Errorf("error converting port value in masters atribute")
+				return diag.FromErr(fmt.Errorf("error converting port value in masters attribute"))
 			}
 			if port < 1 || port > 65535 {
-				return fmt.Errorf("invalid port value in masters atribute")
+				return diag.FromErr(fmt.Errorf("invalid port value in masters attribute"))
 			}
 		}
-		// no matter if string contains just IP or IP:port pair, the first element in split list will be IP
+		// first element is IP
 		masterIP := splitIPPort[0]
 		if net.ParseIP(masterIP) == nil {
-			return fmt.Errorf("values in masters list attribute must be valid IPs")
+			return diag.FromErr(fmt.Errorf("values in masters list attribute must be valid IPs"))
 		}
 		masters = append(masters, masterIPPort.(string))
 	}
@@ -113,52 +115,59 @@ func resourcePDNSZoneCreate(d *schema.ResourceData, meta interface{}) error {
 		if strings.EqualFold(zoneInfo.Kind, "Slave") {
 			zoneInfo.Masters = masters
 		} else {
-			return fmt.Errorf("masters attribute is supported only for Slave kind")
+			return diag.FromErr(fmt.Errorf("masters attribute is supported only for Slave kind"))
 		}
 	}
 
-	createdZoneInfo, err := client.CreateZone(zoneInfo)
+	tflog.SetField(ctx, "zone_name", zoneInfo.Name)
+	tflog.SetField(ctx, "zone_kind", zoneInfo.Kind)
+	tflog.Debug(ctx, "Creating PowerDNS Zone")
+
+	createdZoneInfo, err := client.CreateZone(ctx, zoneInfo)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
 	d.SetId(createdZoneInfo.ID)
-	return resourcePDNSZoneRead(d, meta)
+	tflog.Info(ctx, "Created PowerDNS Zone", map[string]any{"id": createdZoneInfo.ID})
+	return resourcePDNSZoneRead(ctx, d, meta)
 }
 
-func resourcePDNSZoneRead(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
-	log.Printf("[DEBUG] Reading PowerDNS Zone: %s", d.Id())
-	zoneInfo, err := client.GetZone(d.Id())
+	tflog.SetField(ctx, "zone_id", d.Id())
+	tflog.Debug(ctx, "Reading PowerDNS Zone")
+
+	zoneInfo, err := client.GetZone(ctx, d.Id())
 	if err != nil {
-		return fmt.Errorf("couldn't fetch PowerDNS Zone: %s", err)
+		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS Zone: %w", err))
 	}
 
-	err = d.Set("name", zoneInfo.Name)
-	if err != nil {
-		return fmt.Errorf("error setting PowerDNS Name: %s", err)
+	if zoneInfo.Name == "" {
+		tflog.Warn(ctx, "Zone not found; removing from state")
+		d.SetId("")
+		return nil
 	}
 
-	err = d.Set("kind", zoneInfo.Kind)
-	if err != nil {
-		return fmt.Errorf("error setting PowerDNS Kind: %s", err)
+	if err := d.Set("name", zoneInfo.Name); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Name: %w", err))
+	}
+	if err := d.Set("kind", zoneInfo.Kind); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Kind: %w", err))
+	}
+	if err := d.Set("account", zoneInfo.Account); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Account: %w", err))
+	}
+	if err := d.Set("soa_edit_api", zoneInfo.SoaEditAPI); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit API: %w", err))
 	}
 
-	err = d.Set("account", zoneInfo.Account)
-	if err != nil {
-		return fmt.Errorf("error setting PowerDNS Account: %s", err)
-	}
-
-	err = d.Set("soa_edit_api", zoneInfo.SoaEditAPI)
-	if err != nil {
-		return fmt.Errorf("error setting PowerDNS SOA Edit API: %s", err)
-	}
-
+	// Only manage NS records for non-Slave zones
 	if !strings.EqualFold(zoneInfo.Kind, "Slave") {
-		nameservers, err := client.ListRecordsInRRSet(zoneInfo.Name, zoneInfo.Name, "NS")
+		nameservers, err := client.ListRecordsInRRSet(ctx, zoneInfo.Name, zoneInfo.Name, "NS")
 		if err != nil {
-			return fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %v", zoneInfo.Name, err)
+			return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneInfo.Name, err))
 		}
 
 		var zoneNameservers []string
@@ -166,24 +175,23 @@ func resourcePDNSZoneRead(d *schema.ResourceData, meta interface{}) error {
 			zoneNameservers = append(zoneNameservers, nameserver.Content)
 		}
 
-		err = d.Set("nameservers", zoneNameservers)
-		if err != nil {
-			return fmt.Errorf("error setting PowerDNS Nameservers: %s", err)
+		if err := d.Set("nameservers", zoneNameservers); err != nil {
+			return diag.FromErr(fmt.Errorf("error setting PowerDNS Nameservers: %w", err))
 		}
 	}
 
 	if strings.EqualFold(zoneInfo.Kind, "Slave") {
-		err = d.Set("masters", zoneInfo.Masters)
-		if err != nil {
-			return fmt.Errorf("error setting PowerDNS Masters: %s", err)
+		if err := d.Set("masters", zoneInfo.Masters); err != nil {
+			return diag.FromErr(fmt.Errorf("error setting PowerDNS Masters: %w", err))
 		}
 	}
 
 	return nil
 }
 
-func resourcePDNSZoneUpdate(d *schema.ResourceData, meta interface{}) error {
-	log.Printf("[DEBUG] Updating PowerDNS Zone: %s", d.Id())
+func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	tflog.SetField(ctx, "zone_id", d.Id())
+	tflog.Debug(ctx, "Updating PowerDNS Zone")
 
 	client := meta.(*Client)
 
@@ -194,35 +202,23 @@ func resourcePDNSZoneUpdate(d *schema.ResourceData, meta interface{}) error {
 		zoneInfo.Account = d.Get("account").(string)
 		zoneInfo.SoaEditAPI = d.Get("soa_edit_api").(string)
 
-		err := client.UpdateZone(d.Id(), zoneInfo)
-		if err != nil {
-			return fmt.Errorf("error updating PowerDNS Zone: %s", err)
+		if err := client.UpdateZone(ctx, d.Id(), zoneInfo); err != nil {
+			return diag.FromErr(fmt.Errorf("error updating PowerDNS Zone: %w", err))
 		}
-		return resourcePDNSZoneRead(d, meta)
+		return resourcePDNSZoneRead(ctx, d, meta)
 	}
 	return nil
 }
 
-func resourcePDNSZoneDelete(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSZoneDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
-	log.Printf("[INFO] Deleting PowerDNS Zone: %s", d.Id())
-	err := client.DeleteZone(d.Id())
+	tflog.SetField(ctx, "zone_id", d.Id())
+	tflog.Debug(ctx, "Deleting PowerDNS Zone")
 
-	if err != nil {
-		return fmt.Errorf("error deleting PowerDNS Zone: %s", err)
+	if err := client.DeleteZone(ctx, d.Id()); err != nil {
+		return diag.FromErr(fmt.Errorf("error deleting PowerDNS Zone: %w", err))
 	}
+	tflog.Info(ctx, "Deleted PowerDNS Zone")
 	return nil
-}
-
-func resourcePDNSZoneExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	log.Printf("[INFO] Checking existence of PowerDNS Zone: %s", d.Id())
-
-	client := meta.(*Client)
-	exists, err := client.ZoneExists(d.Id())
-
-	if err != nil {
-		return false, fmt.Errorf("error checking PowerDNS Zone: %s", err)
-	}
-	return exists, nil
 }

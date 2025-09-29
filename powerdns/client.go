@@ -2,12 +2,12 @@ package powerdns
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +15,7 @@ import (
 
 	freecache "github.com/coocood/freecache"
 	cleanhttp "github.com/hashicorp/go-cleanhttp"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // DefaultSchema is the value used for the URL in case
@@ -32,14 +33,13 @@ type Client struct {
 	APIKey            string // REST API Static authentication key
 	APIVersion        int    // API version to use
 	HTTP              *http.Client
-	CacheEnable       bool // Enable/Disable chache for REST API requests
+	CacheEnable       bool // Enable/Disable cache for REST API requests
 	Cache             *freecache.Cache
 	CacheTTL          int
 }
 
 // NewClient returns a new PowerDNS client
-func NewClient(serverURL string, recursorServerURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*Client, error) {
-
+func NewClient(ctx context.Context, serverURL string, recursorServerURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*Client, error) {
 	cleanURL, err := sanitizeURL(serverURL)
 
 	httpClient := cleanhttp.DefaultClient()
@@ -68,7 +68,7 @@ func NewClient(serverURL string, recursorServerURL string, apiKey string, config
 		CacheTTL:          cacheTTL,
 	}
 
-	if err := client.setServerVersion(); err != nil {
+	if err := client.setServerVersion(ctx); err != nil {
 		return nil, fmt.Errorf("error while creating client: %s", err)
 	}
 
@@ -78,8 +78,6 @@ func NewClient(serverURL string, recursorServerURL string, apiKey string, config
 // sanitizeURL will output:
 // <scheme>://<host>[:port]
 // with no trailing /
-// For details on the implementation be familiar with the behavior or url.Parse
-// specifically: https://go-review.googlesource.com/c/go/+/81436/
 func sanitizeURL(URL string) (string, error) {
 	cleanURL := ""
 	host := ""
@@ -92,7 +90,6 @@ func sanitizeURL(URL string) (string, error) {
 	}
 
 	parsedURL, err := url.Parse(URL)
-
 	if err != nil {
 		return "", fmt.Errorf("error while trying to parse URL: %s", err)
 	}
@@ -100,8 +97,6 @@ func sanitizeURL(URL string) (string, error) {
 	if len(parsedURL.Scheme) == 0 {
 		schema = DefaultSchema
 	} else {
-		// this is necessary because when using `<host>:<port>` (without schema)
-		// url.Parse will contain Scheme = host.
 		if (parsedURL.Scheme == "http") || (parsedURL.Scheme == "https") {
 			schema = parsedURL.Scheme
 		} else {
@@ -110,8 +105,6 @@ func sanitizeURL(URL string) (string, error) {
 	}
 
 	if len(parsedURL.Host) == 0 {
-		// url.Parse will return an empty host when the value passed
-		// contains no schema, so we add a default schema and force parsing
 		tryout, _ := url.Parse(schema + "://" + URL)
 
 		if len(tryout.Host) == 0 {
@@ -119,7 +112,6 @@ func sanitizeURL(URL string) (string, error) {
 		}
 
 		host = tryout.Host
-
 	} else {
 		host = parsedURL.Host
 	}
@@ -130,13 +122,11 @@ func sanitizeURL(URL string) (string, error) {
 }
 
 // Creates a new request with necessary headers
-func (client *Client) newRequest(method string, endpoint string, body []byte) (*http.Request, error) {
-
+func (client *Client) newRequest(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
 	var err error
 	if client.APIVersion < 0 {
-		client.APIVersion, err = client.detectAPIVersion()
+		client.APIVersion, err = client.detectAPIVersion(ctx)
 	}
-
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +137,7 @@ func (client *Client) newRequest(method string, endpoint string, body []byte) (*
 	} else {
 		urlStr = client.ServerURL + endpoint
 	}
-	url, err := url.Parse(urlStr)
+	u, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("error during parsing request URL: %s", err)
 	}
@@ -157,7 +147,7 @@ func (client *Client) newRequest(method string, endpoint string, body []byte) (*
 		bodyReader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, url.String(), bodyReader)
+	req, err := http.NewRequest(method, u.String(), bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("error during creation of request: %s", err)
 	}
@@ -165,7 +155,7 @@ func (client *Client) newRequest(method string, endpoint string, body []byte) (*
 	req.Header.Add("X-API-Key", client.APIKey)
 	req.Header.Add("Accept", "application/json")
 
-	if method != "GET" {
+	if method != http.MethodGet {
 		req.Header.Add("Content-Type", "application/json")
 	}
 
@@ -173,12 +163,11 @@ func (client *Client) newRequest(method string, endpoint string, body []byte) (*
 }
 
 // Creates a new request for recursor API
-func (client *Client) newRequestRecursor(method string, endpoint string, body []byte) (*http.Request, error) {
+func (client *Client) newRequestRecursor(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
 	var err error
 	if client.APIVersion < 0 {
-		client.APIVersion, err = client.detectAPIVersion()
+		client.APIVersion, err = client.detectAPIVersion(ctx)
 	}
-
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +196,7 @@ func (client *Client) newRequestRecursor(method string, endpoint string, body []
 	req.Header.Add("X-API-Key", client.APIKey)
 	req.Header.Add("Accept", "application/json")
 
-	if method != "GET" {
+	if method != http.MethodGet {
 		req.Header.Add("Content-Type", "application/json")
 	}
 
@@ -305,16 +294,15 @@ func parseID(recID string) (string, string, error) {
 // Detects the API version in use on the server
 // Uses int to represent the API version: 0 is the legacy AKA version 3.4 API
 // Any other integer correlates with the same API version
-func (client *Client) detectAPIVersion() (int, error) {
-
+func (client *Client) detectAPIVersion(ctx context.Context) (int, error) {
 	httpClient := client.HTTP
 
-	url, err := url.Parse(client.ServerURL + "/api/v1/servers")
+	u, err := url.Parse(client.ServerURL + "/api/v1/servers")
 	if err != nil {
 		return -1, fmt.Errorf("error while trying to detect the API version, request URL: %s", err)
 	}
 
-	req, err := http.NewRequest("GET", url.String(), nil)
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
 		return -1, fmt.Errorf("error during creation of request: %s", err)
 	}
@@ -329,18 +317,23 @@ func (client *Client) detectAPIVersion() (int, error) {
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
 		}
 	}()
-	if resp.StatusCode == 200 {
+
+	if resp.StatusCode == http.StatusOK {
 		return 1, nil
 	}
 	return 0, nil
 }
 
 // ListZones returns all Zones of server, without records
-func (client *Client) ListZones() ([]ZoneInfo, error) {
-	req, err := client.newRequest("GET", "/servers/localhost/zones", nil)
+func (client *Client) ListZones(ctx context.Context) ([]ZoneInfo, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost/zones", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -351,14 +344,16 @@ func (client *Client) ListZones() ([]ZoneInfo, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
 		}
 	}()
 
 	var zoneInfos []ZoneInfo
-
-	err = json.NewDecoder(resp.Body).Decode(&zoneInfos)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&zoneInfos); err != nil {
 		return nil, err
 	}
 
@@ -366,8 +361,8 @@ func (client *Client) ListZones() ([]ZoneInfo, error) {
 }
 
 // GetZone gets a zone
-func (client *Client) GetZone(name string) (ZoneInfo, error) {
-	req, err := client.newRequest("GET", fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
+func (client *Client) GetZone(ctx context.Context, name string) (ZoneInfo, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
 	if err != nil {
 		return ZoneInfo{}, err
 	}
@@ -378,7 +373,12 @@ func (client *Client) GetZone(name string) (ZoneInfo, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   name,
+			})
 		}
 	}()
 
@@ -391,8 +391,7 @@ func (client *Client) GetZone(name string) (ZoneInfo, error) {
 	}
 
 	var zoneInfo ZoneInfo
-	err = json.NewDecoder(resp.Body).Decode(&zoneInfo)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&zoneInfo); err != nil {
 		return ZoneInfo{}, err
 	}
 
@@ -400,8 +399,8 @@ func (client *Client) GetZone(name string) (ZoneInfo, error) {
 }
 
 // ZoneExists checks if requested zone exists
-func (client *Client) ZoneExists(name string) (bool, error) {
-	req, err := client.newRequest("GET", fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
+func (client *Client) ZoneExists(ctx context.Context, name string) (bool, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
 	if err != nil {
 		return false, err
 	}
@@ -412,7 +411,12 @@ func (client *Client) ZoneExists(name string) (bool, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   name,
+			})
 		}
 	}()
 
@@ -428,13 +432,13 @@ func (client *Client) ZoneExists(name string) (bool, error) {
 }
 
 // CreateZone creates a zone
-func (client *Client) CreateZone(zoneInfo ZoneInfo) (ZoneInfo, error) {
+func (client *Client) CreateZone(ctx context.Context, zoneInfo ZoneInfo) (ZoneInfo, error) {
 	body, err := json.Marshal(zoneInfo)
 	if err != nil {
 		return ZoneInfo{}, err
 	}
 
-	req, err := client.newRequest("POST", "/servers/localhost/zones", body)
+	req, err := client.newRequest(ctx, http.MethodPost, "/servers/localhost/zones", body)
 	if err != nil {
 		return ZoneInfo{}, err
 	}
@@ -445,7 +449,12 @@ func (client *Client) CreateZone(zoneInfo ZoneInfo) (ZoneInfo, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   zoneInfo.Name,
+			})
 		}
 	}()
 
@@ -458,8 +467,7 @@ func (client *Client) CreateZone(zoneInfo ZoneInfo) (ZoneInfo, error) {
 	}
 
 	var createdZoneInfo ZoneInfo
-	err = json.NewDecoder(resp.Body).Decode(&createdZoneInfo)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&createdZoneInfo); err != nil {
 		return ZoneInfo{}, err
 	}
 
@@ -467,13 +475,13 @@ func (client *Client) CreateZone(zoneInfo ZoneInfo) (ZoneInfo, error) {
 }
 
 // UpdateZone updates a zone
-func (client *Client) UpdateZone(name string, zoneInfo ZoneInfoUpd) error {
+func (client *Client) UpdateZone(ctx context.Context, name string, zoneInfo ZoneInfoUpd) error {
 	body, err := json.Marshal(zoneInfo)
 	if err != nil {
 		return err
 	}
 
-	req, err := client.newRequest("PUT", fmt.Sprintf("/servers/localhost/zones/%s", name), body)
+	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/zones/%s", name), body)
 	if err != nil {
 		return err
 	}
@@ -484,7 +492,12 @@ func (client *Client) UpdateZone(name string, zoneInfo ZoneInfoUpd) error {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   name,
+			})
 		}
 	}()
 
@@ -500,8 +513,8 @@ func (client *Client) UpdateZone(name string, zoneInfo ZoneInfoUpd) error {
 }
 
 // DeleteZone deletes a zone
-func (client *Client) DeleteZone(name string) error {
-	req, err := client.newRequest("DELETE", fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
+func (client *Client) DeleteZone(ctx context.Context, name string) error {
+	req, err := client.newRequest(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
 	if err != nil {
 		return err
 	}
@@ -512,11 +525,16 @@ func (client *Client) DeleteZone(name string) error {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   name,
+			})
 		}
 	}()
 
-	if resp.StatusCode != 204 {
+	if resp.StatusCode != http.StatusNoContent {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return fmt.Errorf("error deleting zone: %s", name)
@@ -527,7 +545,7 @@ func (client *Client) DeleteZone(name string) error {
 }
 
 // GetZoneInfoFromCache return ZoneInfo struct
-func (client *Client) GetZoneInfoFromCache(zone string) (*ZoneInfo, error) {
+func (client *Client) GetZoneInfoFromCache(ctx context.Context, zone string) (*ZoneInfo, error) {
 	if client.CacheEnable {
 		cacheZoneInfo, err := client.Cache.Get([]byte(zone))
 		if err != nil {
@@ -535,25 +553,29 @@ func (client *Client) GetZoneInfoFromCache(zone string) (*ZoneInfo, error) {
 		}
 
 		zoneInfo := new(ZoneInfo)
-		err = json.Unmarshal(cacheZoneInfo, &zoneInfo)
-		if err != nil {
+		if err := json.Unmarshal(cacheZoneInfo, &zoneInfo); err != nil {
 			return nil, err
 		}
 
-		return zoneInfo, err
+		return zoneInfo, nil
 	}
+
 	return nil, nil
 }
 
 // ListRecords returns all records in Zone
-func (client *Client) ListRecords(zone string) ([]Record, error) {
-	zoneInfo, err := client.GetZoneInfoFromCache(zone)
+func (client *Client) ListRecords(ctx context.Context, zone string) ([]Record, error) {
+	zoneInfo, err := client.GetZoneInfoFromCache(ctx, zone)
 	if err != nil {
-		log.Printf("[WARN] module.freecache: %s: %s", zone, err)
+		tflog.Warn(ctx, "Cache get failed", map[string]interface{}{
+			"zone":  zone,
+			"error": err.Error(),
+		})
+		return nil, err
 	}
 
 	if zoneInfo == nil {
-		req, err := client.newRequest("GET", fmt.Sprintf("/servers/localhost/zones/%s", zone), nil)
+		req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", zone), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -564,13 +586,17 @@ func (client *Client) ListRecords(zone string) ([]Record, error) {
 		}
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				log.Printf("[WARN] Error closing response body: %s", err)
+				tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+					"error":  err.Error(),
+					"method": req.Method,
+					"url":    req.URL.String(),
+					"zone":   zone,
+				})
 			}
 		}()
 
 		zoneInfo = new(ZoneInfo)
-		err = json.NewDecoder(resp.Body).Decode(zoneInfo)
-		if err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(zoneInfo); err != nil {
 			return nil, err
 		}
 
@@ -580,8 +606,7 @@ func (client *Client) ListRecords(zone string) ([]Record, error) {
 				return nil, err
 			}
 
-			err = client.Cache.Set([]byte(zone), cacheValue, client.CacheTTL)
-			if err != nil {
+			if err := client.Cache.Set([]byte(zone), cacheValue, client.CacheTTL); err != nil {
 				return nil, fmt.Errorf("the cache for REST API requests is enabled but the size isn't enough: cacheSize: %db \n %s",
 					DefaultCacheSize, err)
 			}
@@ -605,8 +630,8 @@ func (client *Client) ListRecords(zone string) ([]Record, error) {
 }
 
 // ListRecordsInRRSet returns only records of specified name and type
-func (client *Client) ListRecordsInRRSet(zone string, name string, tpe string) ([]Record, error) {
-	allRecords, err := client.ListRecords(zone)
+func (client *Client) ListRecordsInRRSet(ctx context.Context, zone string, name string, tpe string) ([]Record, error) {
+	allRecords, err := client.ListRecords(ctx, zone)
 	if err != nil {
 		return nil, err
 	}
@@ -622,17 +647,17 @@ func (client *Client) ListRecordsInRRSet(zone string, name string, tpe string) (
 }
 
 // ListRecordsByID returns all records by IDs
-func (client *Client) ListRecordsByID(zone string, recID string) ([]Record, error) {
+func (client *Client) ListRecordsByID(ctx context.Context, zone string, recID string) ([]Record, error) {
 	name, tpe, err := parseID(recID)
 	if err != nil {
 		return nil, err
 	}
-	return client.ListRecordsInRRSet(zone, name, tpe)
+	return client.ListRecordsInRRSet(ctx, zone, name, tpe)
 }
 
 // RecordExists checks if requested record exists in Zone
-func (client *Client) RecordExists(zone string, name string, tpe string) (bool, error) {
-	allRecords, err := client.ListRecords(zone)
+func (client *Client) RecordExists(ctx context.Context, zone string, name string, tpe string) (bool, error) {
+	allRecords, err := client.ListRecords(ctx, zone)
 	if err != nil {
 		return false, err
 	}
@@ -645,24 +670,24 @@ func (client *Client) RecordExists(zone string, name string, tpe string) (bool, 
 	return false, nil
 }
 
-// RecordExistsByID checks if requested record exists in Zone by it's ID
-func (client *Client) RecordExistsByID(zone string, recID string) (bool, error) {
+// RecordExistsByID checks if requested record exists in Zone by its ID
+func (client *Client) RecordExistsByID(ctx context.Context, zone string, recID string) (bool, error) {
 	name, tpe, err := parseID(recID)
 	if err != nil {
 		return false, err
 	}
-	return client.RecordExists(zone, name, tpe)
+	return client.RecordExists(ctx, zone, name, tpe)
 }
 
 // ReplaceRecordSet creates new record set in Zone
-func (client *Client) ReplaceRecordSet(zone string, rrSet ResourceRecordSet) (string, error) {
+func (client *Client) ReplaceRecordSet(ctx context.Context, zone string, rrSet ResourceRecordSet) (string, error) {
 	rrSet.ChangeType = "REPLACE"
 
 	reqBody, _ := json.Marshal(zonePatchRequest{
 		RecordSets: []ResourceRecordSet{rrSet},
 	})
 
-	req, err := client.newRequest("PATCH", fmt.Sprintf("/servers/localhost/zones/%s", zone), reqBody)
+	req, err := client.newRequest(ctx, http.MethodPatch, fmt.Sprintf("/servers/localhost/zones/%s", zone), reqBody)
 	if err != nil {
 		return "", err
 	}
@@ -673,11 +698,17 @@ func (client *Client) ReplaceRecordSet(zone string, rrSet ResourceRecordSet) (st
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":   err.Error(),
+				"method":  req.Method,
+				"url":     req.URL.String(),
+				"zone":    zone,
+				"rrsetId": rrSet.ID(),
+			})
 		}
 	}()
 
-	if resp.StatusCode != 200 && resp.StatusCode != 204 {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return "", fmt.Errorf("error creating record set: %s", rrSet.ID())
@@ -688,7 +719,7 @@ func (client *Client) ReplaceRecordSet(zone string, rrSet ResourceRecordSet) (st
 }
 
 // DeleteRecordSet deletes record set from Zone
-func (client *Client) DeleteRecordSet(zone string, name string, tpe string) error {
+func (client *Client) DeleteRecordSet(ctx context.Context, zone string, name string, tpe string) error {
 	reqBody, _ := json.Marshal(zonePatchRequest{
 		RecordSets: []ResourceRecordSet{
 			{
@@ -699,7 +730,7 @@ func (client *Client) DeleteRecordSet(zone string, name string, tpe string) erro
 		},
 	})
 
-	req, err := client.newRequest("PATCH", fmt.Sprintf("/servers/localhost/zones/%s", zone), reqBody)
+	req, err := client.newRequest(ctx, http.MethodPatch, fmt.Sprintf("/servers/localhost/zones/%s", zone), reqBody)
 	if err != nil {
 		return err
 	}
@@ -710,11 +741,18 @@ func (client *Client) DeleteRecordSet(zone string, name string, tpe string) erro
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   zone,
+				"name":   name,
+				"type":   tpe,
+			})
 		}
 	}()
 
-	if resp.StatusCode != 200 && resp.StatusCode != 204 {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return fmt.Errorf("error deleting record: %s %s", name, tpe)
@@ -725,16 +763,16 @@ func (client *Client) DeleteRecordSet(zone string, name string, tpe string) erro
 }
 
 // DeleteRecordSetByID deletes record from Zone by its ID
-func (client *Client) DeleteRecordSetByID(zone string, recID string) error {
+func (client *Client) DeleteRecordSetByID(ctx context.Context, zone string, recID string) error {
 	name, tpe, err := parseID(recID)
 	if err != nil {
 		return err
 	}
-	return client.DeleteRecordSet(zone, name, tpe)
+	return client.DeleteRecordSet(ctx, zone, name, tpe)
 }
 
-func (client *Client) setServerVersion() error {
-	req, err := client.newRequest("GET", "/servers/localhost", nil)
+func (client *Client) setServerVersion(ctx context.Context) error {
+	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost", nil)
 	if err != nil {
 		return err
 	}
@@ -743,14 +781,17 @@ func (client *Client) setServerVersion() error {
 	if err != nil {
 		return err
 	}
-
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
 		}
 	}()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("invalid response code from server: '%d'. Failed to read response body: %v",
@@ -761,8 +802,7 @@ func (client *Client) setServerVersion() error {
 	}
 
 	serverInfo := new(serverInfo)
-	err = json.NewDecoder(resp.Body).Decode(serverInfo)
-	if err == nil {
+	if err := json.NewDecoder(resp.Body).Decode(serverInfo); err == nil {
 		client.ServerVersion = serverInfo.Version
 		return nil
 	}
@@ -777,8 +817,8 @@ func (client *Client) setServerVersion() error {
 }
 
 // GetRecursorConfig gets all recursor config
-func (client *Client) GetRecursorConfig() (map[string]string, error) {
-	req, err := client.newRequestRecursor("GET", "/servers/localhost/config", nil)
+func (client *Client) GetRecursorConfig(ctx context.Context) (map[string]string, error) {
+	req, err := client.newRequestRecursor(ctx, http.MethodGet, "/servers/localhost/config", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -789,22 +829,23 @@ func (client *Client) GetRecursorConfig() (map[string]string, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
 		}
 	}()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var config map[string]string
-		err = json.NewDecoder(resp.Body).Decode(&config)
-		if err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
 			return nil, err
 		}
-
 		return config, nil
 
 	case http.StatusNotFound:
-		// Map 404 to sentinel error
 		return nil, ErrNotFound
 
 	default:
@@ -817,8 +858,8 @@ func (client *Client) GetRecursorConfig() (map[string]string, error) {
 }
 
 // GetRecursorConfigValue gets a specific recursor config value
-func (client *Client) GetRecursorConfigValue(name string) (string, error) {
-	req, err := client.newRequestRecursor("GET", fmt.Sprintf("/servers/localhost/config/%s", name), nil)
+func (client *Client) GetRecursorConfigValue(ctx context.Context, name string) (string, error) {
+	req, err := client.newRequestRecursor(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/config/%s", name), nil)
 	if err != nil {
 		return "", err
 	}
@@ -829,22 +870,24 @@ func (client *Client) GetRecursorConfigValue(name string) (string, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"name":   name,
+			})
 		}
 	}()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var value string
-		err = json.NewDecoder(resp.Body).Decode(&value)
-		if err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&value); err != nil {
 			return "", err
 		}
-
 		return value, nil
 
 	case http.StatusNotFound:
-		// Map 404 to sentinel error
 		return "", ErrNotFound
 
 	default:
@@ -857,13 +900,13 @@ func (client *Client) GetRecursorConfigValue(name string) (string, error) {
 }
 
 // SetRecursorConfigValue sets a recursor config value
-func (client *Client) SetRecursorConfigValue(name string, value string) error {
+func (client *Client) SetRecursorConfigValue(ctx context.Context, name string, value string) error {
 	body, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 
-	req, err := client.newRequestRecursor("PUT", fmt.Sprintf("/servers/localhost/config/%s", name), body)
+	req, err := client.newRequestRecursor(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/config/%s", name), body)
 	if err != nil {
 		return err
 	}
@@ -874,7 +917,12 @@ func (client *Client) SetRecursorConfigValue(name string, value string) error {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"name":   name,
+			})
 		}
 	}()
 
@@ -890,8 +938,8 @@ func (client *Client) SetRecursorConfigValue(name string, value string) error {
 }
 
 // DeleteRecursorConfigValue deletes a recursor config value
-func (client *Client) DeleteRecursorConfigValue(name string) error {
-	req, err := client.newRequestRecursor("DELETE", fmt.Sprintf("/servers/localhost/config/%s", name), nil)
+func (client *Client) DeleteRecursorConfigValue(ctx context.Context, name string) error {
+	req, err := client.newRequestRecursor(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/config/%s", name), nil)
 	if err != nil {
 		return err
 	}
@@ -902,7 +950,12 @@ func (client *Client) DeleteRecursorConfigValue(name string) error {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARN] Error closing response body: %s", err)
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"name":   name,
+			})
 		}
 	}()
 
@@ -911,7 +964,6 @@ func (client *Client) DeleteRecursorConfigValue(name string) error {
 		return nil
 
 	case http.StatusNotFound:
-		// Map 404 to sentinel error
 		return ErrNotFound
 
 	default:

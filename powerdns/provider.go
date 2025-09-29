@@ -1,6 +1,10 @@
 package powerdns
 
 import (
+	"context"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
@@ -11,62 +15,63 @@ func Provider() *schema.Provider {
 			"api_key": {
 				Type:        schema.TypeString,
 				Optional:    true,
+				Sensitive:   true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_API_KEY", nil),
-				Description: "REST API authentication api key",
+				Description: "REST API authentication API key. Can also be set via PDNS_API_KEY.",
 			},
 			"client_cert_file": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_CLIENT_CERT_FILE", nil),
-				Description: "REST API authentication client certificate file (.crt)",
+				Description: "REST API authentication client certificate file path (.crt). Can also be set via PDNS_CLIENT_CERT_FILE.",
 			},
 			"client_cert_key_file": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_CLIENT_CERT_KEY_FILE", nil),
-				Description: "REST API authentication client certificate key file (.key)",
+				Description: "REST API authentication client certificate key file path (.key). Can also be set via PDNS_CLIENT_CERT_KEY_FILE.",
 			},
 			"server_url": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_SERVER_URL", nil),
-				Description: "Location of PowerDNS server",
+				Description: "Base URL of the PowerDNS server (e.g., https://pdns.example.com). Can also be set via PDNS_SERVER_URL.",
 			},
 			"insecure_https": {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_INSECURE_HTTPS", false),
-				Description: "Disable verification of the PowerDNS server's TLS certificate",
+				Description: "Disable verification of the PowerDNS server's TLS certificate. Also via PDNS_INSECURE_HTTPS.",
 			},
 			"ca_certificate": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_CACERT", ""),
-				Description: "Content or path of a Root CA to be used to verify PowerDNS's SSL certificate",
+				Description: "Content or path of a Root CA to verify the server certificate. Also via PDNS_CACERT.",
 			},
 			"cache_requests": {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_CACHE_REQUESTS", false),
-				Description: "Enable cache REST API requests",
+				Description: "Enable caching of REST API requests. Also via PDNS_CACHE_REQUESTS.",
 			},
 			"cache_mem_size": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_CACHE_MEM_SIZE", "100"),
-				Description: "Set cache memory size in MB",
+				Description: "Cache memory size in MB. Also via PDNS_CACHE_MEM_SIZE.",
 			},
 			"cache_ttl": {
 				Type:        schema.TypeInt,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_CACHE_TTL", 30),
-				Description: "Set cache TTL in seconds",
+				Description: "Cache TTL in seconds. Also via PDNS_CACHE_TTL.",
 			},
 			"recursor_server_url": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_RECURSOR_SERVER_URL", nil),
-				Description: "Location of PowerDNS recursor server",
+				Description: "Base URL of the PowerDNS recursor server. Also via PDNS_RECURSOR_SERVER_URL.",
 			},
 		},
 
@@ -84,11 +89,13 @@ func Provider() *schema.Provider {
 			"powerdns_zone":         dataSourcePDNSZone(),
 		},
 
-		ConfigureFunc: providerConfigure,
+		ConfigureContextFunc: providerConfigure,
 	}
 }
 
-func providerConfigure(data *schema.ResourceData) (interface{}, error) {
+func providerConfigure(ctx context.Context, data *schema.ResourceData) (interface{}, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
 	config := Config{
 		APIKey:            data.Get("api_key").(string),
 		ClientCertFile:    data.Get("client_cert_file").(string),
@@ -102,5 +109,33 @@ func providerConfigure(data *schema.ResourceData) (interface{}, error) {
 		CacheTTL:          data.Get("cache_ttl").(int),
 	}
 
-	return config.Client()
+	// Runtime validation of required arguments with env var fallback
+	if config.ServerURL == "" {
+		return nil, diag.Diagnostics{
+			diag.Diagnostic{
+				Severity: diag.Error,
+				Summary:  "Missing required configuration",
+				Detail:   "The 'server_url' must be set (via provider configuration or PDNS_SERVER_URL).",
+			},
+		}
+	}
+
+	tflog.SetField(ctx, "server_url", config.ServerURL)
+	if config.RecursorServerURL != "" {
+		tflog.SetField(ctx, "recursor_server_url", config.RecursorServerURL)
+	}
+	tflog.Debug(ctx, "Initializing PowerDNS client")
+
+	client, err := config.Client(ctx)
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Unable to create PowerDNS client",
+			Detail:   err.Error(),
+		})
+		return nil, diags
+	}
+
+	tflog.Info(ctx, "PowerDNS client initialized")
+	return client, diags
 }

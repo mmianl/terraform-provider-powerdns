@@ -415,3 +415,94 @@ func TestParseReverseZoneName(t *testing.T) {
 		})
 	}
 }
+
+func TestGetReverseZoneName(t *testing.T) {
+	tests := []struct {
+		name         string
+		cidr         string
+		expectedZone string
+		expectError  bool
+	}{
+		// IPv4 test cases
+		{
+			name:         "Valid IPv4 /8 CIDR",
+			cidr:         "10.0.0.0/8",
+			expectedZone: "10.in-addr.arpa.",
+			expectError:  false,
+		},
+		{
+			name:         "Valid IPv4 /16 CIDR",
+			cidr:         "172.16.0.0/16",
+			expectedZone: "16.172.in-addr.arpa.",
+			expectError:  false,
+		},
+		{
+			name:         "Valid IPv4 /24 CIDR",
+			cidr:         "192.168.1.0/24",
+			expectedZone: "1.168.192.in-addr.arpa.",
+			expectError:  false,
+		},
+		{
+			name:         "Invalid IPv4 /12 CIDR",
+			cidr:         "10.0.0.0/12",
+			expectedZone: "10.in-addr.arpa.",
+			expectError:  false,
+		},
+
+		// IPv6 test cases
+		{
+			name:         "Valid IPv6 /4 CIDR",
+			cidr:         "2000::/4",
+			expectedZone: "2.ip6.arpa.",
+			expectError:  false,
+		},
+		{
+			name:         "Valid IPv6 /8 CIDR",
+			cidr:         "2001::/8",
+			expectedZone: "0.2.ip6.arpa.",
+			expectError:  false,
+		},
+		{
+			name:         "Valid IPv6 /12 CIDR",
+			cidr:         "2001:db8::/12",
+			expectedZone: "0.0.2.ip6.arpa.",
+			expectError:  false,
+		},
+		{
+			name:         "Valid IPv6 /16 CIDR",
+			cidr:         "2001:db8::/16",
+			expectedZone: "1.0.0.2.ip6.arpa.",
+			expectError:  false,
+		},
+		{
+			name:         "Valid IPv6 /124 CIDR",
+			cidr:         "2001:db8::/124",
+			expectedZone: "0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa.",
+			expectError:  false,
+		},
+		{
+			name:         "Valid IPv6 /10 CIDR",
+			cidr:         "2001::/10",
+			expectedZone: "0.2.ip6.arpa.",
+			expectError:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			zone, err := GetReverseZoneName(tt.cidr)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("GetReverseZoneName() expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("GetReverseZoneName() unexpected error: %v", err)
+				}
+				if zone != tt.expectedZone {
+					t.Errorf("GetReverseZoneName() = %v, want %v", zone, tt.expectedZone)
+				}
+			}
+		})
+	}
+}

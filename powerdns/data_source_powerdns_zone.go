@@ -1,16 +1,18 @@
 package powerdns
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func dataSourcePDNSZone() *schema.Resource {
 	return &schema.Resource{
-		Read: dataSourcePDNSZoneRead,
+		ReadContext: dataSourcePDNSZoneRead,
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -87,98 +89,91 @@ func dataSourcePDNSZone() *schema.Resource {
 	}
 }
 
-func dataSourcePDNSZoneRead(d *schema.ResourceData, meta interface{}) error {
+func dataSourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
 	zoneName := d.Get("name").(string)
-	log.Printf("[INFO] Reading zone data source for zone: %s", zoneName)
+	ctx = tflog.SetField(ctx, "zone_name", zoneName)
+	tflog.Info(ctx, "Reading zone data source")
 
 	// Get the zone information
-	zone, err := client.GetZone(zoneName)
+	zone, err := client.GetZone(ctx, zoneName)
 	if err != nil {
-		return fmt.Errorf("couldn't fetch zone %s: %s", zoneName, err)
+		return diag.FromErr(fmt.Errorf("couldn't fetch zone %s: %w", zoneName, err))
 	}
 
 	// Check if zone exists
 	if zone.Name == "" {
-		return fmt.Errorf("zone %s not found", zoneName)
+		return diag.FromErr(fmt.Errorf("zone %s not found", zoneName))
 	}
 
-	log.Printf("[INFO] Found zone: %s (kind: %s)", zone.Name, zone.Kind)
+	ctx = tflog.SetField(ctx, "kind", zone.Kind)
+	tflog.Info(ctx, "Found zone")
 
 	// Set zone information
 	d.SetId(zone.Name)
 
-	err = d.Set("name", zone.Name)
-	if err != nil {
-		return fmt.Errorf("error setting zone name: %s", err)
+	if err := d.Set("name", zone.Name); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone name: %w", err))
 	}
-
-	err = d.Set("kind", zone.Kind)
-	if err != nil {
-		return fmt.Errorf("error setting zone kind: %s", err)
+	if err := d.Set("kind", zone.Kind); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone kind: %w", err))
 	}
-
-	err = d.Set("account", zone.Account)
-	if err != nil {
-		return fmt.Errorf("error setting zone account: %s", err)
+	if err := d.Set("account", zone.Account); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone account: %w", err))
 	}
-
-	err = d.Set("soa_edit_api", zone.SoaEditAPI)
-	if err != nil {
-		return fmt.Errorf("error setting zone SOA edit API: %s", err)
+	if err := d.Set("soa_edit_api", zone.SoaEditAPI); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone SOA edit API: %w", err))
 	}
 
 	// Set nameservers for non-Slave zones
 	if !strings.EqualFold(zone.Kind, "Slave") {
-		nameservers, err := client.ListRecordsInRRSet(zoneName, zoneName, "NS")
+		nameservers, err := client.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
 		if err != nil {
-			return fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %v", zoneName, err)
+			return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneName, err))
 		}
 
 		var zoneNameservers []string
-		for _, nameserver := range nameservers {
-			zoneNameservers = append(zoneNameservers, nameserver.Content)
+		for _, ns := range nameservers {
+			zoneNameservers = append(zoneNameservers, ns.Content)
 		}
 
-		err = d.Set("nameservers", zoneNameservers)
-		if err != nil {
-			return fmt.Errorf("error setting zone nameservers: %s", err)
+		if err := d.Set("nameservers", zoneNameservers); err != nil {
+			return diag.FromErr(fmt.Errorf("error setting zone nameservers: %w", err))
 		}
 	}
 
 	// Set masters for Slave zones
 	if strings.EqualFold(zone.Kind, "Slave") {
-		err = d.Set("masters", zone.Masters)
-		if err != nil {
-			return fmt.Errorf("error setting zone masters: %s", err)
+		if err := d.Set("masters", zone.Masters); err != nil {
+			return diag.FromErr(fmt.Errorf("error setting zone masters: %w", err))
 		}
 	}
 
 	// Get all records in the zone and link them to the zone data
-	allRecords, err := client.ListRecords(zoneName)
+	allRecords, err := client.ListRecords(ctx, zoneName)
 	if err != nil {
-		return fmt.Errorf("couldn't fetch records for zone %s: %s", zoneName, err)
+		return diag.FromErr(fmt.Errorf("couldn't fetch records for zone %s: %w", zoneName, err))
 	}
 
 	// Convert records to the schema format
-	var records []map[string]interface{}
-	for _, record := range allRecords {
-		recordMap := map[string]interface{}{
-			"name":     record.Name,
-			"type":     record.Type,
-			"content":  record.Content,
-			"ttl":      record.TTL,
-			"disabled": record.Disabled,
-		}
-		records = append(records, recordMap)
+	records := make([]map[string]interface{}, 0, len(allRecords))
+	for _, r := range allRecords {
+		records = append(records, map[string]interface{}{
+			"name":     r.Name,
+			"type":     r.Type,
+			"content":  r.Content,
+			"ttl":      r.TTL,
+			"disabled": r.Disabled,
+		})
 	}
 
-	err = d.Set("records", records)
-	if err != nil {
-		return fmt.Errorf("error setting zone records: %s", err)
+	if err := d.Set("records", records); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone records: %w", err))
 	}
 
-	log.Printf("[INFO] Successfully retrieved zone %s with %d records", zoneName, len(records))
+	tflog.Info(ctx, "Successfully retrieved zone records", map[string]interface{}{
+		"record_count": len(records),
+	})
 	return nil
 }
