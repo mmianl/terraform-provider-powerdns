@@ -1,20 +1,22 @@
 package powerdns
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"log"
 
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func resourcePDNSRecursorConfig() *schema.Resource {
 	return &schema.Resource{
-		Create: resourcePDNSRecursorConfigCreate,
-		Read:   resourcePDNSRecursorConfigRead,
-		Update: resourcePDNSRecursorConfigUpdate,
-		Delete: resourcePDNSRecursorConfigDelete,
+		CreateContext: resourcePDNSRecursorConfigCreate,
+		ReadContext:   resourcePDNSRecursorConfigRead,
+		UpdateContext: resourcePDNSRecursorConfigUpdate,
+		DeleteContext: resourcePDNSRecursorConfigDelete,
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -24,7 +26,6 @@ func resourcePDNSRecursorConfig() *schema.Resource {
 				ValidateFunc: validation.StringLenBetween(1, 255),
 				Description:  "The name of the recursor config setting",
 			},
-
 			"value": {
 				Type:        schema.TypeString,
 				Required:    true,
@@ -34,85 +35,79 @@ func resourcePDNSRecursorConfig() *schema.Resource {
 	}
 }
 
-func resourcePDNSRecursorConfigCreate(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSRecursorConfigCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
 	name := d.Get("name").(string)
 	value := d.Get("value").(string)
 
-	log.Printf("[INFO] Creating recursor config: %s", name)
+	tflog.SetField(ctx, "recursor_config_name", name)
+	tflog.Debug(ctx, "Creating recursor config")
 
-	err := client.SetRecursorConfigValue(name, value)
-	if err != nil {
-		return fmt.Errorf("failed to create recursor config: %s", err)
+	if err := client.SetRecursorConfigValue(ctx, name, value); err != nil {
+		return diag.FromErr(fmt.Errorf("failed to create recursor config: %w", err))
 	}
 
 	d.SetId(name)
-	log.Printf("[INFO] Created recursor config with ID: %s", d.Id())
-	return resourcePDNSRecursorConfigRead(d, meta)
+	tflog.Info(ctx, "Created recursor config", map[string]any{"id": name})
+	return resourcePDNSRecursorConfigRead(ctx, d, meta)
 }
 
-func resourcePDNSRecursorConfigRead(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSRecursorConfigRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
 	name := d.Id()
+	tflog.SetField(ctx, "recursor_config_name", name)
+	tflog.Debug(ctx, "Reading recursor config")
 
-	log.Printf("[INFO] Reading recursor config: %s", name)
-
-	value, err := client.GetRecursorConfigValue(name)
+	value, err := client.GetRecursorConfigValue(ctx, name)
 	if err != nil {
 		// Only treat "not found" as removing from state, other errors should fail
 		if errors.Is(err, ErrNotFound) {
-			log.Printf("[WARN] Recursor config not found, removing from state: %s", name)
+			tflog.Warn(ctx, "Recursor config not found; removing from state")
 			d.SetId("")
 			return nil
-		} else {
-			// Real error (auth, connection, server error, etc.)
-			return fmt.Errorf("failed to get recursor config: %s", err)
 		}
+		return diag.FromErr(fmt.Errorf("failed to get recursor config: %w", err))
 	}
 
-	err = d.Set("name", name)
-	if err != nil {
-		return fmt.Errorf("error setting name: %s", err)
+	if err := d.Set("name", name); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting name: %w", err))
 	}
-
-	err = d.Set("value", value)
-	if err != nil {
-		return fmt.Errorf("error setting value: %s", err)
+	if err := d.Set("value", value); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting value: %w", err))
 	}
 
 	return nil
 }
 
-func resourcePDNSRecursorConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSRecursorConfigUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
 	name := d.Id()
 	value := d.Get("value").(string)
 
-	log.Printf("[INFO] Updating recursor config: %s", name)
+	tflog.SetField(ctx, "recursor_config_name", name)
+	tflog.Debug(ctx, "Updating recursor config")
 
-	err := client.SetRecursorConfigValue(name, value)
-	if err != nil {
-		return fmt.Errorf("failed to update recursor config: %s", err)
+	if err := client.SetRecursorConfigValue(ctx, name, value); err != nil {
+		return diag.FromErr(fmt.Errorf("failed to update recursor config: %w", err))
 	}
 
-	return resourcePDNSRecursorConfigRead(d, meta)
+	return resourcePDNSRecursorConfigRead(ctx, d, meta)
 }
 
-func resourcePDNSRecursorConfigDelete(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSRecursorConfigDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
 	name := d.Id()
+	tflog.SetField(ctx, "recursor_config_name", name)
+	tflog.Debug(ctx, "Deleting recursor config")
 
-	log.Printf("[INFO] Deleting recursor config: %s", name)
-
-	err := client.DeleteRecursorConfigValue(name)
-	if err != nil {
-		return fmt.Errorf("error deleting recursor config: %s", err)
+	if err := client.DeleteRecursorConfigValue(ctx, name); err != nil {
+		return diag.FromErr(fmt.Errorf("error deleting recursor config: %w", err))
 	}
 
-	log.Printf("[INFO] Successfully deleted recursor config")
+	tflog.Info(ctx, "Successfully deleted recursor config")
 	return nil
 }

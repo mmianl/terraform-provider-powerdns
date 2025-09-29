@@ -1,6 +1,7 @@
 package powerdns
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"testing"
@@ -392,7 +393,7 @@ func testAccCheckPDNSZoneDestroy(s *terraform.State) error {
 		}
 
 		client := testAccProvider.Meta().(*Client)
-		exists, err := client.ZoneExists(rs.Primary.Attributes["zone"])
+		exists, err := client.ZoneExists(context.Background(), rs.Primary.Attributes["zone"])
 		if err != nil {
 			return fmt.Errorf("Error checking if zone still exists: %#v", rs.Primary.ID)
 		}
@@ -412,7 +413,7 @@ func testAccCheckPDNSZoneExists(n string) resource.TestCheckFunc {
 		}
 
 		client := testAccProvider.Meta().(*Client)
-		exists, err := client.ZoneExists(rs.Primary.Attributes["name"])
+		exists, err := client.ZoneExists(context.Background(), rs.Primary.Attributes["name"])
 		if err != nil {
 			return err
 		}

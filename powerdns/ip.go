@@ -7,26 +7,31 @@ import (
 	"strings"
 )
 
-// ValidateCIDR validates the CIDR format
+// ValidateCIDR validates the CIDR format.
+// For IPv4, only /8, /16, /24 are allowed.
+// For IPv6, prefix length must be a multiple of 4 between 4 and 124.
 func ValidateCIDR(v interface{}, k string) (ws []string, errors []error) {
 	cidr := v.(string)
-	_, ipnet, err := net.ParseCIDR(cidr)
+	ip, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		errors = append(errors, fmt.Errorf("invalid CIDR format: %s", err))
 		return
 	}
+	// Normalize to the network address (safety; not strictly needed here)
+	ip = ip.Mask(ipnet.Mask)
+	_ = ip
+
+	ones, _ := ipnet.Mask.Size()
 
 	// Check if it's an IPv4 or IPv6 CIDR
 	if ipnet.IP.To4() != nil {
 		// IPv4 CIDR
-		ones, _ := ipnet.Mask.Size()
 		if ones != 8 && ones != 16 && ones != 24 {
 			errors = append(errors, fmt.Errorf("IPv4 prefix length must be 8, 16, or 24"))
 			return
 		}
 	} else {
 		// IPv6 CIDR
-		ones, _ := ipnet.Mask.Size()
 		if ones%4 != 0 || ones < 4 || ones > 124 {
 			errors = append(errors, fmt.Errorf("IPv6 prefix length must be a multiple of 4 between 4 and 124"))
 			return
@@ -36,7 +41,7 @@ func ValidateCIDR(v interface{}, k string) (ws []string, errors []error) {
 	return
 }
 
-// ParsePTRRecordName converts a PTR record name back to an IP address
+// ParsePTRRecordName converts a PTR record name back to an IP address.
 func ParsePTRRecordName(name string) (net.IP, error) {
 	if strings.HasSuffix(name, ".in-addr.arpa.") {
 		// IPv4 PTR record
@@ -62,15 +67,15 @@ func ParsePTRRecordName(name string) (net.IP, error) {
 		// Convert nibbles back to IPv6 address
 		ipv6 := make([]byte, 16)
 		for i := 0; i < 32; i += 2 {
-			nibble1, err := strconv.ParseUint(parts[31-i], 16, 8)
+			n1, err := strconv.ParseUint(parts[31-i], 16, 8)
 			if err != nil {
 				return nil, fmt.Errorf("invalid IPv6 nibble in PTR record name: %s", parts[31-i])
 			}
-			nibble2, err := strconv.ParseUint(parts[30-i], 16, 8)
+			n2, err := strconv.ParseUint(parts[30-i], 16, 8)
 			if err != nil {
 				return nil, fmt.Errorf("invalid IPv6 nibble in PTR record name: %s", parts[30-i])
 			}
-			ipv6[i/2] = byte(nibble1<<4 | nibble2)
+			ipv6[i/2] = byte(n1<<4 | n2)
 		}
 		return net.IP(ipv6), nil
 	}
@@ -78,7 +83,8 @@ func ParsePTRRecordName(name string) (net.IP, error) {
 	return nil, fmt.Errorf("unsupported PTR record name format: %s", name)
 }
 
-// GetPTRRecordName determines the PTR record name based on the IP address
+// GetPTRRecordName determines the PTR record name (label portion) based on the IP address.
+// It returns the reversed labels without the trailing zone suffix (e.g., "4.3.2.1" or "b.a.9.8....").
 func GetPTRRecordName(ip string) (string, error) {
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
@@ -91,36 +97,32 @@ func GetPTRRecordName(ip string) (string, error) {
 		if len(ipParts) != 4 {
 			return "", fmt.Errorf("invalid IPv4 address: %s", ip)
 		}
-
 		// Build the PTR record name using all octets in reverse order
-		ptrParts := make([]string, 4)
-		for i := 0; i < 4; i++ {
-			ptrParts[i] = ipParts[3-i]
-		}
-		ptrName := strings.Join(ptrParts, ".")
-		return ptrName, nil
-	} else {
-		// IPv6 PTR record
-		ipv6 := parsedIP.To16()
-		if ipv6 == nil {
-			return "", fmt.Errorf("invalid IPv6 address: %s", ip)
-		}
-
-		// Convert each byte to two nibbles in reverse order
-		ptrParts := make([]string, 32)
-		for i := 0; i < 16; i++ {
-			// Process bytes in reverse order
-			byte := ipv6[15-i]
-			// Store the lower nibble first, then the higher nibble
-			ptrParts[i*2] = fmt.Sprintf("%x", byte&0x0F)        // lower nibble
-			ptrParts[i*2+1] = fmt.Sprintf("%x", (byte>>4)&0x0F) // higher nibble
-		}
-		ptrName := strings.Join(ptrParts, ".")
-		return ptrName, nil
+		ptrParts := []string{ipParts[3], ipParts[2], ipParts[1], ipParts[0]}
+		return strings.Join(ptrParts, "."), nil
 	}
+
+	// IPv6 PTR record
+	ipv6 := parsedIP.To16()
+	if ipv6 == nil {
+		return "", fmt.Errorf("invalid IPv6 address: %s", ip)
+	}
+
+	// Convert each byte to two nibbles in reverse order
+	ptrParts := make([]string, 32)
+	for i := 0; i < 16; i++ {
+		b := ipv6[15-i]                                  // reverse byte order
+		ptrParts[i*2] = fmt.Sprintf("%x", b&0x0F)        // lower nibble
+		ptrParts[i*2+1] = fmt.Sprintf("%x", (b>>4)&0x0F) // higher nibble
+	}
+	return strings.Join(ptrParts, "."), nil
 }
 
-// ParseReverseZoneName converts a reverse zone name to its corresponding CIDR
+// ParseReverseZoneName converts a reverse zone FQDN to its corresponding CIDR.
+// Examples:
+//
+//	"16.172.in-addr.arpa."   -> "172.16.0.0/16"
+//	"b.a.9.8.ip6.arpa." (etc)-> "<ipv6-prefix>/8" (nibble * 4)
 func ParseReverseZoneName(name string) (string, error) {
 	if strings.HasSuffix(name, ".in-addr.arpa.") {
 		// IPv4 reverse zone
@@ -180,4 +182,59 @@ func ParseReverseZoneName(name string) (string, error) {
 	}
 
 	return "", fmt.Errorf("invalid reverse zone name: %s", name)
+}
+
+// GetReverseZoneName computes the reverse zone FQDN from a CIDR.
+// Examples:
+
+// 10.0.0.0/8    -> 10.in-addr.arpa.
+// 172.16.0.0/16 -> 16.172.in-addr.arpa.
+// 2000::/4      -> 2.ip6.arpa.
+func GetReverseZoneName(cidr string) (string, error) {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return "", fmt.Errorf("invalid CIDR: %s", err)
+	}
+
+	ones, _ := ipnet.Mask.Size()
+	if ipnet.IP.To4() != nil {
+		// IPv4 reverse zone
+		ip := ipnet.IP.To4()
+		octets := ones / 8
+
+		// For /24 networks, we need to include the third octet in the zone name
+		if ones == 24 {
+			octets = 3
+		}
+
+		// Build the zone name based on the number of octets
+		zoneParts := make([]string, octets)
+		for i := 0; i < octets; i++ {
+			zoneParts[i] = fmt.Sprintf("%d", ip[octets-1-i])
+		}
+		zone := strings.Join(zoneParts, ".") + ".in-addr.arpa."
+		return zone, nil
+	}
+
+	// IPv6 reverse zone
+	ip := ipnet.IP.To16()
+	nibbles := ones / 4
+
+	// Build the zone name based on the number of nibbles
+	zoneParts := make([]string, nibbles)
+	for i := 0; i < nibbles; i++ {
+		// Get the nibble (4 bits) from the IP address
+		byteIndex := i / 2
+		nibbleIndex := i % 2
+		byte := ip[byteIndex]
+		if nibbleIndex == 0 {
+			byte = byte >> 4
+		} else {
+			byte = byte & 0x0F
+		}
+		zoneParts[nibbles-1-i] = fmt.Sprintf("%x", byte)
+	}
+	zone := strings.Join(zoneParts, ".") + ".ip6.arpa."
+	return zone, nil
+
 }

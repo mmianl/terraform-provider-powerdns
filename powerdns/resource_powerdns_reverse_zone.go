@@ -1,24 +1,24 @@
 package powerdns
 
 import (
+	"context"
 	"fmt"
-	"log"
-	"net"
-	"strings"
 
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func resourcePDNSReverseZone() *schema.Resource {
 	return &schema.Resource{
-		Create: resourcePDNSReverseZoneCreate,
-		Read:   resourcePDNSReverseZoneRead,
-		Update: resourcePDNSReverseZoneUpdate,
-		Delete: resourcePDNSReverseZoneDelete,
-		Exists: resourcePDNSReverseZoneExists,
+		CreateContext: resourcePDNSReverseZoneCreate,
+		ReadContext:   resourcePDNSReverseZoneRead,
+		UpdateContext: resourcePDNSReverseZoneUpdate,
+		DeleteContext: resourcePDNSReverseZoneDelete,
+
 		Importer: &schema.ResourceImporter{
-			State: resourcePDNSReverseZoneImport,
+			StateContext: resourcePDNSReverseZoneImport,
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -54,55 +54,6 @@ func resourcePDNSReverseZone() *schema.Resource {
 	}
 }
 
-func getReverseZoneName(cidr string) (string, error) {
-	_, ipnet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return "", fmt.Errorf("invalid CIDR: %s", err)
-	}
-
-	if ipnet.IP.To4() != nil {
-		// IPv4 reverse zone
-		ip := ipnet.IP.To4()
-		ones, _ := ipnet.Mask.Size()
-		octets := ones / 8
-
-		// For /24 networks, we need to include the third octet in the zone name
-		if ones == 24 {
-			octets = 3
-		}
-
-		// Build the zone name based on the number of octets
-		zoneParts := make([]string, octets)
-		for i := 0; i < octets; i++ {
-			zoneParts[i] = fmt.Sprintf("%d", ip[octets-1-i])
-		}
-		zone := strings.Join(zoneParts, ".") + ".in-addr.arpa."
-		return zone, nil
-	} else {
-		// IPv6 reverse zone
-		ip := ipnet.IP.To16()
-		ones, _ := ipnet.Mask.Size()
-		nibbles := ones / 4
-
-		// Build the zone name based on the number of nibbles
-		zoneParts := make([]string, nibbles)
-		for i := 0; i < nibbles; i++ {
-			// Get the nibble (4 bits) from the IP address
-			byteIndex := i / 2
-			nibbleIndex := i % 2
-			byte := ip[byteIndex]
-			if nibbleIndex == 0 {
-				byte = byte >> 4
-			} else {
-				byte = byte & 0x0F
-			}
-			zoneParts[nibbles-1-i] = fmt.Sprintf("%x", byte)
-		}
-		zone := strings.Join(zoneParts, ".") + ".ip6.arpa."
-		return zone, nil
-	}
-}
-
 func expandStringList(configured []interface{}) []string {
 	vs := make([]string, 0, len(configured))
 	for _, v := range configured {
@@ -111,97 +62,98 @@ func expandStringList(configured []interface{}) []string {
 	return vs
 }
 
-func resourcePDNSReverseZoneCreate(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSReverseZoneCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
 	cidr := d.Get("cidr").(string)
-	log.Printf("[INFO] Creating reverse zone for CIDR: %s", cidr)
+	tflog.SetField(ctx, "cidr", cidr)
+	tflog.Debug(ctx, "Creating reverse zone")
 
-	zoneName, err := getReverseZoneName(cidr)
+	zoneName, err := GetReverseZoneName(cidr)
 	if err != nil {
-		return fmt.Errorf("failed to determine zone name: %s", err)
+		return diag.FromErr(fmt.Errorf("failed to determine zone name: %w", err))
 	}
-	log.Printf("[INFO] Generated zone name: %s", zoneName)
+	tflog.Info(ctx, "Generated reverse zone name", map[string]any{"zone": zoneName})
 
-	// Create the zone
 	zone := ZoneInfo{
 		Name:        zoneName,
 		Kind:        d.Get("kind").(string),
 		Nameservers: expandStringList(d.Get("nameservers").([]interface{})),
 	}
 
-	createdZone, err := client.CreateZone(zone)
+	createdZone, err := client.CreateZone(ctx, zone)
 	if err != nil {
-		return fmt.Errorf("failed to create reverse zone: %s", err)
+		return diag.FromErr(fmt.Errorf("failed to create reverse zone: %w", err))
 	}
 
 	d.SetId(createdZone.Name)
-	log.Printf("[INFO] Created reverse zone with ID: %s", d.Id())
-	return resourcePDNSReverseZoneRead(d, meta)
+	tflog.Info(ctx, "Created reverse zone", map[string]any{"id": createdZone.Name})
+	return resourcePDNSReverseZoneRead(ctx, d, meta)
 }
 
-func resourcePDNSReverseZoneRead(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 	zoneName := d.Id()
 
-	log.Printf("[INFO] Reading reverse zone: %s", zoneName)
-	zone, err := client.GetZone(zoneName)
+	tflog.SetField(ctx, "zone", zoneName)
+	tflog.Debug(ctx, "Reading reverse zone")
+
+	zone, err := client.GetZone(ctx, zoneName)
 	if err != nil {
-		return fmt.Errorf("couldn't fetch zone: %s", err)
+		return diag.FromErr(fmt.Errorf("couldn't fetch zone: %w", err))
 	}
 
-	// Check if zone exists by checking if the name is empty
+	// If zone doesn't exist, clear state
 	if zone.Name == "" {
-		log.Printf("[WARN] Zone not found, removing from state")
+		tflog.Warn(ctx, "Zone not found; removing from state")
 		d.SetId("")
 		return nil
 	}
 
-	log.Printf("[INFO] Found reverse zone: %s (kind: %s)", zone.Name, zone.Kind)
-	err = d.Set("name", zone.Name)
-	if err != nil {
-		return fmt.Errorf("error setting name: %s", err)
+	tflog.Info(ctx, "Found reverse zone", map[string]any{"zone": zone.Name, "kind": zone.Kind})
+
+	if err := d.Set("name", zone.Name); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting name: %w", err))
 	}
-	err = d.Set("kind", zone.Kind)
-	if err != nil {
-		return fmt.Errorf("error setting kind: %s", err)
+	if err := d.Set("kind", zone.Kind); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting kind: %w", err))
 	}
 
 	// Read nameservers from NS records
-	nameservers, err := client.ListRecordsInRRSet(zoneName, zoneName, "NS")
+	nameservers, err := client.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
 	if err != nil {
-		return fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %v", zoneName, err)
+		return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneName, err))
 	}
 
 	var zoneNameservers []string
-	for _, nameserver := range nameservers {
-		zoneNameservers = append(zoneNameservers, nameserver.Content)
+	for _, ns := range nameservers {
+		zoneNameservers = append(zoneNameservers, ns.Content)
 	}
 
-	err = d.Set("nameservers", zoneNameservers)
-	if err != nil {
-		return fmt.Errorf("error setting nameservers: %s", err)
+	if err := d.Set("nameservers", zoneNameservers); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting nameservers: %w", err))
 	}
 
 	return nil
 }
 
-func resourcePDNSReverseZoneUpdate(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSReverseZoneUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 	zoneName := d.Id()
 
+	tflog.SetField(ctx, "zone", zoneName)
 	if d.HasChange("nameservers") {
-		log.Printf("[INFO] Updating nameservers for zone: %s", zoneName)
-		// Get the current zone
-		zone, err := client.GetZone(zoneName)
+		tflog.Debug(ctx, "Updating nameservers for reverse zone")
+
+		zone, err := client.GetZone(ctx, zoneName)
 		if err != nil {
-			return fmt.Errorf("couldn't fetch zone: %s", err)
+			return diag.FromErr(fmt.Errorf("couldn't fetch zone: %w", err))
 		}
 
-		// Update nameservers
+		// Update nameservers in zone object
 		zone.Nameservers = expandStringList(d.Get("nameservers").([]interface{}))
 
-		// Create the zone update request
+		// Build update request
 		zoneInfo := ZoneInfoUpd{
 			Name:       zoneName,
 			Kind:       zone.Kind,
@@ -209,13 +161,11 @@ func resourcePDNSReverseZoneUpdate(d *schema.ResourceData, meta interface{}) err
 			SoaEditAPI: zone.SoaEditAPI,
 		}
 
-		// Update the zone
-		err = client.UpdateZone(zoneName, zoneInfo)
-		if err != nil {
-			return fmt.Errorf("error updating zone: %s", err)
+		if err := client.UpdateZone(ctx, zoneName, zoneInfo); err != nil {
+			return diag.FromErr(fmt.Errorf("error updating zone: %w", err))
 		}
 
-		// Update NS records
+		// Update NS records to reflect nameserver list
 		rrSet := ResourceRecordSet{
 			Name:       zoneName,
 			Type:       "NS",
@@ -231,78 +181,60 @@ func resourcePDNSReverseZoneUpdate(d *schema.ResourceData, meta interface{}) err
 			}
 		}
 
-		_, err = client.ReplaceRecordSet(zoneName, rrSet)
-		if err != nil {
-			return fmt.Errorf("error updating nameserver records: %s", err)
+		if _, err := client.ReplaceRecordSet(ctx, zoneName, rrSet); err != nil {
+			return diag.FromErr(fmt.Errorf("error updating nameserver records: %w", err))
 		}
-		log.Printf("[INFO] Successfully updated nameservers for zone: %s", zoneName)
+
+		tflog.Info(ctx, "Updated nameservers for reverse zone")
 	}
 
-	return resourcePDNSReverseZoneRead(d, meta)
+	return resourcePDNSReverseZoneRead(ctx, d, meta)
 }
 
-func resourcePDNSReverseZoneDelete(d *schema.ResourceData, meta interface{}) error {
+func resourcePDNSReverseZoneDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 	zoneName := d.Id()
 
-	log.Printf("[INFO] Deleting reverse zone: %s", zoneName)
-	err := client.DeleteZone(zoneName)
-	if err != nil {
-		return fmt.Errorf("error deleting zone: %s", err)
+	tflog.SetField(ctx, "zone", zoneName)
+	tflog.Debug(ctx, "Deleting reverse zone")
+
+	if err := client.DeleteZone(ctx, zoneName); err != nil {
+		return diag.FromErr(fmt.Errorf("error deleting zone: %w", err))
 	}
 
-	log.Printf("[INFO] Successfully deleted reverse zone: %s", zoneName)
+	tflog.Info(ctx, "Deleted reverse zone")
 	return nil
 }
 
-func resourcePDNSReverseZoneExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	client := meta.(*Client)
-	zoneName := d.Id()
-
-	log.Printf("[INFO] Checking if reverse zone exists: %s", zoneName)
-	zone, err := client.GetZone(zoneName)
-	if err != nil {
-		return false, fmt.Errorf("error checking zone: %s", err)
-	}
-
-	// Check if zone exists by checking if the name is empty
-	exists := zone.Name != ""
-	if exists {
-		log.Printf("[INFO] Reverse zone exists: %s", zoneName)
-	} else {
-		log.Printf("[INFO] Reverse zone not found: %s", zoneName)
-	}
-	return exists, nil
-}
-
-func resourcePDNSReverseZoneImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+func resourcePDNSReverseZoneImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	client := meta.(*Client)
 
-	// Parse the zone name
 	zoneName := d.Id()
+	tflog.Info(ctx, "Importing reverse zone", map[string]any{"zone": zoneName})
+
 	cidr, err := ParseReverseZoneName(zoneName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Verify the zone exists
-	zone, err := client.GetZone(zoneName)
+	zone, err := client.GetZone(ctx, zoneName)
 	if err != nil {
-		return nil, fmt.Errorf("error getting zone: %v", err)
+		return nil, fmt.Errorf("error getting zone: %w", err)
 	}
 
-	// Set the resource data
-	err = d.Set("name", zoneName)
-	if err != nil {
-		return nil, fmt.Errorf("error setting name: %s", err)
+	// Populate attributes
+	if err := d.Set("name", zoneName); err != nil {
+		return nil, fmt.Errorf("error setting name: %w", err)
 	}
-	err = d.Set("cidr", cidr)
-	if err != nil {
-		return nil, fmt.Errorf("error setting cidr: %s", err)
+	if err := d.Set("cidr", cidr); err != nil {
+		return nil, fmt.Errorf("error setting cidr: %w", err)
 	}
-	err = d.Set("nameservers", zone.Nameservers)
-	if err != nil {
-		return nil, fmt.Errorf("error setting nameservers: %s", err)
+	if err := d.Set("nameservers", zone.Nameservers); err != nil {
+		return nil, fmt.Errorf("error setting nameservers: %w", err)
+	}
+	// Ensure kind is set to avoid diffs after import
+	if err := d.Set("kind", zone.Kind); err != nil {
+		return nil, fmt.Errorf("error setting kind: %w", err)
 	}
 
 	return []*schema.ResourceData{d}, nil

@@ -1,15 +1,16 @@
 package powerdns
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"log"
 
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/terraform-providers/terraform-provider-powerdns/pathorcontents"
 )
 
-// Config describes de configuration interface of this provider
+// Config describes the configuration interface of this provider
 type Config struct {
 	ServerURL         string
 	RecursorServerURL string
@@ -24,10 +25,10 @@ type Config struct {
 }
 
 // Client returns a new client for accessing PowerDNS
-func (c *Config) Client() (*Client, error) {
-
+func (c *Config) Client(ctx context.Context) (*Client, error) {
 	tlsConfig := &tls.Config{}
 
+	// Load custom CA bundle if provided
 	if c.CACertificate != "" {
 		caCert, _, err := pathorcontents.Read(c.CACertificate)
 		if err != nil {
@@ -37,26 +38,48 @@ func (c *Config) Client() (*Client, error) {
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM([]byte(caCert))
 		tlsConfig.RootCAs = caCertPool
+
+		tflog.Debug(ctx, "Loaded custom CA certificate for PowerDNS client")
 	}
 
+	// Load mTLS client certificate if provided
 	if c.ClientCertFile != "" && c.ClientCertKeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(c.ClientCertFile, c.ClientCertKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("unable to load client cert: %v", err)
 		}
-
 		tlsConfig.Certificates = []tls.Certificate{cert}
+
+		tflog.Debug(ctx, "Loaded client certificate/key for PowerDNS client")
 	}
 
+	// Optionally disable TLS verification
 	tlsConfig.InsecureSkipVerify = c.InsecureHTTPS
+	if c.InsecureHTTPS {
+		tflog.Warn(ctx, "TLS certificate verification is disabled for PowerDNS client")
+	}
 
-	client, err := NewClient(c.ServerURL, c.RecursorServerURL, c.APIKey, tlsConfig, c.CacheEnable, c.CacheMemorySize, c.CacheTTL)
-
+	client, err := NewClient(
+		ctx,
+		c.ServerURL,
+		c.RecursorServerURL,
+		c.APIKey,
+		tlsConfig,
+		c.CacheEnable,
+		c.CacheMemorySize,
+		c.CacheTTL,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up PowerDNS client: %s", err)
 	}
 
-	log.Printf("[INFO] PowerDNS Client configured for server %s", c.ServerURL)
+	// Attach some persistent fields for follow-up logs if callers reuse ctx
+	ctx = tflog.SetField(ctx, "server_url", c.ServerURL)
+	ctx = tflog.SetField(ctx, "recursor_server_url", c.RecursorServerURL)
+	ctx = tflog.SetField(ctx, "cache_enabled", c.CacheEnable)
+	ctx = tflog.SetField(ctx, "cache_ttl_sec", c.CacheTTL)
+
+	tflog.Info(ctx, "PowerDNS client configured")
 
 	return client, nil
 }

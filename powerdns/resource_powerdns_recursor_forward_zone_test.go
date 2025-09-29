@@ -1,6 +1,7 @@
 package powerdns
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -43,7 +44,7 @@ func testAccCheckPowerDNSRecursorForwardZoneDestroy(s *terraform.State) error {
 			continue
 		}
 
-		value, err := client.GetRecursorConfigValue("forward-zones")
+		value, err := client.GetRecursorConfigValue(context.Background(), "forward-zones")
 		if err != nil {
 			return err
 		}
@@ -69,7 +70,7 @@ func testAccCheckPowerDNSRecursorForwardZoneExists(n string) resource.TestCheckF
 		}
 
 		client := testAccProvider.Meta().(*Client)
-		value, err := client.GetRecursorConfigValue("forward-zones")
+		value, err := client.GetRecursorConfigValue(context.Background(), "forward-zones")
 		if err != nil {
 			return fmt.Errorf("Error getting forward-zones: %s", err)
 		}

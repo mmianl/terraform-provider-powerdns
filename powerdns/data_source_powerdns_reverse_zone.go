@@ -1,15 +1,17 @@
 package powerdns
 
 import (
+	"context"
 	"fmt"
-	"log"
 
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func dataSourcePDNSReverseZone() *schema.Resource {
 	return &schema.Resource{
-		Read: dataSourcePDNSReverseZoneRead,
+		ReadContext: dataSourcePDNSReverseZoneRead,
 
 		Schema: map[string]*schema.Schema{
 			"cidr": {
@@ -40,55 +42,57 @@ func dataSourcePDNSReverseZone() *schema.Resource {
 	}
 }
 
-func dataSourcePDNSReverseZoneRead(d *schema.ResourceData, meta interface{}) error {
+func dataSourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*Client)
 
 	cidr := d.Get("cidr").(string)
-	log.Printf("[INFO] Reading reverse zone data source for CIDR: %s", cidr)
+	ctx = tflog.SetField(ctx, "cidr", cidr)
+	tflog.Info(ctx, "Reading reverse zone data source")
 
-	zoneName, err := getReverseZoneName(cidr)
+	zoneName, err := GetReverseZoneName(cidr)
 	if err != nil {
-		return fmt.Errorf("failed to determine zone name: %s", err)
+		return diag.FromErr(fmt.Errorf("failed to determine zone name: %w", err))
 	}
-	log.Printf("[INFO] Generated zone name: %s", zoneName)
+	ctx = tflog.SetField(ctx, "zone_name", zoneName)
+	tflog.Debug(ctx, "Computed reverse zone name from CIDR")
 
-	zone, err := client.GetZone(zoneName)
+	zone, err := client.GetZone(ctx, zoneName)
 	if err != nil {
-		return fmt.Errorf("couldn't fetch zone: %s", err)
+		return diag.FromErr(fmt.Errorf("couldn't fetch zone: %w", err))
 	}
 
 	// Check if zone exists by checking if the name is empty
 	if zone.Name == "" {
-		return fmt.Errorf("reverse zone for CIDR %s not found", cidr)
+		return diag.FromErr(fmt.Errorf("reverse zone for CIDR %s not found", cidr))
 	}
 
-	log.Printf("[INFO] Found reverse zone: %s (kind: %s)", zone.Name, zone.Kind)
+	tflog.Info(ctx, "Found reverse zone", map[string]interface{}{
+		"name": zone.Name,
+		"kind": zone.Kind,
+	})
 
 	d.SetId(zone.Name)
 
-	err = d.Set("name", zone.Name)
-	if err != nil {
-		return fmt.Errorf("error setting name: %s", err)
+	if err := d.Set("name", zone.Name); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting name: %w", err))
 	}
-	err = d.Set("kind", zone.Kind)
-	if err != nil {
-		return fmt.Errorf("error setting kind: %s", err)
+	if err := d.Set("kind", zone.Kind); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting kind: %w", err))
 	}
 
 	// Read nameservers from NS records
-	nameservers, err := client.ListRecordsInRRSet(zoneName, zoneName, "NS")
+	nameservers, err := client.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
 	if err != nil {
-		return fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %v", zoneName, err)
+		return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneName, err))
 	}
 
 	var zoneNameservers []string
-	for _, nameserver := range nameservers {
-		zoneNameservers = append(zoneNameservers, nameserver.Content)
+	for _, ns := range nameservers {
+		zoneNameservers = append(zoneNameservers, ns.Content)
 	}
 
-	err = d.Set("nameservers", zoneNameservers)
-	if err != nil {
-		return fmt.Errorf("error setting nameservers: %s", err)
+	if err := d.Set("nameservers", zoneNameservers); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting nameservers: %w", err))
 	}
 
 	return nil

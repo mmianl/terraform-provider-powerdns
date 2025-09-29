@@ -1,6 +1,7 @@
 package powerdns
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -131,9 +132,9 @@ func testAccCheckPowerDNSPTRRecordDestroy(s *terraform.State) error {
 			continue
 		}
 
-		exists, err := client.RecordExistsByID(rs.Primary.Attributes["reverse_zone"], rs.Primary.ID)
+		exists, err := client.RecordExistsByID(context.Background(), rs.Primary.Attributes["reverse_zone"], rs.Primary.ID)
 		if err != nil {
-			return fmt.Errorf("Error checking if PTR record still exists: %#v", rs.Primary.ID)
+			return fmt.Errorf("error checking if PTR record still exists: %w", err)
 		}
 		if exists {
 			return fmt.Errorf("PTR record still exists")
@@ -155,9 +156,9 @@ func testAccCheckPowerDNSPTRRecordExists(n string) resource.TestCheckFunc {
 		}
 
 		client := testAccProvider.Meta().(*Client)
-		exists, err := client.RecordExistsByID(rs.Primary.Attributes["reverse_zone"], rs.Primary.ID)
+		exists, err := client.RecordExistsByID(context.Background(), rs.Primary.Attributes["reverse_zone"], rs.Primary.ID)
 		if err != nil {
-			return fmt.Errorf("Error checking if PTR record exists: %#v", rs.Primary.ID)
+			return fmt.Errorf("error checking if PTR record exists: %w", err)
 		}
 		if !exists {
 			return fmt.Errorf("PTR record not found")

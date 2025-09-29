@@ -1,6 +1,7 @@
 package powerdns
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -41,7 +42,7 @@ func testAccCheckPowerDNSRecursorConfigDestroy(s *terraform.State) error {
 			continue
 		}
 
-		_, err := client.GetRecursorConfigValue(rs.Primary.ID)
+		_, err := client.GetRecursorConfigValue(context.Background(), rs.Primary.ID)
 		if err == nil {
 			return fmt.Errorf("Recursor config still exists")
 		}
@@ -62,7 +63,7 @@ func testAccCheckPowerDNSRecursorConfigExists(n string) resource.TestCheckFunc {
 		}
 
 		client := testAccProvider.Meta().(*Client)
-		_, err := client.GetRecursorConfigValue(rs.Primary.ID)
+		_, err := client.GetRecursorConfigValue(context.Background(), rs.Primary.ID)
 		if err != nil {
 			return fmt.Errorf("Error checking if recursor config exists: %s", err)
 		}
