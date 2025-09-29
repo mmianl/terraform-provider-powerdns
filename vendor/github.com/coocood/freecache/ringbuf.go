@@ -28,8 +28,7 @@ func NewRingBuf(size int, begin int64) (rb RingBuf) {
 // Reset the ring buffer
 //
 // Parameters:
-//
-//	begin: beginning offset of the data stream
+//     begin: beginning offset of the data stream
 func (rb *RingBuf) Reset(begin int64) {
 	rb.begin = begin
 	rb.end = begin
