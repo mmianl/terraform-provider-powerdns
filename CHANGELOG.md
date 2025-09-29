@@ -1,3 +1,8 @@
+## 1.8.1 (September 29, 2025)
+
+FEATURES:
+  * **Dependency updates** ([#29](https://github.com/mmianl/terraform-provider-powerdns/pull/29), @dependabot)
+
 ## 1.8.0 (September 28, 2025)
 
 FEATURES:
