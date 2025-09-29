@@ -19,6 +19,10 @@ test: fmtcheck
 testacc: fmtcheck
 	TF_ACC=1 go test $(TEST) -v -parallel 5 $(TESTARGS) -timeout 120m
 
+coverage: fmtcheck
+	go test -coverprofile=coverage.out -covermode=atomic $(TEST) $(TESTARGS)
+	go tool cover -func=coverage.out
+	
 vet:
 	@echo "go vet ."
 	@go vet $$(go list ./... | grep -v vendor/) ; if [ $$? -eq 1 ]; then \

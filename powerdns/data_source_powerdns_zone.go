@@ -124,7 +124,13 @@ func dataSourcePDNSZoneRead(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("error setting zone account: %s", err)
 	}
 
-	err = d.Set("soa_edit_api", zone.SoaEditAPI)
+	// Set soa_edit_api with default value if empty
+	soaEditAPI := zone.SoaEditAPI
+	if soaEditAPI == "" {
+		soaEditAPI = "DEFAULT"
+	}
+
+	err = d.Set("soa_edit_api", soaEditAPI)
 	if err != nil {
 		return fmt.Errorf("error setting zone SOA edit API: %s", err)
 	}

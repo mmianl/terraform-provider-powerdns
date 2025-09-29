@@ -99,3 +99,25 @@ func TestURLWithSchemaHasPortAndEndsWithSlash(t *testing.T) {
 	assert.Equal(t, url, expectedURL,
 		"Expected '"+expectedURL+"' but got '"+url+"'")
 }
+
+// BenchmarkSanitizeURL benchmarks the URL sanitization function
+func BenchmarkSanitizeURL(b *testing.B) {
+	testURLs := []string{
+		URLMissingSchemaAndNotEndingWithSlash,
+		URLMissingSchemaAndEndingWithSlash,
+		URLWithSchemaAndEndingWithSlash,
+		URLWithSchemaAndNotEndingWithSlash,
+		URLWithSchemaAndPath,
+		URLMissingSchemaHasPort,
+		URLMissingSchemaHasPortAndEndsWithSlash,
+		URLWithSchemaHasPort,
+		URLWithSchemaHasPortAndEndsWithSlash,
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, testURL := range testURLs {
+			_, _ = sanitizeURL(testURL) // Check error return value
+		}
+	}
+}
