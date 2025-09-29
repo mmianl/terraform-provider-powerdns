@@ -382,7 +382,9 @@ func (client *Client) GetZone(name string) (ZoneInfo, error) {
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode == http.StatusNotFound {
+		return ZoneInfo{}, nil
+	} else if resp.StatusCode != http.StatusOK {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return ZoneInfo{}, fmt.Errorf("error getting zone: %s", name)
@@ -567,6 +569,14 @@ func (client *Client) ListRecords(zone string) ([]Record, error) {
 				log.Printf("[WARN] Error closing response body: %s", err)
 			}
 		}()
+
+		if resp.StatusCode != http.StatusOK {
+			errorResp := new(errorResponse)
+			if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+				return nil, fmt.Errorf("error getting zone: %s", zone)
+			}
+			return nil, fmt.Errorf("error getting zone: %s, reason: %q", zone, errorResp.ErrorMsg)
+		}
 
 		zoneInfo = new(ZoneInfo)
 		err = json.NewDecoder(resp.Body).Decode(zoneInfo)
