@@ -21,7 +21,7 @@ terraform {
   required_providers {
     powerdns = {
       source = "mmianl/powerdns"
-      version = "1.7.2"
+      version = "1.8.1"
     }
   }
 }
@@ -29,11 +29,13 @@ terraform {
 provider "powerdns" {
   server_url = "https://host:port/"           # authoritative server url (can also be provided with PDNS_SERVER_URL variable)
   recursor_server_url = "https://host:port/"  # recursor server url (can also be provided with PDNS_RECURSOR_SERVER_URL variable)
+  dnsdist_server_url = "https://host:port/"   # DNSdist server url (can also be provided with PDNS_DNSDIST_SERVER_URL variable)
   api_key             = "secret"              # can also be provided with PDNS_API_KEY variable
 }
 
-# Note: The provider supports both PowerDNS Authoritative Server and PowerDNS Recursor.
-# Configure server_url for authoritative operations and recursor_server_url for recursor operations.
+# Note: The provider supports PowerDNS Authoritative Server, PowerDNS Recursor, and PowerDNS DNSdist.
+# Configure server_url for authoritative operations, recursor_server_url for recursor operations,
+# and dnsdist_server_url for DNSdist operations.
 ```
 
 For detailed usage see [provider's documentation page](https://registry.terraform.io/providers/mmianl/powerdns/latest/docs)
@@ -45,6 +47,7 @@ The provider supports configuration via environment variables as an alternative 
 - `PDNS_SERVER_URL` - The URL of the PowerDNS Authoritative Server (e.g., `https://host:port/`)
 - `PDNS_API_KEY` - The API key for authenticating with the PowerDNS server
 - `PDNS_RECURSOR_SERVER_URL` - The URL of the PowerDNS Recursor Server (e.g., `https://host:port/`)
+- `PDNS_DNSDIST_SERVER_URL` - The URL of the PowerDNS DNSdist Server (e.g., `https://host:port/`)
 
 When these environment variables are set, you can use the provider without explicit configuration:
 

@@ -73,6 +73,12 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_RECURSOR_SERVER_URL", nil),
 				Description: "Base URL of the PowerDNS recursor server. Also via PDNS_RECURSOR_SERVER_URL.",
 			},
+			"dnsdist_server_url": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PDNS_DNSDIST_SERVER_URL", nil),
+				Description: "Location of PowerDNS DNSdist server",
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -82,11 +88,13 @@ func Provider() *schema.Provider {
 			"powerdns_reverse_zone":          resourcePDNSReverseZone(),
 			"powerdns_recursor_config":       resourcePDNSRecursorConfig(),
 			"powerdns_recursor_forward_zone": resourcePDNSRecursorForwardZone(),
+			"powerdns_dnsdist_rule":          resourcePDNSDNSdistRule(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
-			"powerdns_reverse_zone": dataSourcePDNSReverseZone(),
-			"powerdns_zone":         dataSourcePDNSZone(),
+			"powerdns_reverse_zone":       dataSourcePDNSReverseZone(),
+			"powerdns_zone":               dataSourcePDNSZone(),
+			"powerdns_dnsdist_statistics": dataSourcePDNSDNSdistStatistics(),
 		},
 
 		ConfigureContextFunc: providerConfigure,
@@ -102,6 +110,7 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 		ClientCertKeyFile: data.Get("client_cert_key_file").(string),
 		ServerURL:         data.Get("server_url").(string),
 		RecursorServerURL: data.Get("recursor_server_url").(string),
+		DNSdistServerURL:  data.Get("dnsdist_server_url").(string),
 		InsecureHTTPS:     data.Get("insecure_https").(bool),
 		CACertificate:     data.Get("ca_certificate").(string),
 		CacheEnable:       data.Get("cache_requests").(bool),
