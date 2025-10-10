@@ -14,6 +14,7 @@ import (
 type Config struct {
 	ServerURL         string
 	RecursorServerURL string
+	DNSdistServerURL  string
 	APIKey            string
 	ClientCertFile    string
 	ClientCertKeyFile string
@@ -63,6 +64,7 @@ func (c *Config) Client(ctx context.Context) (*Client, error) {
 		ctx,
 		c.ServerURL,
 		c.RecursorServerURL,
+		c.DNSdistServerURL,
 		c.APIKey,
 		tlsConfig,
 		c.CacheEnable,

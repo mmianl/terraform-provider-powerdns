@@ -29,6 +29,7 @@ var DefaultCacheSize int
 type Client struct {
 	ServerURL         string // Location of PowerDNS authoritative server to use
 	RecursorServerURL string // Location of PowerDNS recursor server to use
+	DNSdistServerURL  string // Location of PowerDNS DNSdist server to use
 	ServerVersion     string
 	APIKey            string // REST API Static authentication key
 	APIVersion        int    // API version to use
@@ -39,7 +40,8 @@ type Client struct {
 }
 
 // NewClient returns a new PowerDNS client
-func NewClient(ctx context.Context, serverURL string, recursorServerURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*Client, error) {
+func NewClient(ctx context.Context, serverURL string, recursorServerURL string, dnsdistServerURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*Client, error) {
+
 	cleanURL, err := sanitizeURL(serverURL)
 
 	httpClient := cleanhttp.DefaultClient()
@@ -60,6 +62,7 @@ func NewClient(ctx context.Context, serverURL string, recursorServerURL string, 
 	client := Client{
 		ServerURL:         cleanURL,
 		RecursorServerURL: recursorServerURL,
+		DNSdistServerURL:  dnsdistServerURL,
 		APIKey:            apiKey,
 		HTTP:              httpClient,
 		APIVersion:        -1,
@@ -203,6 +206,35 @@ func (client *Client) newRequestRecursor(ctx context.Context, method string, end
 	return req, nil
 }
 
+// Creates a new request for DNSdist API
+func (client *Client) newRequestDNSdist(method string, endpoint string, body []byte) (*http.Request, error) {
+	var urlStr = client.DNSdistServerURL + endpoint
+
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, fmt.Errorf("error during parsing DNSdist request URL: %s", err)
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequest(method, u.String(), bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("error during creation of DNSdist request: %s", err)
+	}
+
+	req.Header.Add("X-API-Key", client.APIKey)
+	req.Header.Add("Accept", "application/json")
+
+	if method != "GET" {
+		req.Header.Add("Content-Type", "application/json")
+	}
+
+	return req, nil
+}
+
 // ZoneInfo represents a PowerDNS zone object
 type ZoneInfo struct {
 	ID                 string              `json:"id"`
@@ -252,6 +284,39 @@ type zonePatchRequest struct {
 
 type errorResponse struct {
 	ErrorMsg string `json:"error"`
+}
+
+// DNSdistServer represents a DNSdist server object
+type DNSdistServer struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Address  string `json:"address"`
+	Protocol string `json:"protocol"`
+}
+
+// DNSdistRule represents a DNSdist rule object
+type DNSdistRule struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Rule        string `json:"rule"`
+	Action      string `json:"action"`
+	Enabled     bool   `json:"enabled"`
+	Description string `json:"description"`
+}
+
+// DNSdistACL represents a DNSdist ACL object
+type DNSdistACL struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Entries []string `json:"entries"`
+}
+
+// DNSdistStatistic represents a DNSdist statistic object
+type DNSdistStatistic struct {
+	Name  string   `json:"name"`
+	Value float64  `json:"value"`
+	Type  string   `json:"type"`
+	Tags  []string `json:"tags,omitempty"`
 }
 
 type serverInfo struct {
@@ -973,4 +1038,187 @@ func (client *Client) DeleteRecursorConfigValue(ctx context.Context, name string
 		}
 		return fmt.Errorf("error deleting recursor config %s: %q", name, errorResp.ErrorMsg)
 	}
+}
+
+// DNSdist API Methods
+
+// GetDNSdistStatistics gets all DNSdist statistics
+func (client *Client) GetDNSdistStatistics(ctx context.Context) ([]DNSdistStatistic, error) {
+	req, err := client.newRequestDNSdist("GET", "/api/v1/servers/localhost/statistics", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return nil, fmt.Errorf("error getting DNSdist statistics")
+		}
+		return nil, fmt.Errorf("error getting DNSdist statistics: %q", errorResp.ErrorMsg)
+	}
+
+	var statistics []DNSdistStatistic
+	err = json.NewDecoder(resp.Body).Decode(&statistics)
+	if err != nil {
+		return nil, err
+	}
+
+	return statistics, nil
+}
+
+// GetDNSdistServers gets all DNSdist servers
+func (client *Client) GetDNSdistServers(ctx context.Context) ([]DNSdistServer, error) {
+	req, err := client.newRequestDNSdist("GET", "/api/v1/servers/localhost/servers", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return nil, fmt.Errorf("error getting DNSdist servers")
+		}
+		return nil, fmt.Errorf("error getting DNSdist servers: %q", errorResp.ErrorMsg)
+	}
+
+	var servers []DNSdistServer
+	err = json.NewDecoder(resp.Body).Decode(&servers)
+	if err != nil {
+		return nil, err
+	}
+
+	return servers, nil
+}
+
+// GetDNSdistRules gets all DNSdist rules
+func (client *Client) GetDNSdistRules(ctx context.Context) ([]DNSdistRule, error) {
+	req, err := client.newRequestDNSdist("GET", "/api/v1/servers/localhost/rules", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return nil, fmt.Errorf("error getting DNSdist rules")
+		}
+		return nil, fmt.Errorf("error getting DNSdist rules: %q", errorResp.ErrorMsg)
+	}
+
+	var rules []DNSdistRule
+	err = json.NewDecoder(resp.Body).Decode(&rules)
+	if err != nil {
+		return nil, err
+	}
+
+	return rules, nil
+}
+
+// CreateDNSdistRule creates a new DNSdist rule
+func (client *Client) CreateDNSdistRule(ctx context.Context, rule DNSdistRule) (DNSdistRule, error) {
+	body, err := json.Marshal(rule)
+	if err != nil {
+		return DNSdistRule{}, err
+	}
+
+	req, err := client.newRequestDNSdist("POST", "/api/v1/servers/localhost/rules", body)
+	if err != nil {
+		return DNSdistRule{}, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return DNSdistRule{}, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error": err.Error(),
+				"rule":  rule.Name,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return DNSdistRule{}, fmt.Errorf("error creating DNSdist rule: %s", rule.Name)
+		}
+		return DNSdistRule{}, fmt.Errorf("error creating DNSdist rule: %s, reason: %q", rule.Name, errorResp.ErrorMsg)
+	}
+
+	var createdRule DNSdistRule
+	err = json.NewDecoder(resp.Body).Decode(&createdRule)
+	if err != nil {
+		return DNSdistRule{}, err
+	}
+
+	return createdRule, nil
+}
+
+// DeleteDNSdistRule deletes a DNSdist rule
+func (client *Client) DeleteDNSdistRule(ctx context.Context, ruleID string) error {
+	req, err := client.newRequestDNSdist("DELETE", fmt.Sprintf("/api/v1/servers/localhost/rules/%s", ruleID), nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"ruleID": ruleID,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return fmt.Errorf("error deleting DNSdist rule: %s", ruleID)
+		}
+		return fmt.Errorf("error deleting DNSdist rule: %s, reason: %q", ruleID, errorResp.ErrorMsg)
+	}
+
+	return nil
 }

@@ -11,6 +11,8 @@ description: |-
 The PowerDNS provider is used manipulate DNS records supported by PowerDNS server. The provider needs to be configured
 with the proper credentials before it can be used. It supports both the [legacy API](https://doc.powerdns.com/3/httpapi/api_spec/) and the new [version 1 API](https://doc.powerdns.com/md/httpapi/api_spec/), however resources may need to be configured differently.
 
+The provider supports PowerDNS Authoritative Server, PowerDNS Recursor, and PowerDNS DNSdist. Configure `server_url` for authoritative operations, `recursor_server_url` for recursor operations, and `dnsdist_server_url` for DNSdist operations.
+
 NOTE: if you're using the sqlite3 PowerDNS backend with an outdated version of PowerDNS, you might face a problem (as described in [#75](https://github.com/pan-net/terraform-provider-powerdns/issues/75) and in [PowerDNS #14564](https://github.com/PowerDNS/pdns/issues/14564)) with terraform's
 default behavior to [run multiple operations](https://www.terraform.io/docs/commands/apply.html#parallelism-n) in parallel. Using `-parallelism=1` can help solve the limitations of
 the sqlite3 PowerDNS Backend. This is **no longer an issue** with PowerDNS Version 4.9.
@@ -41,6 +43,7 @@ The following arguments are supported:
 - `client_cert_key_file` - (Optional) The PowerDNS API client certificate key file path. This can also be specified with `PDNS_CLIENT_CERT_KEY_FILE` environment variable. Using this also requires the `client_cert_file` argument to be defined.
 - `server_url` - (Required) The address of PowerDNS server. This can also be specified with `PDNS_SERVER_URL` environment variable. When no schema is provided, the default is `https`.
 - `recursor_server_url` - (Optional) The address of PowerDNS Recursor server. This can also be specified with `PDNS_RECURSOR_SERVER_URL` environment variable. When no schema is provided, the default is `https`.
+- `dnsdist_server_url` - (Optional) The address of PowerDNS DNSdist server. This can also be specified with `PDNS_DNSDIST_SERVER_URL` environment variable. When no schema is provided, the default is `https`.
 - `ca_certificate` - (Optional) A valid path of a Root CA Certificate in PEM format _or_ the content of a Root CA certificate in PEM format. This can also be specified with `PDNS_CACERT` environment variable.
 - `insecure_https` - (Optional) Set this to `true` to disable verification of the PowerDNS server's TLS certificate. This can also be specified with the `PDNS_INSECURE_HTTPS` environment variable.
 - `cache_requests` - (Optional) Set this to `true` to enable cache of the PowerDNS REST API requests. This can also be specified with the `PDNS_CACHE_REQUESTS` environment variable. `WARNING! Enabling this option can lead to the use of stale records when you use other automation to populate the DNS zone records at the same time.`
