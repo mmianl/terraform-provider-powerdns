@@ -353,7 +353,7 @@ func TestAccPDNSZoneSlaveWithMastersWithInvalidPort(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigSlaveWithMastersWithInvalidPort,
-				ExpectError: regexp.MustCompile("Invalid port value in masters atribute"),
+				ExpectError: regexp.MustCompile("Invalid port value in masters attribute"),
 			},
 		},
 	})
