@@ -14,12 +14,12 @@ Provides a PowerDNS recursor forward zone resource for managing DNS forwarding c
 
 ```hcl
 resource "powerdns_recursor_forward_zone" "example" {
-  zone    = "example.com"
+  zone    = "example.com."
   servers = ["192.0.2.1", "192.0.2.2"]
 }
 
 resource "powerdns_recursor_forward_zone" "internal" {
-  zone    = "internal.company.com"
+  zone    = "internal.company.com."
   servers = ["10.0.0.53"]
 }
 ```
@@ -28,7 +28,7 @@ resource "powerdns_recursor_forward_zone" "internal" {
 
 This resource supports the following arguments:
 
-- `zone` - (Required) The DNS zone name to forward queries for.
+- `zone` - (Required) The DNS zone name to forward queries for. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., "example.com.").
 - `servers` - (Required) A list of DNS server IP addresses to forward queries to for this zone.
 
 ## Notes
@@ -37,3 +37,4 @@ This resource supports the following arguments:
 - Forward zone configuration is managed through the `forward-zones` recursor setting.
 - Multiple forward zones can be configured independently.
 - Changes take effect immediately in the running recursor.
+- The `zone` should be specified as a fully qualified domain name (FQDN), ending with a trailing dot (e.g., "example.com.").

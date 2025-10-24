@@ -32,11 +32,20 @@ func resourcePDNSPTRRecord() *schema.Resource {
 				Description:  "The IP address to create a PTR record for (IPv4 or IPv6).",
 			},
 			"hostname": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ForceNew:     true,
-				ValidateFunc: validation.StringLenBetween(1, 255),
-				Description:  "The hostname to point to.",
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
+				ValidateFunc: func(v interface{}, k string) (ws []string, errors []error) {
+					value := v.(string)
+					if len(value) < 1 || len(value) > 255 {
+						errors = append(errors, fmt.Errorf("%q must be between 1 and 255 characters", k))
+					}
+					if !strings.HasSuffix(value, ".") {
+						errors = append(errors, fmt.Errorf("%q must be a fully qualified domain name ending with a dot", k))
+					}
+					return
+				},
+				Description: "The hostname to point to. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., \"ns1.example.com.\").",
 			},
 			"ttl": {
 				Type:         schema.TypeInt,
@@ -46,10 +55,17 @@ func resourcePDNSPTRRecord() *schema.Resource {
 				Description:  "The TTL of the PTR record.",
 			},
 			"reverse_zone": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: "The name of the reverse zone (e.g., '16.172.in-addr.arpa.' or '8.b.d.0.1.0.0.2.ip6.arpa.').",
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
+				ValidateFunc: func(v interface{}, k string) (ws []string, errors []error) {
+					value := v.(string)
+					if !strings.HasSuffix(value, ".") {
+						errors = append(errors, fmt.Errorf("%q must be a fully qualified domain name ending with a dot", k))
+					}
+					return
+				},
+				Description: "The name of the reverse zone. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., \"16.172.in-addr.arpa.\" or \"8.b.d.0.1.0.0.2.ip6.arpa.\").",
 			},
 		},
 	}

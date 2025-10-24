@@ -19,7 +19,7 @@ func TestAccPowerDNSRecursorForwardZone_Basic(t *testing.T) {
 				Config: testAccPowerDNSRecursorForwardZoneConfig,
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPowerDNSRecursorForwardZoneExists("powerdns_recursor_forward_zone.test"),
-					resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.test", "zone", "example.com"),
+					resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.test", "zone", "example.com."),
 					resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.test", "servers.#", "2"),
 					resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.test", "servers.0", "192.0.2.1"),
 					resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.test", "servers.1", "192.0.2.2"),
@@ -31,7 +31,7 @@ func TestAccPowerDNSRecursorForwardZone_Basic(t *testing.T) {
 
 const testAccPowerDNSRecursorForwardZoneConfig = `
 resource "powerdns_recursor_forward_zone" "test" {
-  zone    = "example.com"
+  zone    = "example.com."
   servers = ["192.0.2.1", "192.0.2.2"]
 }
 `

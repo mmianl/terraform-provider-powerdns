@@ -36,10 +36,10 @@ resource "powerdns_zone" "fubar" {
 
 This resource supports the following arguments:
 
-- `name` - (Required) The name of zone.
+- `name` - (Required) The name of the zone. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., "example.com.").
 - `kind` - (Required) The kind of the zone.
 - `account` - (Optional) The account owning the zone. (Default to "admin")
-- `nameservers` - (Optional) List of zone nameservers.
+- `nameservers` - (Optional) List of zone nameservers. Each nameserver must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., "ns1.example.com.").
 - `masters` - (Optional) List of IP addresses configured as a master for this zone. This argument must be provided when `kind` is set to `Slave`.
 - `soa_edit_api` - (Optional) This should map to one of the [supported API values](https://doc.powerdns.com/authoritative/dnsupdate.html#soa-edit-dnsupdate-settings) *or* in [case you wish to remove the setting](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit-api), set this argument as `""` (that will translate to the API value `""`).
 
