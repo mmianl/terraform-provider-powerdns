@@ -39,6 +39,6 @@ kill "$LOGS_PID" || true
 $COMPOSE down --remove-orphans
 
 # Remove the volume (ignore error if it doesn't exist)
-$ENGINE volume rm bootstrap_pdns_data || true
+$ENGINE volume rm e2e-tests_pdns_data || true
 
 exit "$TF_STATUS"
