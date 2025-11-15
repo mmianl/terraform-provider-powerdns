@@ -27,25 +27,36 @@ func resourcePDNSRecursorConfig() *schema.Resource {
 				Description:  "The name of the recursor config setting",
 			},
 			"value": {
-				Type:        schema.TypeString,
+				Type: schema.TypeList,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
 				Required:    true,
-				Description: "The value of the recursor config setting",
+				Description: "The value of the recursor config setting (list of CIDRs, etc.)",
 			},
 		},
 	}
 }
 
 func resourcePDNSRecursorConfigCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	recursorClient, diags := getRecursorClient(meta)
+	if diags != nil {
+		return diags
+	}
 
 	name := d.Get("name").(string)
-	value := d.Get("value").(string)
+	rawValues := d.Get("value").([]interface{})
+
+	values := make([]string, len(rawValues))
+	for i, v := range rawValues {
+		values[i] = v.(string)
+	}
 
 	tflog.SetField(ctx, "recursor_config_name", name)
 	tflog.Debug(ctx, "Creating recursor config")
 
-	if err := client.SetRecursorConfigValue(ctx, name, value); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to create recursor config: %w", err))
+	if err := recursorClient.SetConfig(ctx, name, values); err != nil {
+		return diag.FromErr(fmt.Errorf("failed to create recursor config %q: %w", name, err))
 	}
 
 	d.SetId(name)
@@ -54,13 +65,16 @@ func resourcePDNSRecursorConfigCreate(ctx context.Context, d *schema.ResourceDat
 }
 
 func resourcePDNSRecursorConfigRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	recursorClient, diags := getRecursorClient(meta)
+	if diags != nil {
+		return diags
+	}
 
 	name := d.Id()
 	tflog.SetField(ctx, "recursor_config_name", name)
 	tflog.Debug(ctx, "Reading recursor config")
 
-	value, err := client.GetRecursorConfigValue(ctx, name)
+	setting, err := recursorClient.GetConfig(ctx, name)
 	if err != nil {
 		// Only treat "not found" as removing from state, other errors should fail
 		if errors.Is(err, ErrNotFound) {
@@ -68,13 +82,13 @@ func resourcePDNSRecursorConfigRead(ctx context.Context, d *schema.ResourceData,
 			d.SetId("")
 			return nil
 		}
-		return diag.FromErr(fmt.Errorf("failed to get recursor config: %w", err))
+		return diag.FromErr(fmt.Errorf("failed to get recursor config %q: %w", name, err))
 	}
 
-	if err := d.Set("name", name); err != nil {
+	if err := d.Set("name", setting.Name); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting name: %w", err))
 	}
-	if err := d.Set("value", value); err != nil {
+	if err := d.Set("value", setting.Value); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting value: %w", err))
 	}
 
@@ -82,32 +96,35 @@ func resourcePDNSRecursorConfigRead(ctx context.Context, d *schema.ResourceData,
 }
 
 func resourcePDNSRecursorConfigUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	recursorClient, diags := getRecursorClient(meta)
+	if diags != nil {
+		return diags
+	}
 
 	name := d.Id()
-	value := d.Get("value").(string)
+	rawValues := d.Get("value").([]interface{})
+
+	values := make([]string, len(rawValues))
+	for i, v := range rawValues {
+		values[i] = v.(string)
+	}
 
 	tflog.SetField(ctx, "recursor_config_name", name)
 	tflog.Debug(ctx, "Updating recursor config")
 
-	if err := client.SetRecursorConfigValue(ctx, name, value); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to update recursor config: %w", err))
+	if err := recursorClient.SetConfig(ctx, name, values); err != nil {
+		return diag.FromErr(fmt.Errorf("failed to update recursor config %q: %w", name, err))
 	}
 
 	return resourcePDNSRecursorConfigRead(ctx, d, meta)
 }
 
 func resourcePDNSRecursorConfigDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
-
 	name := d.Id()
 	tflog.SetField(ctx, "recursor_config_name", name)
 	tflog.Debug(ctx, "Deleting recursor config")
 
-	if err := client.DeleteRecursorConfigValue(ctx, name); err != nil {
-		return diag.FromErr(fmt.Errorf("error deleting recursor config: %w", err))
-	}
-
-	tflog.Info(ctx, "Successfully deleted recursor config")
+	// The API only supports GET and PUT for config, so delete will do nothing
+	tflog.Info(ctx, "Successfully deleted recursor config (removed from state)", map[string]any{"name": name})
 	return nil
 }

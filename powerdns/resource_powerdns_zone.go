@@ -71,7 +71,7 @@ func resourcePDNSZone() *schema.Resource {
 }
 
 func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	var nameservers []string
 	for _, nameserver := range d.Get("nameservers").(*schema.Set).List() {
@@ -123,7 +123,7 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 	tflog.SetField(ctx, "zone_kind", zoneInfo.Kind)
 	tflog.Debug(ctx, "Creating PowerDNS Zone")
 
-	createdZoneInfo, err := client.CreateZone(ctx, zoneInfo)
+	createdZoneInfo, err := client.PDNS.CreateZone(ctx, zoneInfo)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -134,12 +134,12 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 }
 
 func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	tflog.SetField(ctx, "zone_id", d.Id())
 	tflog.Debug(ctx, "Reading PowerDNS Zone")
 
-	zoneInfo, err := client.GetZone(ctx, d.Id())
+	zoneInfo, err := client.PDNS.GetZone(ctx, d.Id())
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS Zone: %w", err))
 	}
@@ -165,7 +165,7 @@ func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta inte
 
 	// Only manage NS records for non-Slave zones
 	if !strings.EqualFold(zoneInfo.Kind, "Slave") {
-		nameservers, err := client.ListRecordsInRRSet(ctx, zoneInfo.Name, zoneInfo.Name, "NS")
+		nameservers, err := client.PDNS.ListRecordsInRRSet(ctx, zoneInfo.Name, zoneInfo.Name, "NS")
 		if err != nil {
 			return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneInfo.Name, err))
 		}
@@ -193,7 +193,7 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 	tflog.SetField(ctx, "zone_id", d.Id())
 	tflog.Debug(ctx, "Updating PowerDNS Zone")
 
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	zoneInfo := ZoneInfoUpd{}
 	if d.HasChange("kind") || d.HasChange("account") || d.HasChange("soa_edit_api") {
@@ -202,7 +202,7 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 		zoneInfo.Account = d.Get("account").(string)
 		zoneInfo.SoaEditAPI = d.Get("soa_edit_api").(string)
 
-		if err := client.UpdateZone(ctx, d.Id(), zoneInfo); err != nil {
+		if err := client.PDNS.UpdateZone(ctx, d.Id(), zoneInfo); err != nil {
 			return diag.FromErr(fmt.Errorf("error updating PowerDNS Zone: %w", err))
 		}
 		return resourcePDNSZoneRead(ctx, d, meta)
@@ -211,12 +211,12 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 }
 
 func resourcePDNSZoneDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	tflog.SetField(ctx, "zone_id", d.Id())
 	tflog.Debug(ctx, "Deleting PowerDNS Zone")
 
-	if err := client.DeleteZone(ctx, d.Id()); err != nil {
+	if err := client.PDNS.DeleteZone(ctx, d.Id()); err != nil {
 		return diag.FromErr(fmt.Errorf("error deleting PowerDNS Zone: %w", err))
 	}
 	tflog.Info(ctx, "Deleted PowerDNS Zone")

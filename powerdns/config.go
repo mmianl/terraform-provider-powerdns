@@ -25,14 +25,14 @@ type Config struct {
 }
 
 // Client returns a new client for accessing PowerDNS
-func (c *Config) Client(ctx context.Context) (*Client, error) {
+func (c *Config) Clients(ctx context.Context) (*PowerDNSClient, *RecursorClient, error) {
 	tlsConfig := &tls.Config{}
 
 	// Load custom CA bundle if provided
 	if c.CACertificate != "" {
 		caCert, _, err := pathorcontents.Read(c.CACertificate)
 		if err != nil {
-			return nil, fmt.Errorf("error reading CA Cert: %s", err)
+			return nil, nil, fmt.Errorf("error reading CA Cert: %s", err)
 		}
 
 		caCertPool := x509.NewCertPool()
@@ -46,7 +46,7 @@ func (c *Config) Client(ctx context.Context) (*Client, error) {
 	if c.ClientCertFile != "" && c.ClientCertKeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(c.ClientCertFile, c.ClientCertKeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("unable to load client cert: %v", err)
+			return nil, nil, fmt.Errorf("unable to load client cert: %v", err)
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 
@@ -59,10 +59,9 @@ func (c *Config) Client(ctx context.Context) (*Client, error) {
 		tflog.Warn(ctx, "TLS certificate verification is disabled for PowerDNS client")
 	}
 
-	client, err := NewClient(
+	pdnsClient, err := NewPowerDNSClient(
 		ctx,
 		c.ServerURL,
-		c.RecursorServerURL,
 		c.APIKey,
 		tlsConfig,
 		c.CacheEnable,
@@ -70,7 +69,7 @@ func (c *Config) Client(ctx context.Context) (*Client, error) {
 		c.CacheTTL,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up PowerDNS client: %s", err)
+		return nil, nil, fmt.Errorf("error setting up PowerDNS client: %s", err)
 	}
 
 	// Attach some persistent fields for follow-up logs if callers reuse ctx
@@ -81,5 +80,21 @@ func (c *Config) Client(ctx context.Context) (*Client, error) {
 
 	tflog.Info(ctx, "PowerDNS client configured")
 
-	return client, nil
+	if c.RecursorServerURL != "" {
+		recursorClient, err := NewRecursorClient(
+			ctx,
+			c.RecursorServerURL,
+			c.APIKey,
+			tlsConfig,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error setting up Recursor client: %s", err)
+		}
+
+		tflog.Info(ctx, "Recursor client configured")
+
+		return pdnsClient, recursorClient, nil
+	}
+
+	return pdnsClient, nil, nil
 }

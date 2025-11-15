@@ -451,7 +451,7 @@ func testAccCheckPDNSRecordDestroy(s *terraform.State) error {
 			continue
 		}
 
-		client := testAccProvider.Meta().(*Client)
+		client := testAccProvider.Meta().(*PowerDNSClient)
 		exists, err := client.RecordExistsByID(context.Background(), rs.Primary.Attributes["zone"], rs.Primary.ID)
 		if err != nil {
 			return fmt.Errorf("Error checking if record still exists: %#v", rs.Primary.ID)
@@ -475,7 +475,7 @@ func testAccCheckPDNSRecordExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("No Record ID is set")
 		}
 
-		client := testAccProvider.Meta().(*Client)
+		client := testAccProvider.Meta().(*PowerDNSClient)
 		foundRecords, err := client.ListRecordsByID(context.Background(), rs.Primary.Attributes["zone"], rs.Primary.ID)
 		if err != nil {
 			return err

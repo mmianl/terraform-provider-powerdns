@@ -1,0 +1,9 @@
+FROM powerdns/pdns-recursor-54:latest
+
+USER root
+
+RUN mkdir /etc/powerdns/api.d/ && \
+  chown pdns:pdns /etc/powerdns/api.d/ && \
+  chmod 755 /etc/powerdns/api.d/
+
+USER pdns

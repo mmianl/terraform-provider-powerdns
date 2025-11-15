@@ -2,6 +2,7 @@ package powerdns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -37,21 +38,28 @@ resource "powerdns_recursor_forward_zone" "test" {
 `
 
 func testAccCheckPowerDNSRecursorForwardZoneDestroy(s *terraform.State) error {
-	client := testAccProvider.Meta().(*Client)
+	client := testAccProvider.Meta().(*ProviderClients)
+	recursor := client.Recursor
+	if recursor == nil {
+		return fmt.Errorf("recursor client is not configured")
+	}
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "powerdns_recursor_forward_zone" {
 			continue
 		}
 
-		value, err := client.GetRecursorConfigValue(context.Background(), "forward-zones")
-		if err != nil {
-			return err
+		zoneName := rs.Primary.ID
+		if zoneName == "" {
+			continue
 		}
 
-		forwardZones := parseForwardZones(value)
-		if _, exists := forwardZones[rs.Primary.ID]; exists {
-			return fmt.Errorf("Recursor forward zone still exists")
+		_, err := recursor.GetForwardZone(context.Background(), zoneName)
+		if err == nil {
+			return fmt.Errorf("recursor forward zone %q still exists", zoneName)
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("error checking recursor forward zone %q during destroy: %w", zoneName, err)
 		}
 	}
 
@@ -62,22 +70,26 @@ func testAccCheckPowerDNSRecursorForwardZoneExists(n string) resource.TestCheckF
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
-			return fmt.Errorf("Not found: %s", n)
+			return fmt.Errorf("not found: %s", n)
 		}
 
 		if rs.Primary.ID == "" {
-			return fmt.Errorf("No recursor forward zone ID is set")
+			return fmt.Errorf("no recursor forward zone ID is set")
 		}
 
-		client := testAccProvider.Meta().(*Client)
-		value, err := client.GetRecursorConfigValue(context.Background(), "forward-zones")
+		client := testAccProvider.Meta().(*ProviderClients)
+		recursor := client.Recursor
+		if recursor == nil {
+			return fmt.Errorf("recursor client is not configured")
+		}
+
+		zoneName := rs.Primary.ID
+		_, err := recursor.GetForwardZone(context.Background(), zoneName)
 		if err != nil {
-			return fmt.Errorf("Error getting forward-zones: %s", err)
-		}
-
-		forwardZones := parseForwardZones(value)
-		if _, exists := forwardZones[rs.Primary.ID]; !exists {
-			return fmt.Errorf("Recursor forward zone not found")
+			if errors.Is(err, ErrNotFound) {
+				return fmt.Errorf("recursor forward zone %q not found", zoneName)
+			}
+			return fmt.Errorf("error getting recursor forward zone %q: %w", zoneName, err)
 		}
 
 		return nil

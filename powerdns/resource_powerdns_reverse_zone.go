@@ -63,7 +63,7 @@ func expandStringList(configured []interface{}) []string {
 }
 
 func resourcePDNSReverseZoneCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	cidr := d.Get("cidr").(string)
 	tflog.SetField(ctx, "cidr", cidr)
@@ -81,7 +81,7 @@ func resourcePDNSReverseZoneCreate(ctx context.Context, d *schema.ResourceData, 
 		Nameservers: expandStringList(d.Get("nameservers").([]interface{})),
 	}
 
-	createdZone, err := client.CreateZone(ctx, zone)
+	createdZone, err := client.PDNS.CreateZone(ctx, zone)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to create reverse zone: %w", err))
 	}
@@ -92,13 +92,13 @@ func resourcePDNSReverseZoneCreate(ctx context.Context, d *schema.ResourceData, 
 }
 
 func resourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 	zoneName := d.Id()
 
 	tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Reading reverse zone")
 
-	zone, err := client.GetZone(ctx, zoneName)
+	zone, err := client.PDNS.GetZone(ctx, zoneName)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch zone: %w", err))
 	}
@@ -120,7 +120,7 @@ func resourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, me
 	}
 
 	// Read nameservers from NS records
-	nameservers, err := client.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
+	nameservers, err := client.PDNS.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneName, err))
 	}
@@ -138,14 +138,14 @@ func resourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, me
 }
 
 func resourcePDNSReverseZoneUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 	zoneName := d.Id()
 
 	tflog.SetField(ctx, "zone", zoneName)
 	if d.HasChange("nameservers") {
 		tflog.Debug(ctx, "Updating nameservers for reverse zone")
 
-		zone, err := client.GetZone(ctx, zoneName)
+		zone, err := client.PDNS.GetZone(ctx, zoneName)
 		if err != nil {
 			return diag.FromErr(fmt.Errorf("couldn't fetch zone: %w", err))
 		}
@@ -161,7 +161,7 @@ func resourcePDNSReverseZoneUpdate(ctx context.Context, d *schema.ResourceData, 
 			SoaEditAPI: zone.SoaEditAPI,
 		}
 
-		if err := client.UpdateZone(ctx, zoneName, zoneInfo); err != nil {
+		if err := client.PDNS.UpdateZone(ctx, zoneName, zoneInfo); err != nil {
 			return diag.FromErr(fmt.Errorf("error updating zone: %w", err))
 		}
 
@@ -181,7 +181,7 @@ func resourcePDNSReverseZoneUpdate(ctx context.Context, d *schema.ResourceData, 
 			}
 		}
 
-		if _, err := client.ReplaceRecordSet(ctx, zoneName, rrSet); err != nil {
+		if _, err := client.PDNS.ReplaceRecordSet(ctx, zoneName, rrSet); err != nil {
 			return diag.FromErr(fmt.Errorf("error updating nameserver records: %w", err))
 		}
 
@@ -192,13 +192,13 @@ func resourcePDNSReverseZoneUpdate(ctx context.Context, d *schema.ResourceData, 
 }
 
 func resourcePDNSReverseZoneDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 	zoneName := d.Id()
 
 	tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Deleting reverse zone")
 
-	if err := client.DeleteZone(ctx, zoneName); err != nil {
+	if err := client.PDNS.DeleteZone(ctx, zoneName); err != nil {
 		return diag.FromErr(fmt.Errorf("error deleting zone: %w", err))
 	}
 
@@ -207,7 +207,7 @@ func resourcePDNSReverseZoneDelete(ctx context.Context, d *schema.ResourceData, 
 }
 
 func resourcePDNSReverseZoneImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	zoneName := d.Id()
 	tflog.Info(ctx, "Importing reverse zone", map[string]any{"zone": zoneName})
@@ -217,7 +217,7 @@ func resourcePDNSReverseZoneImport(ctx context.Context, d *schema.ResourceData, 
 		return nil, err
 	}
 
-	zone, err := client.GetZone(ctx, zoneName)
+	zone, err := client.PDNS.GetZone(ctx, zoneName)
 	if err != nil {
 		return nil, fmt.Errorf("error getting zone: %w", err)
 	}

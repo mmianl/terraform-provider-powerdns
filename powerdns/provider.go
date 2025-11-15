@@ -8,6 +8,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
+type ProviderClients struct {
+	PDNS     *PowerDNSClient
+	Recursor *RecursorClient
+}
+
 // Provider returns a schema.Provider for PowerDNS.
 func Provider() *schema.Provider {
 	return &schema.Provider{
@@ -126,7 +131,7 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 	}
 	tflog.Debug(ctx, "Initializing PowerDNS client")
 
-	client, err := config.Client(ctx)
+	pdnsClient, recursorClient, err := config.Clients(ctx)
 	if err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -136,6 +141,11 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 		return nil, diags
 	}
 
-	tflog.Info(ctx, "PowerDNS client initialized")
-	return client, diags
+	clients := &ProviderClients{
+		PDNS:     pdnsClient,
+		Recursor: recursorClient, // may be nil if recursor_server_url not set
+	}
+
+	tflog.Info(ctx, "PowerDNS client(s) initialized")
+	return clients, diags
 }

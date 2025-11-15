@@ -392,7 +392,7 @@ func testAccCheckPDNSZoneDestroy(s *terraform.State) error {
 			continue
 		}
 
-		client := testAccProvider.Meta().(*Client)
+		client := testAccProvider.Meta().(*PowerDNSClient)
 		exists, err := client.ZoneExists(context.Background(), rs.Primary.Attributes["zone"])
 		if err != nil {
 			return fmt.Errorf("Error checking if zone still exists: %#v", rs.Primary.ID)
@@ -412,7 +412,7 @@ func testAccCheckPDNSZoneExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		client := testAccProvider.Meta().(*Client)
+		client := testAccProvider.Meta().(*PowerDNSClient)
 		exists, err := client.ZoneExists(context.Background(), rs.Primary.Attributes["name"])
 		if err != nil {
 			return err
