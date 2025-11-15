@@ -1,0 +1,25 @@
+incoming:
+  listen:
+    - "0.0.0.0:5301"
+
+webservice:
+  webserver: true
+  api_dir: "/etc/powerdns/api.d/"
+  listen:
+    - addresses:
+      - "0.0.0.0:8082"
+  allow_from:
+    - "0.0.0.0/0"
+  api_key: "testapikey"
+
+recursor:
+  include_dir: "/etc/powerdns/recursor.d/"
+  system_resolver_ttl: 60
+  extended_resolution_errors: true
+
+outgoing:
+  source_address:
+    - "0.0.0.0"
+
+logging:
+  loglevel: 6

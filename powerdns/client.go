@@ -25,56 +25,6 @@ var DefaultSchema = "https"
 // DefaultCacheSize is client default cache size
 var DefaultCacheSize int
 
-// Client is a PowerDNS client representation
-type Client struct {
-	ServerURL         string // Location of PowerDNS authoritative server to use
-	RecursorServerURL string // Location of PowerDNS recursor server to use
-	ServerVersion     string
-	APIKey            string // REST API Static authentication key
-	APIVersion        int    // API version to use
-	HTTP              *http.Client
-	CacheEnable       bool // Enable/Disable cache for REST API requests
-	Cache             *freecache.Cache
-	CacheTTL          int
-}
-
-// NewClient returns a new PowerDNS client
-func NewClient(ctx context.Context, serverURL string, recursorServerURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*Client, error) {
-	cleanURL, err := sanitizeURL(serverURL)
-
-	httpClient := cleanhttp.DefaultClient()
-	httpClient.Transport.(*http.Transport).TLSClientConfig = configTLS
-
-	if err != nil {
-		return nil, fmt.Errorf("error while creating client: %s", err)
-	}
-
-	if cacheEnable {
-		cacheSize, err := strconv.Atoi(cacheSizeMB)
-		if err != nil {
-			return nil, fmt.Errorf("error while creating client: %s", err)
-		}
-		DefaultCacheSize = cacheSize * 1024 * 1024
-	}
-
-	client := Client{
-		ServerURL:         cleanURL,
-		RecursorServerURL: recursorServerURL,
-		APIKey:            apiKey,
-		HTTP:              httpClient,
-		APIVersion:        -1,
-		CacheEnable:       cacheEnable,
-		Cache:             freecache.NewCache(DefaultCacheSize),
-		CacheTTL:          cacheTTL,
-	}
-
-	if err := client.setServerVersion(ctx); err != nil {
-		return nil, fmt.Errorf("error while creating client: %s", err)
-	}
-
-	return &client, nil
-}
-
 // sanitizeURL will output:
 // <scheme>://<host>[:port]
 // with no trailing /
@@ -97,7 +47,7 @@ func sanitizeURL(URL string) (string, error) {
 	if len(parsedURL.Scheme) == 0 {
 		schema = DefaultSchema
 	} else {
-		if (parsedURL.Scheme == "http") || (parsedURL.Scheme == "https") {
+		if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
 			schema = parsedURL.Scheme
 		} else {
 			schema = DefaultSchema
@@ -121,8 +71,100 @@ func sanitizeURL(URL string) (string, error) {
 	return cleanURL, nil
 }
 
-// Creates a new request with necessary headers
-func (client *Client) newRequest(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
+// BaseClient contains shared HTTP / auth / cache logic for PowerDNS-style APIs.
+type BaseClient struct {
+	ServerURL     string // Location of the server to use
+	ServerVersion string
+	APIKey        string // REST API Static authentication key
+	APIVersion    int    // API version to use
+	HTTP          *http.Client
+	CacheEnable   bool // Enable/Disable cache for REST API requests
+	Cache         *freecache.Cache
+	CacheTTL      int
+}
+
+// NewBaseClient constructs a BaseClient with HTTP, TLS and cache configuration.
+func NewBaseClient(ctx context.Context, serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*BaseClient, error) {
+	cleanURL, err := sanitizeURL(serverURL)
+	if err != nil {
+		return nil, fmt.Errorf("error while creating client: %s", err)
+	}
+
+	httpClient := cleanhttp.DefaultClient()
+	httpClient.Transport.(*http.Transport).TLSClientConfig = configTLS
+
+	if cacheEnable {
+		cacheSize, err := strconv.Atoi(cacheSizeMB)
+		if err != nil {
+			return nil, fmt.Errorf("error while creating client: %s", err)
+		}
+		DefaultCacheSize = cacheSize * 1024 * 1024
+	}
+
+	base := &BaseClient{
+		ServerURL:   cleanURL,
+		APIKey:      apiKey,
+		HTTP:        httpClient,
+		APIVersion:  -1,
+		CacheEnable: cacheEnable,
+		Cache:       freecache.NewCache(DefaultCacheSize),
+		CacheTTL:    cacheTTL,
+	}
+
+	if err := base.setServerVersion(ctx); err != nil {
+		return nil, fmt.Errorf("error while creating client: %s", err)
+	}
+
+	return base, nil
+}
+
+func (client *BaseClient) setServerVersion(ctx context.Context) error {
+	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost", nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("invalid response code from server: '%d'. Failed to read response body: %v",
+				resp.StatusCode, err)
+		}
+		return fmt.Errorf("invalid response code from server: '%d'. Response body: %s",
+			resp.StatusCode, string(bodyBytes))
+	}
+
+	serverInfo := new(serverInfo)
+	if err := json.NewDecoder(resp.Body).Decode(serverInfo); err == nil {
+		client.ServerVersion = serverInfo.Version
+		return nil
+	}
+
+	headerServerInfo := strings.SplitN(resp.Header.Get("Server"), "/", 2)
+	if len(headerServerInfo) == 2 && strings.EqualFold(headerServerInfo[0], "PowerDNS") {
+		client.ServerVersion = headerServerInfo[1]
+		return nil
+	}
+
+	return fmt.Errorf("unable to get server version")
+}
+
+// newRequest creates a new request against the API with necessary headers.
+func (client *BaseClient) newRequest(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
 	var err error
 	if client.APIVersion < 0 {
 		client.APIVersion, err = client.detectAPIVersion(ctx)
@@ -162,47 +204,47 @@ func (client *Client) newRequest(ctx context.Context, method string, endpoint st
 	return req, nil
 }
 
-// Creates a new request for recursor API
-func (client *Client) newRequestRecursor(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
-	var err error
-	if client.APIVersion < 0 {
-		client.APIVersion, err = client.detectAPIVersion(ctx)
-	}
+// Detects the API version in use on the server
+// Uses int to represent the API version: 0 is the legacy AKA version 3.4 API
+// Any other integer correlates with the same API version
+func (client *BaseClient) detectAPIVersion(ctx context.Context) (int, error) {
+	httpClient := client.HTTP
+
+	u, err := url.Parse(client.ServerURL + "/api/v1/servers")
 	if err != nil {
-		return nil, err
+		return -1, fmt.Errorf("error while trying to detect the API version, request URL: %s", err)
 	}
 
-	var urlStr string
-	if client.APIVersion > 0 {
-		urlStr = client.RecursorServerURL + "/api/v" + strconv.Itoa(client.APIVersion) + endpoint
-	} else {
-		urlStr = client.RecursorServerURL + endpoint
-	}
-	u, err := url.Parse(urlStr)
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error during parsing request URL: %s", err)
-	}
-
-	var bodyReader io.Reader
-	if body != nil {
-		bodyReader = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequest(method, u.String(), bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("error during creation of request: %s", err)
+		return -1, fmt.Errorf("error during creation of request: %s", err)
 	}
 
 	req.Header.Add("X-API-Key", client.APIKey)
 	req.Header.Add("Accept", "application/json")
 
-	if method != http.MethodGet {
-		req.Header.Add("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return -1, err
 	}
 
-	return req, nil
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	if resp.StatusCode == http.StatusOK {
+		return 1, nil
+	}
+	return 0, nil
 }
 
+// PowerDNSClient is the concrete client used by the provider.
 // ZoneInfo represents a PowerDNS zone object
 type ZoneInfo struct {
 	ID                 string              `json:"id"`
@@ -291,48 +333,21 @@ func parseID(recID string) (string, string, error) {
 	return "", "", fmt.Errorf("unknown record ID format")
 }
 
-// Detects the API version in use on the server
-// Uses int to represent the API version: 0 is the legacy AKA version 3.4 API
-// Any other integer correlates with the same API version
-func (client *Client) detectAPIVersion(ctx context.Context) (int, error) {
-	httpClient := client.HTTP
+type PowerDNSClient struct {
+	*BaseClient
+}
 
-	u, err := url.Parse(client.ServerURL + "/api/v1/servers")
+// NewPowerDNSClient constructs the derived PowerDNS client used by the provider.
+func NewPowerDNSClient(ctx context.Context, serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*PowerDNSClient, error) {
+	base, err := NewBaseClient(ctx, serverURL, apiKey, configTLS, cacheEnable, cacheSizeMB, cacheTTL)
 	if err != nil {
-		return -1, fmt.Errorf("error while trying to detect the API version, request URL: %s", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return -1, fmt.Errorf("error during creation of request: %s", err)
-	}
-
-	req.Header.Add("X-API-Key", client.APIKey)
-	req.Header.Add("Accept", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return -1, err
-	}
-
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
-
-	if resp.StatusCode == http.StatusOK {
-		return 1, nil
-	}
-	return 0, nil
+	return &PowerDNSClient{BaseClient: base}, nil
 }
 
 // ListZones returns all Zones of server, without records
-func (client *Client) ListZones(ctx context.Context) ([]ZoneInfo, error) {
+func (client *PowerDNSClient) ListZones(ctx context.Context) ([]ZoneInfo, error) {
 	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost/zones", nil)
 	if err != nil {
 		return nil, err
@@ -361,7 +376,7 @@ func (client *Client) ListZones(ctx context.Context) ([]ZoneInfo, error) {
 }
 
 // GetZone gets a zone
-func (client *Client) GetZone(ctx context.Context, name string) (ZoneInfo, error) {
+func (client *PowerDNSClient) GetZone(ctx context.Context, name string) (ZoneInfo, error) {
 	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
 	if err != nil {
 		return ZoneInfo{}, err
@@ -399,7 +414,7 @@ func (client *Client) GetZone(ctx context.Context, name string) (ZoneInfo, error
 }
 
 // ZoneExists checks if requested zone exists
-func (client *Client) ZoneExists(ctx context.Context, name string) (bool, error) {
+func (client *PowerDNSClient) ZoneExists(ctx context.Context, name string) (bool, error) {
 	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
 	if err != nil {
 		return false, err
@@ -432,7 +447,7 @@ func (client *Client) ZoneExists(ctx context.Context, name string) (bool, error)
 }
 
 // CreateZone creates a zone
-func (client *Client) CreateZone(ctx context.Context, zoneInfo ZoneInfo) (ZoneInfo, error) {
+func (client *PowerDNSClient) CreateZone(ctx context.Context, zoneInfo ZoneInfo) (ZoneInfo, error) {
 	body, err := json.Marshal(zoneInfo)
 	if err != nil {
 		return ZoneInfo{}, err
@@ -475,7 +490,7 @@ func (client *Client) CreateZone(ctx context.Context, zoneInfo ZoneInfo) (ZoneIn
 }
 
 // UpdateZone updates a zone
-func (client *Client) UpdateZone(ctx context.Context, name string, zoneInfo ZoneInfoUpd) error {
+func (client *PowerDNSClient) UpdateZone(ctx context.Context, name string, zoneInfo ZoneInfoUpd) error {
 	body, err := json.Marshal(zoneInfo)
 	if err != nil {
 		return err
@@ -513,7 +528,7 @@ func (client *Client) UpdateZone(ctx context.Context, name string, zoneInfo Zone
 }
 
 // DeleteZone deletes a zone
-func (client *Client) DeleteZone(ctx context.Context, name string) error {
+func (client *PowerDNSClient) DeleteZone(ctx context.Context, name string) error {
 	req, err := client.newRequest(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
 	if err != nil {
 		return err
@@ -545,7 +560,7 @@ func (client *Client) DeleteZone(ctx context.Context, name string) error {
 }
 
 // GetZoneInfoFromCache return ZoneInfo struct
-func (client *Client) GetZoneInfoFromCache(ctx context.Context, zone string) (*ZoneInfo, error) {
+func (client *PowerDNSClient) GetZoneInfoFromCache(ctx context.Context, zone string) (*ZoneInfo, error) {
 	if client.CacheEnable {
 		cacheZoneInfo, err := client.Cache.Get([]byte(zone))
 		if err != nil {
@@ -564,7 +579,7 @@ func (client *Client) GetZoneInfoFromCache(ctx context.Context, zone string) (*Z
 }
 
 // ListRecords returns all records in Zone
-func (client *Client) ListRecords(ctx context.Context, zone string) ([]Record, error) {
+func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]Record, error) {
 	zoneInfo, err := client.GetZoneInfoFromCache(ctx, zone)
 	if err != nil {
 		tflog.Warn(ctx, "Cache get failed", map[string]interface{}{
@@ -630,7 +645,7 @@ func (client *Client) ListRecords(ctx context.Context, zone string) ([]Record, e
 }
 
 // ListRecordsInRRSet returns only records of specified name and type
-func (client *Client) ListRecordsInRRSet(ctx context.Context, zone string, name string, tpe string) ([]Record, error) {
+func (client *PowerDNSClient) ListRecordsInRRSet(ctx context.Context, zone string, name string, tpe string) ([]Record, error) {
 	allRecords, err := client.ListRecords(ctx, zone)
 	if err != nil {
 		return nil, err
@@ -647,7 +662,7 @@ func (client *Client) ListRecordsInRRSet(ctx context.Context, zone string, name 
 }
 
 // ListRecordsByID returns all records by IDs
-func (client *Client) ListRecordsByID(ctx context.Context, zone string, recID string) ([]Record, error) {
+func (client *PowerDNSClient) ListRecordsByID(ctx context.Context, zone string, recID string) ([]Record, error) {
 	name, tpe, err := parseID(recID)
 	if err != nil {
 		return nil, err
@@ -656,7 +671,7 @@ func (client *Client) ListRecordsByID(ctx context.Context, zone string, recID st
 }
 
 // RecordExists checks if requested record exists in Zone
-func (client *Client) RecordExists(ctx context.Context, zone string, name string, tpe string) (bool, error) {
+func (client *PowerDNSClient) RecordExists(ctx context.Context, zone string, name string, tpe string) (bool, error) {
 	allRecords, err := client.ListRecords(ctx, zone)
 	if err != nil {
 		return false, err
@@ -671,7 +686,7 @@ func (client *Client) RecordExists(ctx context.Context, zone string, name string
 }
 
 // RecordExistsByID checks if requested record exists in Zone by its ID
-func (client *Client) RecordExistsByID(ctx context.Context, zone string, recID string) (bool, error) {
+func (client *PowerDNSClient) RecordExistsByID(ctx context.Context, zone string, recID string) (bool, error) {
 	name, tpe, err := parseID(recID)
 	if err != nil {
 		return false, err
@@ -680,7 +695,7 @@ func (client *Client) RecordExistsByID(ctx context.Context, zone string, recID s
 }
 
 // ReplaceRecordSet creates new record set in Zone
-func (client *Client) ReplaceRecordSet(ctx context.Context, zone string, rrSet ResourceRecordSet) (string, error) {
+func (client *PowerDNSClient) ReplaceRecordSet(ctx context.Context, zone string, rrSet ResourceRecordSet) (string, error) {
 	rrSet.ChangeType = "REPLACE"
 
 	reqBody, _ := json.Marshal(zonePatchRequest{
@@ -719,7 +734,7 @@ func (client *Client) ReplaceRecordSet(ctx context.Context, zone string, rrSet R
 }
 
 // DeleteRecordSet deletes record set from Zone
-func (client *Client) DeleteRecordSet(ctx context.Context, zone string, name string, tpe string) error {
+func (client *PowerDNSClient) DeleteRecordSet(ctx context.Context, zone string, name string, tpe string) error {
 	reqBody, _ := json.Marshal(zonePatchRequest{
 		RecordSets: []ResourceRecordSet{
 			{
@@ -763,7 +778,7 @@ func (client *Client) DeleteRecordSet(ctx context.Context, zone string, name str
 }
 
 // DeleteRecordSetByID deletes record from Zone by its ID
-func (client *Client) DeleteRecordSetByID(ctx context.Context, zone string, recID string) error {
+func (client *PowerDNSClient) DeleteRecordSetByID(ctx context.Context, zone string, recID string) error {
 	name, tpe, err := parseID(recID)
 	if err != nil {
 		return err
@@ -771,54 +786,50 @@ func (client *Client) DeleteRecordSetByID(ctx context.Context, zone string, recI
 	return client.DeleteRecordSet(ctx, zone, name, tpe)
 }
 
-func (client *Client) setServerVersion(ctx context.Context) error {
-	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost", nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("invalid response code from server: '%d'. Failed to read response body: %v",
-				resp.StatusCode, err)
-		}
-		return fmt.Errorf("invalid response code from server: '%d'. Response body: %s",
-			resp.StatusCode, string(bodyBytes))
-	}
-
-	serverInfo := new(serverInfo)
-	if err := json.NewDecoder(resp.Body).Decode(serverInfo); err == nil {
-		client.ServerVersion = serverInfo.Version
-		return nil
-	}
-
-	headerServerInfo := strings.SplitN(resp.Header.Get("Server"), "/", 2)
-	if len(headerServerInfo) == 2 && strings.EqualFold(headerServerInfo[0], "PowerDNS") {
-		client.ServerVersion = headerServerInfo[1]
-		return nil
-	}
-
-	return fmt.Errorf("unable to get server version")
+// RecursorClient talks to the PowerDNS Recursor API.
+type RecursorClient struct {
+	*BaseClient
 }
 
-// GetRecursorConfig gets all recursor config
-func (client *Client) GetRecursorConfig(ctx context.Context) (map[string]string, error) {
-	req, err := client.newRequestRecursor(ctx, http.MethodGet, "/servers/localhost/config", nil)
+// RecursorForwardZone represents a PowerDNS Recursor forward zone.
+type RecursorForwardZone struct {
+	Name             string   `json:"name"`
+	Type             string   `json:"type"`
+	Kind             string   `json:"kind"`
+	Servers          []string `json:"servers"`
+	RecursionDesired bool     `json:"recursion_desired"`
+}
+
+// RecursorConfigSetting represents a single recursor config entry like:
+//
+//	{ "name": "allow-from", "value": ["127.0.0.0/8"] }
+//
+// Only incoming.allow_from and incoming.allow_notify_from can be changed via the API
+// as per https://doc.powerdns.com/recursor/http-api/endpoint-servers-config.html
+type RecursorConfigSetting struct {
+	Name  string   `json:"name"`
+	Value []string `json:"value"`
+}
+
+// NewRecursorClient builds a client for the recursor server.
+func NewRecursorClient(
+	ctx context.Context,
+	recursorURL string,
+	apiKey string,
+	configTLS *tls.Config,
+) (*RecursorClient, error) {
+	base, err := NewBaseClient(ctx, recursorURL, apiKey, configTLS, false, "0", 0)
+	if err != nil {
+		return nil, err
+	}
+	return &RecursorClient{BaseClient: base}, nil
+}
+
+// GetForwardZone retrieves a specific recursor forward zone definition.
+func (client *RecursorClient) GetForwardZone(ctx context.Context, name string) (*RecursorForwardZone, error) {
+	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
+
+	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -833,80 +844,39 @@ func (client *Client) GetRecursorConfig(ctx context.Context) (map[string]string,
 				"error":  err.Error(),
 				"method": req.Method,
 				"url":    req.URL.String(),
+				"zone":   name,
 			})
 		}
 	}()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		var config map[string]string
-		if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
+		var zone RecursorForwardZone
+		if err := json.NewDecoder(resp.Body).Decode(&zone); err != nil {
 			return nil, err
 		}
-		return config, nil
+		return &zone, nil
 
 	case http.StatusNotFound:
 		return nil, ErrNotFound
 
 	default:
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return nil, fmt.Errorf("error getting recursor config")
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error getting forward zone %s", name)
 		}
-		return nil, fmt.Errorf("error getting recursor config: %q", errorResp.ErrorMsg)
+		return nil, fmt.Errorf("error getting forward zone %s: %q", name, errorResp.ErrorMsg)
 	}
 }
 
-// GetRecursorConfigValue gets a specific recursor config value
-func (client *Client) GetRecursorConfigValue(ctx context.Context, name string) (string, error) {
-	req, err := client.newRequestRecursor(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/config/%s", name), nil)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"name":   name,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var value string
-		if err := json.NewDecoder(resp.Body).Decode(&value); err != nil {
-			return "", err
-		}
-		return value, nil
-
-	case http.StatusNotFound:
-		return "", ErrNotFound
-
-	default:
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return "", fmt.Errorf("error getting recursor config %s", name)
-		}
-		return "", fmt.Errorf("error getting recursor config %s: %q", name, errorResp.ErrorMsg)
-	}
-}
-
-// SetRecursorConfigValue sets a recursor config value
-func (client *Client) SetRecursorConfigValue(ctx context.Context, name string, value string) error {
-	body, err := json.Marshal(value)
+// CreateForwardZone creates a recursor forward zone.
+func (client *RecursorClient) CreateForwardZone(ctx context.Context, zone *RecursorForwardZone) error {
+	body, err := json.Marshal(zone)
 	if err != nil {
 		return err
 	}
 
-	req, err := client.newRequestRecursor(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/config/%s", name), body)
+	req, err := client.newRequest(ctx, http.MethodPost, "/servers/localhost/zones", body)
 	if err != nil {
 		return err
 	}
@@ -921,25 +891,27 @@ func (client *Client) SetRecursorConfigValue(ctx context.Context, name string, v
 				"error":  err.Error(),
 				"method": req.Method,
 				"url":    req.URL.String(),
-				"name":   name,
+				"zone":   zone.Name,
 			})
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error setting recursor config %s", name)
+	if resp.StatusCode != http.StatusCreated {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error creating forward zone %s", zone.Name)
 		}
-		return fmt.Errorf("error setting recursor config %s: %q", name, errorResp.ErrorMsg)
+		return fmt.Errorf("error creating forward zone %s: %q", zone.Name, errorResp.ErrorMsg)
 	}
 
 	return nil
 }
 
-// DeleteRecursorConfigValue deletes a recursor config value
-func (client *Client) DeleteRecursorConfigValue(ctx context.Context, name string) error {
-	req, err := client.newRequestRecursor(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/config/%s", name), nil)
+// DeleteForwardZone deletes a recursor forward zone.
+func (client *RecursorClient) DeleteForwardZone(ctx context.Context, name string) error {
+	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
+
+	req, err := client.newRequest(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
 	}
@@ -954,23 +926,112 @@ func (client *Client) DeleteRecursorConfigValue(ctx context.Context, name string
 				"error":  err.Error(),
 				"method": req.Method,
 				"url":    req.URL.String(),
-				"name":   name,
+				"zone":   name,
 			})
 		}
 	}()
 
 	switch resp.StatusCode {
-	case http.StatusNoContent:
+	case http.StatusNoContent, http.StatusOK:
 		return nil
 
 	case http.StatusNotFound:
 		return ErrNotFound
 
 	default:
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error deleting recursor config %s", name)
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error deleting forward zone %s", name)
 		}
-		return fmt.Errorf("error deleting recursor config %s: %q", name, errorResp.ErrorMsg)
+		return fmt.Errorf("error deleting forward zone %s: %q", name, errorResp.ErrorMsg)
 	}
+}
+
+// GetConfig retrieves a single recursor config setting using
+func (client *RecursorClient) GetConfig(ctx context.Context, name string) (*RecursorConfigSetting, error) {
+	endpoint := fmt.Sprintf("/servers/localhost/config/%s", name)
+
+	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"name":   name,
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var setting RecursorConfigSetting
+		if err := json.NewDecoder(resp.Body).Decode(&setting); err != nil {
+			return nil, err
+		}
+		return &setting, nil
+
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error getting recursor config %s", name)
+		}
+		return nil, fmt.Errorf("error getting recursor config %s: %q", name, errorResp.ErrorMsg)
+	}
+}
+
+// SetConfig changes a single recursor config setting using
+func (client *RecursorClient) SetConfig(ctx context.Context, name string, values []string) error {
+	setting := RecursorConfigSetting{
+		Name:  name,
+		Value: values,
+	}
+
+	body, err := json.Marshal(&setting)
+	if err != nil {
+		return err
+	}
+
+	endpoint := fmt.Sprintf("/servers/localhost/config/%s", name)
+
+	req, err := client.newRequest(ctx, http.MethodPut, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"name":   name,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error setting recursor config %s", name)
+		}
+		return fmt.Errorf("error setting recursor config %s: %q", name, errorResp.ErrorMsg)
+	}
+
+	return nil
 }

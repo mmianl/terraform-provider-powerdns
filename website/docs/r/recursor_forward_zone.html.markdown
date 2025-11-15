@@ -14,12 +14,12 @@ Provides a PowerDNS recursor forward zone resource for managing DNS forwarding c
 
 ```hcl
 resource "powerdns_recursor_forward_zone" "example" {
-  zone    = "example.com"
+  zone    = "example.com."
   servers = ["192.0.2.1", "192.0.2.2"]
 }
 
 resource "powerdns_recursor_forward_zone" "internal" {
-  zone    = "internal.company.com"
+  zone    = "internal.company.com."
   servers = ["10.0.0.53"]
 }
 ```

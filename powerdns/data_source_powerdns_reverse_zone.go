@@ -43,7 +43,7 @@ func dataSourcePDNSReverseZone() *schema.Resource {
 }
 
 func dataSourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	cidr := d.Get("cidr").(string)
 	ctx = tflog.SetField(ctx, "cidr", cidr)
@@ -56,7 +56,7 @@ func dataSourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, 
 	ctx = tflog.SetField(ctx, "zone_name", zoneName)
 	tflog.Debug(ctx, "Computed reverse zone name from CIDR")
 
-	zone, err := client.GetZone(ctx, zoneName)
+	zone, err := client.PDNS.GetZone(ctx, zoneName)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch zone: %w", err))
 	}
@@ -81,7 +81,7 @@ func dataSourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, 
 	}
 
 	// Read nameservers from NS records
-	nameservers, err := client.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
+	nameservers, err := client.PDNS.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneName, err))
 	}

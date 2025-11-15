@@ -8,19 +8,19 @@ description: |-
 
 # powerdns_recursor_config
 
-Provides a PowerDNS recursor config resource for managing PowerDNS recursor configuration settings via the recursor API.
+Provides a PowerDNS recursor config resource for managing PowerDNS recursor configuration settings via the recursor API. This resource only supports `incoming.allow_from` and `incoming.allow_notify_from` as per the [PowerDNS Recursor documentation](https://doc.powerdns.com/recursor/http-api/endpoint-servers-config.html).
 
 ## Example Usage
 
 ```hcl
 resource "powerdns_recursor_config" "allow_from" {
   name  = "allow-from"
-  value = "192.168.0.0/16, 10.0.0.0/8"
+  value = ["192.168.0.0/16", "10.0.0.0/8"]
 }
 
-resource "powerdns_recursor_config" "client_tcp_timeout" {
-  name  = "client-tcp-timeout"
-  value = "5"
+resource "powerdns_recursor_config" "allow_notify_from" {
+  name  = "allow-notify-from"
+  value = ["192.168.0.0/16", "10.0.0.0/8"]
 }
 ```
 
@@ -36,3 +36,4 @@ This resource supports the following arguments:
 - This resource requires the `recursor_server_url` to be configured in the provider.
 - Configuration changes are applied immediately to the running recursor.
 - Some configuration settings may require a recursor restart to take effect.
+- Deleting configuration parameters from the PowerDNS Recursor server is not supported. Destruction will only remove the state entries.

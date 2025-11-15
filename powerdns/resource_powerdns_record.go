@@ -60,7 +60,7 @@ func resourcePDNSRecord() *schema.Resource {
 }
 
 func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	zone := d.Get("zone").(string)
 	name := d.Get("name").(string)
@@ -107,7 +107,7 @@ func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta 
 	tflog.SetField(ctx, "type", typ)
 	tflog.Debug(ctx, "Creating PowerDNS record set")
 
-	recID, err := client.ReplaceRecordSet(ctx, zone, rrSet)
+	recID, err := client.PDNS.ReplaceRecordSet(ctx, zone, rrSet)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to create PowerDNS Record: %w", err))
 	}
@@ -119,14 +119,14 @@ func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta 
 }
 
 func resourcePDNSRecordRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	zone := d.Get("zone").(string)
 	tflog.SetField(ctx, "zone", zone)
 	tflog.SetField(ctx, "record_id", d.Id())
 	tflog.Debug(ctx, "Reading PowerDNS Record")
 
-	records, err := client.ListRecordsByID(ctx, zone, d.Id())
+	records, err := client.PDNS.ListRecordsByID(ctx, zone, d.Id())
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS Record: %w", err))
 	}
@@ -160,14 +160,14 @@ func resourcePDNSRecordRead(ctx context.Context, d *schema.ResourceData, meta in
 }
 
 func resourcePDNSRecordDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	zone := d.Get("zone").(string)
 	tflog.SetField(ctx, "zone", zone)
 	tflog.SetField(ctx, "record_id", d.Id())
 	tflog.Debug(ctx, "Deleting PowerDNS Record")
 
-	if err := client.DeleteRecordSetByID(ctx, zone, d.Id()); err != nil {
+	if err := client.PDNS.DeleteRecordSetByID(ctx, zone, d.Id()); err != nil {
 		return diag.FromErr(fmt.Errorf("error deleting PowerDNS Record: %w", err))
 	}
 
@@ -178,7 +178,7 @@ func resourcePDNSRecordDelete(ctx context.Context, d *schema.ResourceData, meta 
 // NOTE: Exists handlers are deprecated in SDKv2. Read should clear state when the object is missing.
 
 func resourcePDNSRecordImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	tflog.Info(ctx, "Importing PowerDNS Record", map[string]any{"id": d.Id()})
 
@@ -200,7 +200,7 @@ func resourcePDNSRecordImport(ctx context.Context, d *schema.ResourceData, meta 
 		"zone": zoneName, "recordID": recordID,
 	})
 
-	records, err := client.ListRecordsByID(ctx, zoneName, recordID)
+	records, err := client.PDNS.ListRecordsByID(ctx, zoneName, recordID)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't fetch PowerDNS Record: %w", err)
 	}

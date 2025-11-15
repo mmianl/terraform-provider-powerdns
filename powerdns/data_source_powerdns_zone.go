@@ -90,14 +90,14 @@ func dataSourcePDNSZone() *schema.Resource {
 }
 
 func dataSourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	zoneName := d.Get("name").(string)
 	ctx = tflog.SetField(ctx, "zone_name", zoneName)
 	tflog.Info(ctx, "Reading zone data source")
 
 	// Get the zone information
-	zone, err := client.GetZone(ctx, zoneName)
+	zone, err := client.PDNS.GetZone(ctx, zoneName)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch zone %s: %w", zoneName, err))
 	}
@@ -128,7 +128,7 @@ func dataSourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta in
 
 	// Set nameservers for non-Slave zones
 	if !strings.EqualFold(zone.Kind, "Slave") {
-		nameservers, err := client.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
+		nameservers, err := client.PDNS.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
 		if err != nil {
 			return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneName, err))
 		}
@@ -151,7 +151,7 @@ func dataSourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta in
 	}
 
 	// Get all records in the zone and link them to the zone data
-	allRecords, err := client.ListRecords(ctx, zoneName)
+	allRecords, err := client.PDNS.ListRecords(ctx, zoneName)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch records for zone %s: %w", zoneName, err))
 	}

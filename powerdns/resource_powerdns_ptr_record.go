@@ -56,7 +56,7 @@ func resourcePDNSPTRRecord() *schema.Resource {
 }
 
 func resourcePDNSPTRRecordCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	ipAddress := d.Get("ip_address").(string)
 	hostname := d.Get("hostname").(string)
@@ -93,7 +93,7 @@ func resourcePDNSPTRRecordCreate(ctx context.Context, d *schema.ResourceData, me
 		},
 	}
 
-	recID, err := client.ReplaceRecordSet(ctx, reverseZone, rrSet)
+	recID, err := client.PDNS.ReplaceRecordSet(ctx, reverseZone, rrSet)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to create PTR record: %w", err))
 	}
@@ -108,7 +108,7 @@ func resourcePDNSPTRRecordCreate(ctx context.Context, d *schema.ResourceData, me
 }
 
 func resourcePDNSPTRRecordRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	ipAddress := d.Get("ip_address").(string)
 	reverseZone := d.Get("reverse_zone").(string)
@@ -129,7 +129,7 @@ func resourcePDNSPTRRecordRead(ctx context.Context, d *schema.ResourceData, meta
 		suffix = ".ip6.arpa."
 	}
 
-	records, err := client.ListRecordsInRRSet(ctx, reverseZone, ptrName+suffix, "PTR")
+	records, err := client.PDNS.ListRecordsInRRSet(ctx, reverseZone, ptrName+suffix, "PTR")
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't fetch PTR record: %w", err))
 	}
@@ -164,7 +164,7 @@ func resourcePDNSPTRRecordRead(ctx context.Context, d *schema.ResourceData, meta
 }
 
 func resourcePDNSPTRRecordDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	ipAddress := d.Get("ip_address").(string)
 	reverseZone := d.Get("reverse_zone").(string)
@@ -185,7 +185,7 @@ func resourcePDNSPTRRecordDelete(ctx context.Context, d *schema.ResourceData, me
 		suffix = ".ip6.arpa."
 	}
 
-	if err := client.DeleteRecordSet(ctx, reverseZone, ptrName+suffix, "PTR"); err != nil {
+	if err := client.PDNS.DeleteRecordSet(ctx, reverseZone, ptrName+suffix, "PTR"); err != nil {
 		return diag.FromErr(fmt.Errorf("error deleting PTR record: %w", err))
 	}
 
@@ -196,7 +196,7 @@ func resourcePDNSPTRRecordDelete(ctx context.Context, d *schema.ResourceData, me
 }
 
 func resourcePDNSPTRRecordImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	client := meta.(*Client)
+	client := meta.(*ProviderClients)
 
 	tflog.Info(ctx, "Importing PTR record", map[string]any{"id": d.Id()})
 
@@ -220,7 +220,7 @@ func resourcePDNSPTRRecordImport(ctx context.Context, d *schema.ResourceData, me
 		"recordID": recordID,
 	})
 
-	records, err := client.ListRecordsByID(ctx, zone, recordID)
+	records, err := client.PDNS.ListRecordsByID(ctx, zone, recordID)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't fetch PTR record: %w", err)
 	}

@@ -2,10 +2,6 @@
 
 The Terraform PowerDNS provider allows you to manage PowerDNS zones and records using Terraform. It is maintained by mmianl.
 
-- Website: https://www.terraform.io
-- [![Gitter chat](https://badges.gitter.im/hashicorp-terraform/Lobby.png)](https://gitter.im/hashicorp-terraform/Lobby)
-- Mailing list: [Google Groups](http://groups.google.com/group/terraform-tool)
-
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads.html) 1.11.x
@@ -21,7 +17,7 @@ terraform {
   required_providers {
     powerdns = {
       source = "mmianl/powerdns"
-      version = "1.7.2"
+      version = "1.8.1"
     }
   }
 }
