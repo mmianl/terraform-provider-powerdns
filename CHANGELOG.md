@@ -1,3 +1,10 @@
+ ## 1.8.2 (November 25, 2025)
+
+FEATURES:
+  * **Improve logging** ([#33](https://github.com/mmianl/terraform-provider-powerdns/pull/33), @mmianl)
+  * **Dependency updates** ([#39](https://github.com/mmianl/terraform-provider-powerdns/pull/39), @dependabot)
+  * **Dependency updates** ([#40](https://github.com/mmianl/terraform-provider-powerdns/pull/40), @dependabot)
+
 ## 1.8.1 (September 29, 2025)
 
 FEATURES:
