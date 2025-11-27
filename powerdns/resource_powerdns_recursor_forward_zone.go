@@ -8,7 +8,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func resourcePDNSRecursorForwardZone() *schema.Resource {
@@ -20,11 +19,20 @@ func resourcePDNSRecursorForwardZone() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"zone": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ForceNew:     true,
-				ValidateFunc: validation.StringLenBetween(1, 255),
-				Description:  "The zone name to forward",
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
+				ValidateFunc: func(v interface{}, k string) (ws []string, errors []error) {
+					value := v.(string)
+					if len(value) < 1 || len(value) > 255 {
+						errors = append(errors, fmt.Errorf("%q must be between 1 and 255 characters", k))
+					}
+					if !strings.HasSuffix(value, ".") {
+						errors = append(errors, fmt.Errorf("%q must be a fully qualified domain name ending with a dot", k))
+					}
+					return
+				},
+				Description: "The zone name to forward. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., \"example.com.\").",
 			},
 			"servers": {
 				Type:     schema.TypeList,

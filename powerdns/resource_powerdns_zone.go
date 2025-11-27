@@ -29,6 +29,14 @@ func resourcePDNSZone() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 				ForceNew: true,
+				ValidateFunc: func(v interface{}, k string) (ws []string, errors []error) {
+					value := v.(string)
+					if !strings.HasSuffix(value, ".") {
+						errors = append(errors, fmt.Errorf("%q must be a fully qualified domain name ending with a dot", k))
+					}
+					return
+				},
+				Description: "The name of the zone. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., \"example.com.\").",
 			},
 
 			"kind": {
@@ -48,8 +56,17 @@ func resourcePDNSZone() *schema.Resource {
 			},
 
 			"nameservers": {
-				Type:     schema.TypeSet,
-				Elem:     &schema.Schema{Type: schema.TypeString},
+				Type: schema.TypeSet,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+					ValidateFunc: func(v interface{}, k string) (ws []string, errors []error) {
+						value := v.(string)
+						if !strings.HasSuffix(value, ".") {
+							errors = append(errors, fmt.Errorf("%q must be a fully qualified domain name ending with a dot", k))
+						}
+						return
+					},
+				},
 				Optional: true,
 				ForceNew: true,
 			},

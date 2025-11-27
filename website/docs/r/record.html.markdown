@@ -389,8 +389,8 @@ Different DNS record types require specific formatting for their content. Here a
 
 The following arguments are supported:
 
-- `zone` - (Required) The name of zone to contain this record.
-- `name` - (Required) The name of the record.
+- `zone` - (Required) The name of the zone. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., "example.com.").
+- `name` - (Required) The name of the record. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., "www.example.com.").
 - `type` - (Required) The record type.
 - `ttl` - (Required) The TTL of the record.
 - `records` - (Required) A string list of records.
