@@ -41,9 +41,9 @@ func resourcePDNSReverseZone() *schema.Resource {
 				Required: true,
 				Elem: &schema.Schema{
 					Type:         schema.TypeString,
-					ValidateFunc: validation.StringLenBetween(1, 255),
+					ValidateFunc: ValidateFQDN,
 				},
-				Description: "List of nameservers for this zone",
+				Description: "List of nameservers for this zone. Each nameserver must be a fully qualified domain name ending with a trailing dot.",
 			},
 			"name": {
 				Type:        schema.TypeString,

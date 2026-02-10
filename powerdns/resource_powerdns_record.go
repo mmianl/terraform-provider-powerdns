@@ -24,14 +24,16 @@ func resourcePDNSRecord() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"zone": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: ValidateFQDN,
 			},
 			"name": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: ValidateFQDN,
 			},
 			"type": {
 				Type:     schema.TypeString,

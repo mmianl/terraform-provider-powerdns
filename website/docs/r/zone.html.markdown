@@ -44,7 +44,7 @@ resource "powerdns_zone" "fubar" {
 
 This resource supports the following arguments:
 
-- `name` - (Required) The name of zone.
+- `name` - (Required) The name of zone. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"example.com."`).
 - `kind` - (Required) The kind of the zone.
 - `account` - (Optional) The account owning the zone. (Default to "admin")
 - `masters` - (Optional) List of IP addresses configured as a master for this zone. This argument must be provided when `kind` is set to `Slave`.

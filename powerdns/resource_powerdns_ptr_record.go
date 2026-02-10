@@ -35,8 +35,8 @@ func resourcePDNSPTRRecord() *schema.Resource {
 				Type:         schema.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: validation.StringLenBetween(1, 255),
-				Description:  "The hostname to point to.",
+				ValidateFunc: ValidateFQDN,
+				Description:  "The hostname to point to. Must be a fully qualified domain name ending with a trailing dot.",
 			},
 			"ttl": {
 				Type:         schema.TypeInt,
@@ -46,10 +46,11 @@ func resourcePDNSPTRRecord() *schema.Resource {
 				Description:  "The TTL of the PTR record.",
 			},
 			"reverse_zone": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: "The name of the reverse zone (e.g., '16.172.in-addr.arpa.' or '8.b.d.0.1.0.0.2.ip6.arpa.').",
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: ValidateFQDN,
+				Description:  "The name of the reverse zone (e.g., '16.172.in-addr.arpa.' or '8.b.d.0.1.0.0.2.ip6.arpa.'). Must be a fully qualified domain name ending with a trailing dot.",
 			},
 		},
 	}

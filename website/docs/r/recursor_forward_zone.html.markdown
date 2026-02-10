@@ -28,7 +28,7 @@ resource "powerdns_recursor_forward_zone" "internal" {
 
 This resource supports the following arguments:
 
-- `zone` - (Required) The DNS zone name to forward queries for.
+- `zone` - (Required) The DNS zone name to forward queries for. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"example.com."`).
 - `servers` - (Required) A list of DNS server IP addresses to forward queries to for this zone.
 
 ## Notes
