@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ux
+set -eux
 
 # Container engine: defaults to docker, can be overridden:
 # e.g.: ENGINE=podman TF_PLUGIN_PLATFORM=linux_arm64 ./run-e2e-tests.sh

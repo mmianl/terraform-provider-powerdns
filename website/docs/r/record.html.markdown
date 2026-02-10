@@ -38,10 +38,11 @@ The `powerdns_record` resource supports all standard DNS record types that Power
 ### Administrative Records
 
 - **NS** - Name server records
-- **SOA** - Start of authority records
 - **HINFO** - Host information records
 - **LOC** - Location records
 - **SSHFP** - SSH public key fingerprint records
+
+~> **Note:** SOA records are not supported by this resource. Use the [`powerdns_record_soa`](record_soa.html) resource instead, which exposes each SOA field individually.
 
 ### Reverse DNS Records
 
@@ -363,7 +364,6 @@ Different DNS record types require specific formatting for their content. Here a
 | **MX**      | 300-3600        | Mail routing, important for email delivery                 |
 | **TXT**     | 300-86400       | Text records, often cached by email systems                |
 | **NS**      | 86400+          | Name server records, should be stable                      |
-| **SOA**     | 86400+          | Zone metadata, rarely changes                              |
 | **SRV**     | 300-3600        | Service records, balance between performance and updates   |
 
 #### Performance Considerations

@@ -1,6 +1,7 @@
 resource "powerdns_zone" "test" {
-  name = "test.example.com."
-  kind = "Native"
+  name         = "test.example.com."
+  kind         = "MASTER"
+  soa_edit_api = "DEFAULT"
   nameservers = [
     "ns1.example.com.",
     "ns2.example.com.",
@@ -10,7 +11,7 @@ resource "powerdns_zone" "test" {
 data "powerdns_zone" "test" {
   name = "test.example.com."
 
-  depends_on = [powerdns_zone.test]
+  depends_on = [powerdns_zone.test, powerdns_record.host01, powerdns_record_soa.soa]
 }
 
 resource "powerdns_reverse_zone" "zone_172_16_0_0_24" {
@@ -32,8 +33,8 @@ resource "powerdns_record" "host01" {
   zone    = powerdns_zone.test.name
   name    = "host01.test.example.com."
   type    = "A"
-  ttl     = 30
-  records = [cidrhost("172.16.0.0/24", 10)]
+  ttl     = 3600
+  records = [cidrhost("172.16.0.0/24", 11)]
 }
 
 resource "powerdns_ptr_record" "host01_ipv4" {
@@ -57,4 +58,23 @@ resource "powerdns_recursor_config" "allow_notify_from" {
 resource "powerdns_recursor_forward_zone" "example" {
   zone    = "example.com."
   servers = ["pdns:5300"]
+}
+
+data "powerdns_record_soa" "soa" {
+  zone = powerdns_zone.test.name
+  name = powerdns_zone.test.name
+
+  depends_on = [powerdns_record_soa.soa]
+}
+
+resource "powerdns_record_soa" "soa" {
+  zone    = powerdns_zone.test.name
+  name    = powerdns_zone.test.name
+  ttl     = 3600
+  mname   = "dns1.${powerdns_zone.test.name}"
+  rname   = "hostmaster.${powerdns_zone.test.name}"
+  refresh = 10800
+  retry   = 3600
+  expire  = 3600000
+  minimum = 3600
 }

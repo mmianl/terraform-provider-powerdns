@@ -62,7 +62,7 @@ output "masters" {
 
 This resource supports the following arguments:
 
-- `name` - (Required) The name of the zone to retrieve (e.g., 'example.com.').
+- `name` - (Required) The fully qualified domain name (FQDN) of the zone to retrieve, ending with a trailing dot (e.g., `"example.com."`).
 
 ## Attribute Reference
 

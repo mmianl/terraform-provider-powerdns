@@ -421,25 +421,13 @@ func TestAccPDNSRecord_ALIAS(t *testing.T) {
 }
 
 func TestAccPDNSRecord_SOA(t *testing.T) {
-	resourceName := "powerdns_record.test-soa"
-	resourceID := `{"zone":"test-soa-sysa.xyz.","id":"test-soa-sysa.xyz.:::SOA"}`
-
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSRecordDestroy,
+		PreCheck:  func() { testAccPreCheck(t) },
+		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
-				Config: testPDNSRecordConfigSOA,
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPDNSRecordExists(resourceName),
-				),
-			},
-			{
-				ResourceName:      resourceName,
-				ImportStateId:     resourceID,
-				ImportState:       true,
-				ImportStateVerify: true,
+				Config:      testPDNSRecordConfigSOA,
+				ExpectError: regexp.MustCompile("use the powerdns_record_soa resource instead"),
 			},
 		},
 	})

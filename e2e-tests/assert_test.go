@@ -34,13 +34,6 @@ func apiKey() string {
 	return "testapikey"
 }
 
-func recursorDNSAddr() string {
-	if v := os.Getenv("PDNS_RECURSOR_DNS_ADDR"); v != "" {
-		return v
-	}
-	return "recursor:5301"
-}
-
 func newRequest(t *testing.T, method, base, path string) *http.Request {
 	t.Helper()
 
@@ -193,9 +186,89 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		if !foundA {
 			t.Fatalf("A record host01.test.example.com. not found in zone")
 		}
+
+		// Check SOA record test.example.com.
+		var foundSOA bool
+		for _, rrset := range zone.RRSets {
+			if rrset.Name == "test.example.com." && rrset.Type == "SOA" {
+				foundSOA = true
+				if rrset.TTL != 3600 {
+					t.Fatalf("SOA record TTL: got %d, want 3600", rrset.TTL)
+				}
+				if len(rrset.Records) == 0 {
+					t.Fatalf("SOA record has no records")
+				}
+				content := rrset.Records[0].Content
+				// Verify mname and rname are present in the SOA content
+				if !strings.Contains(content, "dns1.test.example.com.") {
+					t.Fatalf("SOA record content missing mname: got %q", content)
+				}
+				if !strings.Contains(content, "hostmaster.test.example.com.") {
+					t.Fatalf("SOA record content missing rname: got %q", content)
+				}
+				break
+			}
+		}
+		if !foundSOA {
+			t.Fatalf("SOA record test.example.com. not found in zone")
+		}
 	}
 
-	// 2) Reverse zone: 172.16.0.0/24
+	// 2) SOA record data source: verify the SOA record can be read back
+	//    via the API and matches the values set in main.tf.
+	{
+		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com.")
+		var zone authZone
+		doJSON(t, req, &zone)
+
+		var foundSOA bool
+		for _, rrset := range zone.RRSets {
+			if rrset.Name == "test.example.com." && rrset.Type == "SOA" {
+				foundSOA = true
+				content := rrset.Records[0].Content
+
+				// Parse SOA content: "mname rname serial refresh retry expire minimum"
+				parts := strings.Fields(content)
+				if len(parts) != 7 {
+					t.Fatalf("SOA content: expected 7 fields, got %d: %q", len(parts), content)
+				}
+
+				mname, rname := parts[0], parts[1]
+				refresh, _ := strconv.Atoi(parts[3])
+				retry, _ := strconv.Atoi(parts[4])
+				expire, _ := strconv.Atoi(parts[5])
+				minimum, _ := strconv.Atoi(parts[6])
+
+				if mname != "dns1.test.example.com." {
+					t.Fatalf("SOA mname: got %q, want %q", mname, "dns1.test.example.com.")
+				}
+				if rname != "hostmaster.test.example.com." {
+					t.Fatalf("SOA rname: got %q, want %q", rname, "hostmaster.test.example.com.")
+				}
+				if refresh != 10800 {
+					t.Fatalf("SOA refresh: got %d, want 10800", refresh)
+				}
+				if retry != 3600 {
+					t.Fatalf("SOA retry: got %d, want 3600", retry)
+				}
+				if expire != 3600000 {
+					t.Fatalf("SOA expire: got %d, want 3600000", expire)
+				}
+				if minimum != 3600 {
+					t.Fatalf("SOA minimum: got %d, want 3600", minimum)
+				}
+				if rrset.TTL != 3600 {
+					t.Fatalf("SOA TTL: got %d, want 3600", rrset.TTL)
+				}
+				break
+			}
+		}
+		if !foundSOA {
+			t.Fatalf("SOA record not found for data source assertion")
+		}
+	}
+
+	// 3) Reverse zone: 172.16.0.0/24
 	{
 		reverseZoneName := ipv4ReverseZoneName(t, "172.16.0.0/24")
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/"+reverseZoneName)

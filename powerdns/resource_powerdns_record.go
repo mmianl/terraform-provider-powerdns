@@ -67,6 +67,10 @@ func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta 
 	ttl := d.Get("ttl").(int)
 	recList := d.Get("records").(*schema.Set).List()
 
+	if strings.EqualFold(typ, "SOA") {
+		return diag.FromErr(fmt.Errorf("SOA records cannot be managed with powerdns_record; use the powerdns_record_soa resource instead"))
+	}
+
 	setPtr := false
 	if v, ok := d.GetOk("set_ptr"); ok {
 		setPtr = v.(bool)
