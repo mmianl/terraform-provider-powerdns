@@ -3,12 +3,12 @@ layout: "powerdns"
 page_title: "PowerDNS: powerdns_zone"
 sidebar_current: "docs-powerdns-zone"
 description: |-
-  Manages DNS zones within a PowerDNS authoritative server. This resource supports creating, updating, and deleting zones with various configuration options including different zone types (Native, Master, Slave), nameservers, and SOA record customization.
+  Manages DNS zones within a PowerDNS authoritative server. This resource supports creating, updating, and deleting zones with various configuration options including different zone types (Native, Master, Slave) and SOA record customization.
 ---
 
 # powerdns\_zone
 
-Manages DNS zones within a PowerDNS authoritative server. This resource supports creating, updating, and deleting zones with various configuration options including different zone types (Native, Master, Slave), nameservers, and SOA record customization.
+Manages DNS zones within a PowerDNS authoritative server. This resource supports creating, updating, and deleting zones with various configuration options including different zone types (Native, Master, Slave) and SOA record customization.
 
 ## Example Usage
 
@@ -17,9 +17,17 @@ For the v1 API (PowerDNS version 4):
 ```hcl
 # Add a zone
 resource "powerdns_zone" "foobar" {
-  name        = "example.com."
-  kind        = "Native"
-  nameservers = ["ns1.example.com.", "ns2.example.com."]
+  name = "example.com."
+  kind = "Native"
+}
+
+# Manage nameservers using a powerdns_record resource
+resource "powerdns_record" "foobar_ns" {
+  zone    = powerdns_zone.foobar.name
+  name    = powerdns_zone.foobar.name
+  type    = "NS"
+  ttl     = 3600
+  records = ["ns1.example.com.", "ns2.example.com."]
 }
 ```
 
@@ -39,7 +47,6 @@ This resource supports the following arguments:
 - `name` - (Required) The name of zone.
 - `kind` - (Required) The kind of the zone.
 - `account` - (Optional) The account owning the zone. (Default to "admin")
-- `nameservers` - (Optional) List of zone nameservers.
 - `masters` - (Optional) List of IP addresses configured as a master for this zone. This argument must be provided when `kind` is set to `Slave`.
 - `soa_edit_api` - (Optional) This should map to one of the [supported API values](https://doc.powerdns.com/authoritative/dnsupdate.html#soa-edit-dnsupdate-settings) *or* in [case you wish to remove the setting](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit-api), set this argument as `""` (that will translate to the API value `""`).
 

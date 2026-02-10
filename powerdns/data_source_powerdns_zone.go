@@ -31,14 +31,6 @@ func dataSourcePDNSZone() *schema.Resource {
 				Computed:    true,
 				Description: "The account associated with the zone",
 			},
-			"nameservers": {
-				Type:     schema.TypeSet,
-				Computed: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-				Description: "List of nameservers for this zone",
-			},
 			"masters": {
 				Type:     schema.TypeSet,
 				Computed: true,
@@ -125,23 +117,6 @@ func dataSourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta in
 	}
 	if err := d.Set("soa_edit_api", zone.SoaEditAPI); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting zone SOA edit API: %w", err))
-	}
-
-	// Set nameservers for non-Slave zones
-	if !strings.EqualFold(zone.Kind, "Slave") {
-		nameservers, err := client.PDNS.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
-		if err != nil {
-			return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneName, err))
-		}
-
-		var zoneNameservers []string
-		for _, ns := range nameservers {
-			zoneNameservers = append(zoneNameservers, ns.Content)
-		}
-
-		if err := d.Set("nameservers", zoneNameservers); err != nil {
-			return diag.FromErr(fmt.Errorf("error setting zone nameservers: %w", err))
-		}
 	}
 
 	// Set masters for Slave zones
