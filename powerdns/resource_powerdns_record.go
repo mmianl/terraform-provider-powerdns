@@ -15,6 +15,7 @@ func resourcePDNSRecord() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourcePDNSRecordCreate,
 		ReadContext:   resourcePDNSRecordRead,
+		UpdateContext: resourcePDNSRecordCreate,
 		DeleteContext: resourcePDNSRecordDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -40,13 +41,11 @@ func resourcePDNSRecord() *schema.Resource {
 			"ttl": {
 				Type:     schema.TypeInt,
 				Required: true,
-				ForceNew: true,
 			},
 			"records": {
 				Type:     schema.TypeSet,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 				Required: true,
-				ForceNew: true,
 				Set:      schema.HashString,
 			},
 			"set_ptr": {
