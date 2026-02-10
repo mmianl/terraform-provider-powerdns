@@ -21,7 +21,7 @@ func TestAccPowerDNSRecursorConfig_Basic(t *testing.T) {
 					testAccCheckPowerDNSRecursorConfigExists("powerdns_recursor_config.test"),
 					resource.TestCheckResourceAttr("powerdns_recursor_config.test", "name", "allow-from"),
 					resource.TestCheckResourceAttr("powerdns_recursor_config.test", "value.#", "1"),
-					resource.TestCheckResourceAttr("powerdns_recursor_config.test", "value.0", "127.0.0.0/8"),
+					resource.TestCheckTypeSetElemAttr("powerdns_recursor_config.test", "value.*", "127.0.0.0/8"),
 				),
 			},
 		},
