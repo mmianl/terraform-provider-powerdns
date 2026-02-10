@@ -51,7 +51,6 @@ func resourcePDNSZone() *schema.Resource {
 				Type:     schema.TypeSet,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 				Optional: true,
-				ForceNew: true,
 			},
 
 			"masters": {
@@ -195,19 +194,59 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 
 	client := meta.(*ProviderClients)
 
-	zoneInfo := ZoneInfoUpd{}
 	if d.HasChange("kind") || d.HasChange("account") || d.HasChange("soa_edit_api") {
-		zoneInfo.Name = d.Get("name").(string)
-		zoneInfo.Kind = d.Get("kind").(string)
-		zoneInfo.Account = d.Get("account").(string)
-		zoneInfo.SoaEditAPI = d.Get("soa_edit_api").(string)
+		zoneInfo := ZoneInfoUpd{
+			Name:       d.Get("name").(string),
+			Kind:       d.Get("kind").(string),
+			Account:    d.Get("account").(string),
+			SoaEditAPI: d.Get("soa_edit_api").(string),
+		}
 
 		if err := client.PDNS.UpdateZone(ctx, d.Id(), zoneInfo); err != nil {
 			return diag.FromErr(fmt.Errorf("error updating PowerDNS Zone: %w", err))
 		}
-		return resourcePDNSZoneRead(ctx, d, meta)
 	}
-	return nil
+
+	if d.HasChange("nameservers") {
+		zoneName := d.Get("name").(string)
+
+		// Read existing NS records to preserve the TTL
+		existingNS, err := client.PDNS.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("error reading existing NS records: %w", err))
+		}
+		ttl := 3600
+		if len(existingNS) > 0 {
+			ttl = existingNS[0].TTL
+		}
+
+		var nameservers []string
+		for _, ns := range d.Get("nameservers").(*schema.Set).List() {
+			nameservers = append(nameservers, ns.(string))
+		}
+
+		records := make([]Record, 0, len(nameservers))
+		for _, ns := range nameservers {
+			records = append(records, Record{
+				Name:    zoneName,
+				Type:    "NS",
+				Content: ns,
+			})
+		}
+
+		rrSet := ResourceRecordSet{
+			Name:    zoneName,
+			Type:    "NS",
+			TTL:     ttl,
+			Records: records,
+		}
+
+		if _, err := client.PDNS.ReplaceRecordSet(ctx, zoneName, rrSet); err != nil {
+			return diag.FromErr(fmt.Errorf("error updating PowerDNS Zone nameservers: %w", err))
+		}
+	}
+
+	return resourcePDNSZoneRead(ctx, d, meta)
 }
 
 func resourcePDNSZoneDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
