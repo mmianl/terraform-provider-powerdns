@@ -27,7 +27,7 @@ func resourcePDNSRecursorConfig() *schema.Resource {
 				Description:  "The name of the recursor config setting",
 			},
 			"value": {
-				Type: schema.TypeList,
+				Type: schema.TypeSet,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
@@ -45,7 +45,7 @@ func resourcePDNSRecursorConfigCreate(ctx context.Context, d *schema.ResourceDat
 	}
 
 	name := d.Get("name").(string)
-	rawValues := d.Get("value").([]interface{})
+	rawValues := d.Get("value").(*schema.Set).List()
 
 	values := make([]string, len(rawValues))
 	for i, v := range rawValues {
@@ -102,7 +102,7 @@ func resourcePDNSRecursorConfigUpdate(ctx context.Context, d *schema.ResourceDat
 	}
 
 	name := d.Id()
-	rawValues := d.Get("value").([]interface{})
+	rawValues := d.Get("value").(*schema.Set).List()
 
 	values := make([]string, len(rawValues))
 	for i, v := range rawValues {
