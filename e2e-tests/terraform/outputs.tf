@@ -33,3 +33,11 @@ output "powerdns_recursor_config_allow_notify_from" {
 output "powerdns_recursor_forward_zone_example" {
   value = powerdns_recursor_forward_zone.example
 }
+
+output "powerdns_record_soa" {
+  value = powerdns_record_soa.soa
+}
+
+output "data_powerdns_record_soa" {
+  value = data.powerdns_record_soa.soa
+}
