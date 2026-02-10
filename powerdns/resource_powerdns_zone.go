@@ -47,17 +47,10 @@ func resourcePDNSZone() *schema.Resource {
 				ValidateFunc: validation.StringLenBetween(0, 40),
 			},
 
-			"nameservers": {
-				Type:     schema.TypeSet,
-				Elem:     &schema.Schema{Type: schema.TypeString},
-				Optional: true,
-			},
-
 			"masters": {
 				Type:     schema.TypeSet,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 				Optional: true,
-				ForceNew: true,
 			},
 
 			"soa_edit_api": {
@@ -71,11 +64,6 @@ func resourcePDNSZone() *schema.Resource {
 
 func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*ProviderClients)
-
-	var nameservers []string
-	for _, nameserver := range d.Get("nameservers").(*schema.Set).List() {
-		nameservers = append(nameservers, nameserver.(string))
-	}
 
 	var masters []string
 	for _, masterIPPort := range d.Get("masters").(*schema.Set).List() {
@@ -106,7 +94,7 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 		Name:        d.Get("name").(string),
 		Kind:        d.Get("kind").(string),
 		Account:     d.Get("account").(string),
-		Nameservers: nameservers,
+		Nameservers: []string{},
 		SoaEditAPI:  d.Get("soa_edit_api").(string),
 	}
 
@@ -162,23 +150,6 @@ func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta inte
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit API: %w", err))
 	}
 
-	// Only manage NS records for non-Slave zones
-	if !strings.EqualFold(zoneInfo.Kind, "Slave") {
-		nameservers, err := client.PDNS.ListRecordsInRRSet(ctx, zoneInfo.Name, zoneInfo.Name, "NS")
-		if err != nil {
-			return diag.FromErr(fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneInfo.Name, err))
-		}
-
-		var zoneNameservers []string
-		for _, nameserver := range nameservers {
-			zoneNameservers = append(zoneNameservers, nameserver.Content)
-		}
-
-		if err := d.Set("nameservers", zoneNameservers); err != nil {
-			return diag.FromErr(fmt.Errorf("error setting PowerDNS Nameservers: %w", err))
-		}
-	}
-
 	if strings.EqualFold(zoneInfo.Kind, "Slave") {
 		if err := d.Set("masters", zoneInfo.Masters); err != nil {
 			return diag.FromErr(fmt.Errorf("error setting PowerDNS Masters: %w", err))
@@ -194,55 +165,22 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 
 	client := meta.(*ProviderClients)
 
-	if d.HasChange("kind") || d.HasChange("account") || d.HasChange("soa_edit_api") {
+	if d.HasChange("kind") || d.HasChange("account") || d.HasChange("soa_edit_api") || d.HasChange("masters") {
+		var masters []string
+		for _, m := range d.Get("masters").(*schema.Set).List() {
+			masters = append(masters, m.(string))
+		}
+
 		zoneInfo := ZoneInfoUpd{
 			Name:       d.Get("name").(string),
 			Kind:       d.Get("kind").(string),
 			Account:    d.Get("account").(string),
 			SoaEditAPI: d.Get("soa_edit_api").(string),
+			Masters:    masters,
 		}
 
 		if err := client.PDNS.UpdateZone(ctx, d.Id(), zoneInfo); err != nil {
 			return diag.FromErr(fmt.Errorf("error updating PowerDNS Zone: %w", err))
-		}
-	}
-
-	if d.HasChange("nameservers") {
-		zoneName := d.Get("name").(string)
-
-		// Read existing NS records to preserve the TTL
-		existingNS, err := client.PDNS.ListRecordsInRRSet(ctx, zoneName, zoneName, "NS")
-		if err != nil {
-			return diag.FromErr(fmt.Errorf("error reading existing NS records: %w", err))
-		}
-		ttl := 3600
-		if len(existingNS) > 0 {
-			ttl = existingNS[0].TTL
-		}
-
-		var nameservers []string
-		for _, ns := range d.Get("nameservers").(*schema.Set).List() {
-			nameservers = append(nameservers, ns.(string))
-		}
-
-		records := make([]Record, 0, len(nameservers))
-		for _, ns := range nameservers {
-			records = append(records, Record{
-				Name:    zoneName,
-				Type:    "NS",
-				Content: ns,
-			})
-		}
-
-		rrSet := ResourceRecordSet{
-			Name:    zoneName,
-			Type:    "NS",
-			TTL:     ttl,
-			Records: records,
-		}
-
-		if _, err := client.PDNS.ReplaceRecordSet(ctx, zoneName, rrSet); err != nil {
-			return diag.FromErr(fmt.Errorf("error updating PowerDNS Zone nameservers: %w", err))
 		}
 	}
 

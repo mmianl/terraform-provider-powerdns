@@ -21,11 +21,10 @@ data "powerdns_zone" "example" {
 
 output "zone_info" {
   value = {
-    name        = data.powerdns_zone.example.name
-    kind        = data.powerdns_zone.example.kind
-    account     = data.powerdns_zone.example.account
-    nameservers = data.powerdns_zone.example.nameservers
-    records     = data.powerdns_zone.example.records
+    name    = data.powerdns_zone.example.name
+    kind    = data.powerdns_zone.example.kind
+    account = data.powerdns_zone.example.account
+    records = data.powerdns_zone.example.records
   }
 }
 
@@ -70,7 +69,6 @@ This resource exports the following attributes in addition to the arguments abov
 
 - `kind` - The kind of zone (Master, Slave, etc.).
 - `account` - The account associated with the zone (defaults to "admin").
-- `nameservers` - Set of nameservers for this zone (Master zones only).
 - `masters` - Set of master servers for this zone (Slave zones only).
 - `soa_edit_api` - SOA edit API setting.
 - `records` - List of all DNS records in the zone. Each record has the following attributes:
@@ -84,5 +82,4 @@ This resource exports the following attributes in addition to the arguments abov
 
 - The data source will return an error if the specified zone does not exist in PowerDNS.
 - The `records` attribute provides access to all DNS records within the zone, allowing you to filter and process them as needed.
-- For Slave zones, the `nameservers` attribute will be empty and `masters` will contain the list of master servers.
-- For Master zones, the `masters` attribute will be empty and `nameservers` will contain the list of nameservers.
+- For Slave zones, the `masters` attribute will contain the list of master servers.

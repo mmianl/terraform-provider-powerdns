@@ -263,10 +263,11 @@ type ZoneInfo struct {
 
 // ZoneInfoUpd is a limited subset for supported updates
 type ZoneInfoUpd struct {
-	Name       string `json:"name"`
-	Kind       string `json:"kind"`
-	SoaEditAPI string `json:"soa_edit_api,omitempty"`
-	Account    string `json:"account"`
+	Name       string   `json:"name"`
+	Kind       string   `json:"kind"`
+	SoaEditAPI string   `json:"soa_edit_api,omitempty"`
+	Account    string   `json:"account"`
+	Masters    []string `json:"masters,omitempty"`
 }
 
 // Record represents a PowerDNS record object

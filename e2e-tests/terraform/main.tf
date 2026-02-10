@@ -1,17 +1,30 @@
 resource "powerdns_zone" "test" {
   name         = "test.example.com."
-  kind         = "MASTER"
+  kind         = "Native"
   soa_edit_api = "DEFAULT"
-  nameservers = [
+}
+
+resource "powerdns_record" "test_ns" {
+  zone = powerdns_zone.test.name
+  name = powerdns_zone.test.name
+  type = "NS"
+  ttl  = 3600
+  records = [
     "ns1.example.com.",
     "ns2.example.com.",
   ]
 }
 
+resource "powerdns_zone" "test_slave" {
+  name    = "test-slave.example.com."
+  kind    = "Slave"
+  masters = ["192.168.0.1", "192.168.0.3"]
+}
+
 data "powerdns_zone" "test" {
   name = "test.example.com."
 
-  depends_on = [powerdns_zone.test, powerdns_record.host01, powerdns_record_soa.soa]
+  depends_on = [powerdns_zone.test, powerdns_record.host01, powerdns_record_soa.soa, powerdns_record.test_ns]
 }
 
 resource "powerdns_reverse_zone" "zone_172_16_0_0_24" {
@@ -33,8 +46,8 @@ resource "powerdns_record" "host01" {
   zone    = powerdns_zone.test.name
   name    = "host01.test.example.com."
   type    = "A"
-  ttl     = 3600
-  records = [cidrhost("172.16.0.0/24", 11)]
+  ttl     = 30
+  records = [cidrhost("172.16.0.0/24", 10)]
 }
 
 resource "powerdns_ptr_record" "host01_ipv4" {

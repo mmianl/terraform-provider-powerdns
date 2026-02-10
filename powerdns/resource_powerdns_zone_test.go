@@ -428,35 +428,30 @@ const testPDNSZoneConfigNative = `
 resource "powerdns_zone" "test-native" {
 	name = "sysa.abc."
 	kind = "Native"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 }`
 
 const testPDNSZoneConfigNativeMixedCaps = `
 resource "powerdns_zone" "test-native" {
 	name = "sysa.abc."
 	kind = "NaTIve"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 }`
 
 const testPDNSZoneConfigNativeSmallCaps = `
 resource "powerdns_zone" "test-native" {
 	name = "sysa.abc."
 	kind = "native"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 }`
 
 const testPDNSZoneConfigMaster = `
 resource "powerdns_zone" "test-master" {
 	name = "master.sysa.abc."
 	kind = "Master"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 }`
 
 const testPDNSZoneConfigMasterSOAEDITAPI = `
 resource "powerdns_zone" "test-master-soa-edit-api" {
 	name = "master-soa-edit-api.sysa.abc."
 	kind = "Master"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 	soa_edit_api = "DEFAULT"
 }`
 
@@ -464,7 +459,6 @@ const testPDNSZoneConfigMasterSOAEDITAPIEmpty = `
 resource "powerdns_zone" "test-master-soa-edit-api-empty" {
 	name = "master-soa-edit-api-empty.sysa.abc."
 	kind = "Master"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 	soa_edit_api = "\"\""
 }`
 
@@ -472,14 +466,12 @@ const testPDNSZoneConfigMasterSOAEDITAPIUndefined = `
 resource "powerdns_zone" "test-master-soa-edit-api-undefined" {
 	name = "master-soa-edit-api-undefined.sysa.abc."
 	kind = "Master"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 }`
 
 const testPDNSZoneConfigAccount = `
 resource "powerdns_zone" "test-account" {
 	name = "account.sysa.abc."
 	kind = "Master"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 	account = "test"
 }`
 
@@ -487,7 +479,6 @@ const testPDNSZoneConfigAccountEmpty = `
 resource "powerdns_zone" "test-account-empty" {
 	name = "account-empty.sysa.abc."
 	kind = "Master"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 	account = ""
 }`
 
@@ -495,7 +486,6 @@ const testPDNSZoneConfigAccountUndefined = `
 resource "powerdns_zone" "test-account-undefined" {
 	name = "account-undefined.sysa.abc."
 	kind = "Master"
-	nameservers = ["ns1.sysa.abc.", "ns2.sysa.abc."]
 	soa_edit_api = "DEFAULT"
 }`
 
@@ -503,7 +493,6 @@ const testPDNSZoneConfigSlave = `
 resource "powerdns_zone" "test-slave" {
 	name = "slave.sysa.abc."
 	kind = "Slave"
-	nameservers = []
 }`
 
 const testPDNSZoneConfigSlaveWithMasters = `
