@@ -7,6 +7,15 @@ import (
 	"strings"
 )
 
+// ValidateFQDN validates that a string is a fully qualified domain name ending with a trailing dot.
+func ValidateFQDN(v interface{}, k string) (ws []string, errors []error) {
+	value := v.(string)
+	if !strings.HasSuffix(value, ".") {
+		errors = append(errors, fmt.Errorf("%q must be a fully qualified domain name ending with a trailing dot (e.g., \"example.com.\"), got: %s", k, value))
+	}
+	return
+}
+
 // ValidateCIDR validates the CIDR format.
 // For IPv4, only /8, /16, /24 are allowed.
 // For IPv6, prefix length must be a multiple of 4 between 4 and 124.

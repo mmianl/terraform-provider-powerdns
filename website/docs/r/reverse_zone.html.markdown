@@ -44,7 +44,7 @@ This resource supports the following arguments:
 
 - `cidr` - (Required) The CIDR block for the reverse zone (e.g., '172.16.0.0/16' or '2001:db8::/32'). For IPv4, must have a prefix length of 8, 16, or 24. For IPv6, must have a prefix length that is a multiple of 4 between 4 and 124.
 - `kind` - (Required) The kind of zone. Must be either "Master" or "Slave".
-- `nameservers` - (Required) List of nameservers for this zone. Each nameserver must be a valid FQDN ending with a dot.
+- `nameservers` - (Required) List of nameservers for this zone. Each nameserver must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"ns01.example.com."`).
 
 ## Attribute Reference
 

@@ -78,9 +78,9 @@ resource "powerdns_ptr_record" "example_ipv6" {
 This resource supports the following arguments:
 
 - `ip_address` - (Required) The IP address for which to create the PTR record. Can be either an IPv4 or IPv6 address.
-- `hostname` - (Required) The hostname to which the IP address should point. Must be a valid FQDN ending with a dot.
+- `hostname` - (Required) The hostname to which the IP address should point. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"host01.example.com."`).
 - `ttl` - (Required) The TTL (Time To Live) of the record in seconds.
-- `reverse_zone` - (Required) The name of the reverse zone where the PTR record will be created. This can be the output of a `powerdns_reverse_zone` resource or a `powerdns_reverse_zone` data source.
+- `reverse_zone` - (Required) The name of the reverse zone where the PTR record will be created. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"16.172.in-addr.arpa."`). This can be the output of a `powerdns_reverse_zone` resource or a `powerdns_reverse_zone` data source.
 
 ## Notes
 
