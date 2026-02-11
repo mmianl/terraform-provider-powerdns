@@ -3,11 +3,10 @@
 BREAKING:
   * **Remove `nameservers` argument from `powerdns_zone` resource** ([#45](https://github.com/mmianl/terraform-provider-powerdns/pull/45), @mmianl)
   * **Add FQDN validation for all DNS zone and record name fields** ([#46](https://github.com/mmianl/terraform-provider-powerdns/pull/46), @MrKeiKun, @mmianl)
+  * **New resource**: `powerdns_record_soa` for managing SOA records with individual fields instead of `SOA` type in `powerdns_record` ([#44](https://github.com/mmianl/terraform-provider-powerdns/pull/44), @mmianl)
 
 FEATURES:
-  * **New resource**: `powerdns_record_soa` for managing SOA records with individual fields ([#44](https://github.com/mmianl/terraform-provider-powerdns/pull/44), @mmianl)
   * **Allow in-place updates of `powerdns_record` resources** ([#45](https://github.com/mmianl/terraform-provider-powerdns/pull/45), @mmianl)
-  * **Allow in-place updates of nameservers in `powerdns_zone` resources** ([#45](https://github.com/mmianl/terraform-provider-powerdns/pull/45), @mmianl)
 
 FIXES:
   * **Fix ordering issues in `powerdns_recursor_config` resource** ([#47](https://github.com/mmianl/terraform-provider-powerdns/pull/47), @mmianl)

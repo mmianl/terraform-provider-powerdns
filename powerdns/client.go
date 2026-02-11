@@ -866,6 +866,9 @@ func (client *RecursorClient) GetForwardZone(ctx context.Context, name string) (
 		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
 			return nil, fmt.Errorf("error getting forward zone %s", name)
 		}
+		if strings.Contains(errorResp.ErrorMsg, "Could not find domain") {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("error getting forward zone %s: %q", name, errorResp.ErrorMsg)
 	}
 }

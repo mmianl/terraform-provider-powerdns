@@ -23,16 +23,11 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1.6
-  test:
+  
+  mod-tidy:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Install Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
-        with:
-          go-version: 1.24.4
 
       - name: Ensure go.mod tidy and vendor are clean
         run: |
@@ -44,22 +39,70 @@ jobs:
             exit 1
           fi
 
-      - name: Test
-        run: make test
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
-
-      - name: Start Docker daemon
-        uses: docker/setup-docker-action@efe9e3891a4f7307e689f2100b33a155b900a608 # v4.5.0
+      - name: Install Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          version: "latest"
+          go-version: 1.24.4
 
-      - name: Verify Docker is running
+      - name: Run Tests
         run: |
-          docker info
-          docker compose version
-      
+          make test
+
+  acc-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: 1.24.4
+
+      - name: Start PowerDNS
+        working-directory: acc-tests
+        run: docker compose up -d
+
+      - name: Wait for PowerDNS to be healthy
+        run: |
+          while true; do
+            STATUS="$(docker inspect --format='{{.State.Health.Status}}' pdns-health 2>/dev/null || echo "starting")"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "PowerDNS is healthy!"
+              break
+            fi
+            if [ "$STATUS" = "unhealthy" ]; then
+              echo "PowerDNS is UNHEALTHY!"
+              docker compose -f acc-tests/docker-compose.yml logs
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Run Acceptance Tests
+        env:
+          PDNS_SERVER_URL: http://localhost:8081
+          PDNS_RECURSOR_SERVER_URL: http://localhost:8082
+          PDNS_API_KEY: testapikey
+        run: make testacc
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: 1.24.4
+
       - name: Run E2E tests
         timeout-minutes: 2
         run: |

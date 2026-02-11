@@ -11,8 +11,9 @@ func TestAccDataSourcePDNSZone_basic(t *testing.T) {
 	zoneName := "example.com."
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourcePDNSZoneConfig(zoneName),
@@ -28,8 +29,9 @@ func TestAccDataSourcePDNSZone_withRecords(t *testing.T) {
 	zoneName := "example.com."
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourcePDNSZoneConfigWithRecords(zoneName),
@@ -43,16 +45,30 @@ func TestAccDataSourcePDNSZone_withRecords(t *testing.T) {
 
 func testAccDataSourcePDNSZoneConfig(zoneName string) string {
 	return fmt.Sprintf(`
-data "powerdns_zone" "test" {
-  name = "%s"
+resource "powerdns_zone" "test" {
+  name         = "%s"
+  kind         = "Native"
+  soa_edit_api = "DEFAULT"
 }
-`, zoneName)
+
+data "powerdns_zone" "test" {
+  name       = "%s"
+  depends_on = [powerdns_zone.test]
+}
+`, zoneName, zoneName)
 }
 
 func testAccDataSourcePDNSZoneConfigWithRecords(zoneName string) string {
 	return fmt.Sprintf(`
+resource "powerdns_zone" "test" {
+  name         = "%s"
+  kind         = "Native"
+  soa_edit_api = "DEFAULT"
+}
+
 data "powerdns_zone" "test" {
-  name = "%s"
+  name       = "%s"
+  depends_on = [powerdns_zone.test]
 }
 
 output "zone_records" {
@@ -66,7 +82,7 @@ output "a_records" {
     if record.type == "A"
   ]
 }
-`, zoneName)
+`, zoneName, zoneName)
 }
 
 func testAccDataSourcePDNSZoneCheck(dataSourceName, zoneName string) resource.TestCheckFunc {
@@ -74,7 +90,7 @@ func testAccDataSourcePDNSZoneCheck(dataSourceName, zoneName string) resource.Te
 		resource.TestCheckResourceAttr(dataSourceName, "name", zoneName),
 		resource.TestCheckResourceAttrSet(dataSourceName, "kind"),
 		resource.TestCheckResourceAttrSet(dataSourceName, "account"),
-		resource.TestCheckResourceAttrSet(dataSourceName, "soa_edit_api"),
+		resource.TestCheckResourceAttr(dataSourceName, "soa_edit_api", "DEFAULT"),
 		resource.TestCheckResourceAttrSet(dataSourceName, "records.#"),
 	)
 }
@@ -84,12 +100,12 @@ func testAccDataSourcePDNSZoneCheckWithRecords(dataSourceName, zoneName string) 
 		resource.TestCheckResourceAttr(dataSourceName, "name", zoneName),
 		resource.TestCheckResourceAttrSet(dataSourceName, "kind"),
 		resource.TestCheckResourceAttrSet(dataSourceName, "account"),
-		resource.TestCheckResourceAttrSet(dataSourceName, "soa_edit_api"),
+		resource.TestCheckResourceAttr(dataSourceName, "soa_edit_api", "DEFAULT"),
 		resource.TestCheckResourceAttrSet(dataSourceName, "records.#"),
 		// Check that records have the expected structure
-		resource.TestCheckResourceAttr(dataSourceName, "records.0.name", ""),
-		resource.TestCheckResourceAttr(dataSourceName, "records.0.type", ""),
-		resource.TestCheckResourceAttr(dataSourceName, "records.0.content", ""),
+		resource.TestCheckResourceAttrSet(dataSourceName, "records.0.name"),
+		resource.TestCheckResourceAttrSet(dataSourceName, "records.0.type"),
+		resource.TestCheckResourceAttrSet(dataSourceName, "records.0.content"),
 		resource.TestCheckResourceAttrSet(dataSourceName, "records.0.ttl"),
 		resource.TestCheckResourceAttrSet(dataSourceName, "records.0.disabled"),
 	)

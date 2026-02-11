@@ -6,9 +6,47 @@ description: |-
   Manages DNS zones within a PowerDNS authoritative server. This resource supports creating, updating, and deleting zones with various configuration options including different zone types (Native, Master, Slave) and SOA record customization.
 ---
 
-# powerdns\_zone
+# powerdns_zone
 
 Manages DNS zones within a PowerDNS authoritative server. This resource supports creating, updating, and deleting zones with various configuration options including different zone types (Native, Master, Slave) and SOA record customization.
+
+## Migrating from v1 to v2
+
+In v1 of this provider, the `powerdns_zone` resource had a `nameservers` argument that automatically created NS records for the zone. In v2, this argument has been removed. Nameservers are now managed using a separate `powerdns_record` resource with type `"NS"`.
+
+~> **Note:** Removing the `nameservers` argument does **not** delete the NS records from PowerDNS. The records will remain on the server but become unmanaged by Terraform. If you want Terraform to continue managing them, add a `powerdns_record` resource as shown below.
+
+### Before (v1)
+
+```hcl
+resource "powerdns_zone" "example" {
+  name        = "example.com."
+  kind        = "Native"
+  nameservers = ["ns1.example.com.", "ns2.example.com."]
+}
+```
+
+### After (v2)
+
+```hcl
+resource "powerdns_zone" "example" {
+  name = "example.com."
+  kind = "Native"
+}
+
+resource "powerdns_record" "example_ns" {
+  zone = powerdns_zone.example.name
+  name = powerdns_zone.example.name
+  type = "NS"
+  ttl  = 3600
+  records = [
+    "ns1.example.com.",
+    "ns2.example.com.",
+  ]
+}
+```
+
+No `terraform import` is needed for the new `powerdns_record` NS resource. Since the NS records already exist on the server with the same values, Terraform will adopt them on the first apply.
 
 ## Example Usage
 
