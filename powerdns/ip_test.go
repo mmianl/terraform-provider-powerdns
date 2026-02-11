@@ -2,6 +2,70 @@ package powerdns
 
 import "testing"
 
+func TestValidateFQDN(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		expectError bool
+	}{
+		{
+			name:        "Valid FQDN with trailing dot",
+			value:       "example.com.",
+			expectError: false,
+		},
+		{
+			name:        "Valid subdomain FQDN",
+			value:       "sub.example.com.",
+			expectError: false,
+		},
+		{
+			name:        "Valid deeply nested FQDN",
+			value:       "a.b.c.d.example.com.",
+			expectError: false,
+		},
+		{
+			name:        "Root zone",
+			value:       ".",
+			expectError: false,
+		},
+		{
+			name:        "Missing trailing dot",
+			value:       "example.com",
+			expectError: true,
+		},
+		{
+			name:        "Missing trailing dot on subdomain",
+			value:       "sub.example.com",
+			expectError: true,
+		},
+		{
+			name:        "Empty string",
+			value:       "",
+			expectError: true,
+		},
+		{
+			name:        "Single label without dot",
+			value:       "localhost",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := ValidateFQDN(tt.value, "test_field")
+			if tt.expectError {
+				if len(errs) == 0 {
+					t.Errorf("ValidateFQDN(%q) expected error but got none", tt.value)
+				}
+			} else {
+				if len(errs) > 0 {
+					t.Errorf("ValidateFQDN(%q) unexpected error: %v", tt.value, errs)
+				}
+			}
+		})
+	}
+}
+
 func TestValidateCIDR(t *testing.T) {
 	tests := []struct {
 		name        string

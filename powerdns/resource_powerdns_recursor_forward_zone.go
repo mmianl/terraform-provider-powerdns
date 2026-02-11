@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -107,7 +108,14 @@ func resourcePDNSRecursorForwardZoneRead(ctx context.Context, d *schema.Resource
 	if err := d.Set("zone", zone.Name); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting zone: %w", err))
 	}
-	if err := d.Set("servers", zone.Servers); err != nil {
+	// The Recursor API appends ":53" to servers that were created without
+	// an explicit port.  Strip the default suffix so the state matches
+	// what the user originally configured.
+	servers := make([]string, len(zone.Servers))
+	for i, s := range zone.Servers {
+		servers[i] = strings.TrimSuffix(s, ":53")
+	}
+	if err := d.Set("servers", servers); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting servers: %w", err))
 	}
 

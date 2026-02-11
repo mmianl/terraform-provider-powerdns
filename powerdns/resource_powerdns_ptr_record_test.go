@@ -125,7 +125,7 @@ resource "powerdns_ptr_record" "test_ipv6" {
 `
 
 func testAccCheckPowerDNSPTRRecordDestroy(s *terraform.State) error {
-	client := testAccProvider.Meta().(*PowerDNSClient)
+	client := testAccProvider.Meta().(*ProviderClients).PDNS
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "powerdns_ptr_record" {
@@ -155,7 +155,7 @@ func testAccCheckPowerDNSPTRRecordExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("No PTR record ID is set")
 		}
 
-		client := testAccProvider.Meta().(*PowerDNSClient)
+		client := testAccProvider.Meta().(*ProviderClients).PDNS
 		exists, err := client.RecordExistsByID(context.Background(), rs.Primary.Attributes["reverse_zone"], rs.Primary.ID)
 		if err != nil {
 			return fmt.Errorf("error checking if PTR record exists: %w", err)

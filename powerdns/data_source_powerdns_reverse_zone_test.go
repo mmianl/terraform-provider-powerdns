@@ -35,6 +35,7 @@ resource "powerdns_reverse_zone" "test" {
 }
 
 data "powerdns_reverse_zone" "test" {
-  cidr = "172.16.0.0/16"
+  cidr       = "172.16.0.0/16"
+  depends_on = [powerdns_reverse_zone.test]
 }
 `

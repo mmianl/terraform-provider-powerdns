@@ -305,8 +305,8 @@ func TestAccPDNSZoneSlaveWithMasters(t *testing.T) {
 					testAccCheckPDNSZoneExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "name", "slave-with-masters.sysa.abc."),
 					resource.TestCheckResourceAttr(resourceName, "kind", "Slave"),
-					resource.TestCheckResourceAttr(resourceName, "masters.1048647934", "2.2.2.2"),
-					resource.TestCheckResourceAttr(resourceName, "masters.251826590", "1.1.1.1"),
+					resource.TestCheckTypeSetElemAttr(resourceName, "masters.*", "1.1.1.1"),
+					resource.TestCheckTypeSetElemAttr(resourceName, "masters.*", "2.2.2.2"),
 				),
 			},
 			{
@@ -332,8 +332,8 @@ func TestAccPDNSZoneSlaveWithMastersWithPort(t *testing.T) {
 					testAccCheckPDNSZoneExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "name", "slave-with-masters-with-port.sysa.abc."),
 					resource.TestCheckResourceAttr(resourceName, "kind", "Slave"),
-					resource.TestCheckResourceAttr(resourceName, "masters.1048647934", "2.2.2.2"),
-					resource.TestCheckResourceAttr(resourceName, "masters.1686215786", "1.1.1.1:1111"),
+					resource.TestCheckTypeSetElemAttr(resourceName, "masters.*", "2.2.2.2"),
+					resource.TestCheckTypeSetElemAttr(resourceName, "masters.*", "1.1.1.1:1111"),
 				),
 			},
 			{
@@ -353,7 +353,7 @@ func TestAccPDNSZoneSlaveWithMastersWithInvalidPort(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigSlaveWithMastersWithInvalidPort,
-				ExpectError: regexp.MustCompile("Invalid port value in masters atribute"),
+				ExpectError: regexp.MustCompile("invalid port value in masters attribute"),
 			},
 		},
 	})
@@ -392,8 +392,8 @@ func testAccCheckPDNSZoneDestroy(s *terraform.State) error {
 			continue
 		}
 
-		client := testAccProvider.Meta().(*PowerDNSClient)
-		exists, err := client.ZoneExists(context.Background(), rs.Primary.Attributes["zone"])
+		client := testAccProvider.Meta().(*ProviderClients).PDNS
+		exists, err := client.ZoneExists(context.Background(), rs.Primary.Attributes["name"])
 		if err != nil {
 			return fmt.Errorf("Error checking if zone still exists: %#v", rs.Primary.ID)
 		}
@@ -412,7 +412,7 @@ func testAccCheckPDNSZoneExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		client := testAccProvider.Meta().(*PowerDNSClient)
+		client := testAccProvider.Meta().(*ProviderClients).PDNS
 		exists, err := client.ZoneExists(context.Background(), rs.Primary.Attributes["name"])
 		if err != nil {
 			return err

@@ -91,3 +91,8 @@ resource "powerdns_record_soa" "soa" {
   expire  = 3600000
   minimum = 3600
 }
+
+resource "powerdns_zone" "test2" {
+  name = "test2.example.com."
+  kind = "Native"
+}

@@ -10,6 +10,40 @@ description: |-
 
 Manages PowerDNS DNS records within Terraform. This resource supports all standard DNS record types including A, AAAA, CNAME, MX, TXT, SRV, and more, with full control over TTL values and record data.
 
+## Migrating from v1 to v2
+
+In v1, SOA records could be managed using `powerdns_record` with `type = "SOA"` and a single content string. In v2, this is no longer supported. Use the dedicated [`powerdns_record_soa`](record_soa.html) resource instead, which exposes each SOA field individually.
+
+### Before (v1)
+
+```hcl
+resource "powerdns_record" "example_soa" {
+  zone    = powerdns_zone.example.name
+  name    = powerdns_zone.example.name
+  type    = "SOA"
+  ttl     = 3600
+  records = ["ns1.example.com. hostmaster.example.com. 2020122101 10800 3600 360000 300"]
+}
+```
+
+### After (v2)
+
+```hcl
+resource "powerdns_record_soa" "example" {
+  zone    = powerdns_zone.example.name
+  name    = powerdns_zone.example.name
+  ttl     = 3600
+  mname   = "ns1.example.com."
+  rname   = "hostmaster.example.com."
+  refresh = 10800
+  retry   = 3600
+  expire  = 360000
+  minimum = 300
+}
+```
+
+Remove the old `powerdns_record` SOA resource and add the new `powerdns_record_soa` resource in Terraform. The existing SOA record on the server will be deleted, and the new one applied at the same time.
+
 ## Supported Record Types
 
 The `powerdns_record` resource supports all standard DNS record types that PowerDNS supports. Below is a comprehensive list organized by category:

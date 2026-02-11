@@ -214,7 +214,21 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		}
 	}
 
-	// 2) SOA record data source: verify the SOA record can be read back
+	// 2) Forward zone: test2.example.com. (no soa_edit_api)
+	{
+		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test2.example.com.")
+		var zone authZone
+		doJSON(t, req, &zone)
+
+		if zone.Name != "test2.example.com." {
+			t.Fatalf("zone name: got %q, want %q", zone.Name, "test2.example.com.")
+		}
+		if zone.Kind != "Native" {
+			t.Fatalf("zone kind: got %q, want %q", zone.Kind, "Native")
+		}
+	}
+
+	// 3) SOA record: verify the SOA record can be read back
 	//    via the API and matches the values set in main.tf.
 	{
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com.")
@@ -268,7 +282,7 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		}
 	}
 
-	// 3) Reverse zone: 172.16.0.0/24
+	// 4) Reverse zone: 172.16.0.0/24
 	{
 		reverseZoneName := ipv4ReverseZoneName(t, "172.16.0.0/24")
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/"+reverseZoneName)
