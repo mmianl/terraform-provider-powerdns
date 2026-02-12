@@ -1,3 +1,8 @@
+# 2.0.1 (February 16, 2026)
+
+FEATURES:
+  * **Dependency updates** ([#51](https://github.com/mmianl/terraform-provider-powerdns/pull/50), @mmianl)
+
 ## 2.0.0 (February 12, 2026)
 
 BREAKING:
