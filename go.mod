@@ -3,7 +3,7 @@ module github.com/terraform-providers/terraform-provider-powerdns
 go 1.26.1
 
 require (
-	github.com/coocood/freecache v1.2.5
+	github.com/coocood/freecache v1.2.7
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/terraform-plugin-log v0.10.0
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.40.0
