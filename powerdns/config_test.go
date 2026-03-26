@@ -25,14 +25,6 @@ func newTestPDNSServer(t *testing.T) *httptest.Server {
 		_, _ = w.Write([]byte(`[]`)) // body is ignored by detectAPIVersion
 	})
 
-	// Used by setServerVersion
-	mux.HandleFunc("/api/v1/servers/localhost", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		// Minimal serverInfo JSON; only "version" is needed.
-		_, _ = w.Write([]byte(`{"version":"4.9.0"}`))
-	})
-
 	return httptest.NewServer(mux)
 }
 
@@ -107,5 +99,33 @@ func TestConfigClients_WithoutRecursorURL(t *testing.T) {
 
 	if recursorClient != nil {
 		t.Fatalf("expected Recursor client to be nil when RecursorServerURL is empty")
+	}
+}
+
+func TestConfigClients_DoesNotConnectDuringInitialization(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &Config{
+		ServerURL:         "http://127.0.0.1:1",
+		RecursorServerURL: "http://127.0.0.1:1",
+		APIKey:            "testapikey",
+		InsecureHTTPS:     false,
+		CacheEnable:       false,
+		CacheMemorySize:   "0",
+		CacheTTL:          0,
+	}
+
+	pdnsClient, recursorClient, err := cfg.Clients(ctx)
+	if err != nil {
+		t.Fatalf("Config.Clients returned error for unreachable endpoints: %v", err)
+	}
+
+	if pdnsClient == nil {
+		t.Fatalf("expected PowerDNS client to be non-nil")
+	}
+
+	if recursorClient == nil {
+		t.Fatalf("expected Recursor client to be non-nil")
 	}
 }

@@ -1,3 +1,15 @@
+# 2.0.2 (March 26, 2026)
+
+FIXES:
+  * **Fix provider initialization when no resources are planned by removing ServerVersion from BaseClient** ([#58](https://github.com/mmianl/terraform-provider-powerdns/pull/58), @mmianl)
+
+FEATURES:
+  * **Dependency updates** ([#57](https://github.com/mmianl/terraform-provider-powerdns/pull/57), @dependabot)
+  * **Dependency updates** ([#55](https://github.com/mmianl/terraform-provider-powerdns/pull/55), @dependabot)
+  * **Dependency updates** ([#54](https://github.com/mmianl/terraform-provider-powerdns/pull/54), @dependabot)
+  * **Dependency updates** ([#53](https://github.com/mmianl/terraform-provider-powerdns/pull/53), @dependabot)
+  * **Dependency updates** ([#52](https://github.com/mmianl/terraform-provider-powerdns/pull/52), @dependabot)
+
 # 2.0.1 (February 16, 2026)
 
 FEATURES:

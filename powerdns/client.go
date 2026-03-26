@@ -73,18 +73,17 @@ func sanitizeURL(URL string) (string, error) {
 
 // BaseClient contains shared HTTP / auth / cache logic for PowerDNS-style APIs.
 type BaseClient struct {
-	ServerURL     string // Location of the server to use
-	ServerVersion string
-	APIKey        string // REST API Static authentication key
-	APIVersion    int    // API version to use
-	HTTP          *http.Client
-	CacheEnable   bool // Enable/Disable cache for REST API requests
-	Cache         *freecache.Cache
-	CacheTTL      int
+	ServerURL   string // Location of the server to use
+	APIKey      string // REST API Static authentication key
+	APIVersion  int    // API version to use
+	HTTP        *http.Client
+	CacheEnable bool // Enable/Disable cache for REST API requests
+	Cache       *freecache.Cache
+	CacheTTL    int
 }
 
 // NewBaseClient constructs a BaseClient with HTTP, TLS and cache configuration.
-func NewBaseClient(ctx context.Context, serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*BaseClient, error) {
+func NewBaseClient(serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*BaseClient, error) {
 	cleanURL, err := sanitizeURL(serverURL)
 	if err != nil {
 		return nil, fmt.Errorf("error while creating client: %s", err)
@@ -111,56 +110,7 @@ func NewBaseClient(ctx context.Context, serverURL string, apiKey string, configT
 		CacheTTL:    cacheTTL,
 	}
 
-	if err := base.setServerVersion(ctx); err != nil {
-		return nil, fmt.Errorf("error while creating client: %s", err)
-	}
-
 	return base, nil
-}
-
-func (client *BaseClient) setServerVersion(ctx context.Context) error {
-	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost", nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("invalid response code from server: '%d'. Failed to read response body: %v",
-				resp.StatusCode, err)
-		}
-		return fmt.Errorf("invalid response code from server: '%d'. Response body: %s",
-			resp.StatusCode, string(bodyBytes))
-	}
-
-	serverInfo := new(serverInfo)
-	if err := json.NewDecoder(resp.Body).Decode(serverInfo); err == nil {
-		client.ServerVersion = serverInfo.Version
-		return nil
-	}
-
-	headerServerInfo := strings.SplitN(resp.Header.Get("Server"), "/", 2)
-	if len(headerServerInfo) == 2 && strings.EqualFold(headerServerInfo[0], "PowerDNS") {
-		client.ServerVersion = headerServerInfo[1]
-		return nil
-	}
-
-	return fmt.Errorf("unable to get server version")
 }
 
 // newRequest creates a new request against the API with necessary headers.
@@ -297,16 +247,6 @@ type errorResponse struct {
 	ErrorMsg string `json:"error"`
 }
 
-type serverInfo struct {
-	ConfigURL  string `json:"config_url"`
-	DaemonType string `json:"daemon_type"`
-	ID         string `json:"id"`
-	Type       string `json:"type"`
-	URL        string `json:"url"`
-	Version    string `json:"version"`
-	ZonesURL   string `json:"zones_url"`
-}
-
 const idSeparator string = ":::"
 
 // Sentinel error for "not found" scenarios
@@ -340,7 +280,7 @@ type PowerDNSClient struct {
 
 // NewPowerDNSClient constructs the derived PowerDNS client used by the provider.
 func NewPowerDNSClient(ctx context.Context, serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*PowerDNSClient, error) {
-	base, err := NewBaseClient(ctx, serverURL, apiKey, configTLS, cacheEnable, cacheSizeMB, cacheTTL)
+	base, err := NewBaseClient(serverURL, apiKey, configTLS, cacheEnable, cacheSizeMB, cacheTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -819,7 +759,7 @@ func NewRecursorClient(
 	apiKey string,
 	configTLS *tls.Config,
 ) (*RecursorClient, error) {
-	base, err := NewBaseClient(ctx, recursorURL, apiKey, configTLS, false, "0", 0)
+	base, err := NewBaseClient(recursorURL, apiKey, configTLS, false, "0", 0)
 	if err != nil {
 		return nil, err
 	}
