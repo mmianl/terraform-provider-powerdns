@@ -94,7 +94,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -sf -H 'X-API-Key: testapikey' http://recursor:8082/api/v1/servers/localhost >/dev/null 2>&1 || exit 1",
+          "curl -sf -H 'X-API-Key: testapikey' http://recursor:8082/api/v1/servers >/dev/null 2>&1 || exit 1",
         ]
       interval: "5s"
       timeout: "3s"
