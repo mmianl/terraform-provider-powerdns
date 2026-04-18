@@ -93,6 +93,7 @@ func Provider() *schema.Provider {
 
 		DataSourcesMap: map[string]*schema.Resource{
 			"powerdns_reverse_zone":       dataSourcePDNSReverseZone(),
+			"powerdns_record":             dataSourcePDNSRecord(),
 			"powerdns_record_soa":         dataSourcePDNSRecordSOA(),
 			"powerdns_zone":               dataSourcePDNSZone(),
 			"powerdns_zone_metadata":      dataSourcePDNSZoneMetadata(),

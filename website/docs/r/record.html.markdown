@@ -99,6 +99,11 @@ resource "powerdns_record" "foobar" {
   name    = "www.example.com."
   type    = "A"
   ttl     = 300
+  disabled = false
+  comments = [
+    "managed-by=terraform",
+    "owner=dns-team",
+  ]
   records = ["192.168.0.11"]
 }
 ```
@@ -349,6 +354,10 @@ resource "powerdns_record" "foobar" {
   name    = "www.example.com."
   type    = "A"
   ttl     = 300
+  comments = [
+    "managed-by=terraform",
+    "owner=dns-team",
+  ]
   records = ["192.168.0.11"]
 }
 ```
@@ -427,7 +436,9 @@ The following arguments are supported:
 - `name` - (Required) The name of the record. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"www.example.com."`).
 - `type` - (Required) The record type.
 - `ttl` - (Required) The TTL of the record.
+- `disabled` - (Optional) Whether all records in this RRset are disabled in PowerDNS. Defaults to `false`.
 - `records` - (Required) A string list of records.
+- `comments` - (Optional) Ordered list of RRset comments stored in PowerDNS.
 - `set_ptr` (Optional) [**_Deprecated in PowerDNS 4.3.0_**] A boolean (true/false), determining whether API server should automatically create PTR record in the matching reverse zone. Existing PTR records are replaced. If no matching reverse zone, an error is thrown.
 
 ### Attribute Reference

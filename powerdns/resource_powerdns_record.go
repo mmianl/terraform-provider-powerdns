@@ -15,7 +15,7 @@ func resourcePDNSRecord() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourcePDNSRecordCreate,
 		ReadContext:   resourcePDNSRecordRead,
-		UpdateContext: resourcePDNSRecordCreate,
+		UpdateContext: resourcePDNSRecordUpdate,
 		DeleteContext: resourcePDNSRecordDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -44,11 +44,27 @@ func resourcePDNSRecord() *schema.Resource {
 				Type:     schema.TypeInt,
 				Required: true,
 			},
+			"disabled": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "Whether all records in this RRset are disabled in PowerDNS.",
+			},
 			"records": {
 				Type:     schema.TypeSet,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 				Required: true,
 				Set:      schema.HashString,
+			},
+			"comments": {
+				Type: schema.TypeList,
+				Elem: &schema.Schema{
+					Type:         schema.TypeString,
+					ValidateFunc: validateRRSetComment,
+				},
+				Optional:    true,
+				Computed:    true,
+				Description: "Ordered list of RRset comments stored in PowerDNS.",
 			},
 			"set_ptr": {
 				Type:        schema.TypeBool,
@@ -61,14 +77,22 @@ func resourcePDNSRecord() *schema.Resource {
 }
 
 func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	return resourcePDNSRecordUpsert(ctx, d, meta)
+}
+
+func resourcePDNSRecordUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	return resourcePDNSRecordUpsert(ctx, d, meta)
+}
+
+func resourcePDNSRecordUpsert(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*ProviderClients)
 
 	zone := d.Get("zone").(string)
 	name := d.Get("name").(string)
 	typ := d.Get("type").(string)
 	ttl := d.Get("ttl").(int)
+	disabled := d.Get("disabled").(bool)
 	recList := d.Get("records").(*schema.Set).List()
-
 	if strings.EqualFold(typ, "SOA") {
 		return diag.FromErr(fmt.Errorf("SOA records cannot be managed with powerdns_record; use the powerdns_record_soa resource instead"))
 	}
@@ -98,14 +122,16 @@ func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta 
 	records := make([]Record, 0, len(recList))
 	for _, rc := range recList {
 		records = append(records, Record{
-			Name:    rrSet.Name,
-			Type:    rrSet.Type,
-			TTL:     ttl,
-			Content: rc.(string),
-			SetPtr:  setPtr,
+			Name:     rrSet.Name,
+			Type:     rrSet.Type,
+			TTL:      ttl,
+			Content:  rc.(string),
+			Disabled: disabled,
+			SetPtr:   setPtr,
 		})
 	}
 	rrSet.Records = records
+	rrSet.Comments = configuredRRSetComments(d)
 
 	tflog.SetField(ctx, "zone", zone)
 	tflog.SetField(ctx, "name", name)
@@ -131,10 +157,11 @@ func resourcePDNSRecordRead(ctx context.Context, d *schema.ResourceData, meta in
 	tflog.SetField(ctx, "record_id", d.Id())
 	tflog.Debug(ctx, "Reading PowerDNS Record")
 
-	records, err := client.PDNS.ListRecordsByID(ctx, zone, d.Id())
+	rrSet, err := client.PDNS.GetRecordSetByID(ctx, zone, d.Id())
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS Record: %w", err))
+		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS RRset details: %w", err))
 	}
+	records := recordsFromRRSet(rrSet)
 
 	if len(records) == 0 {
 		// rrset no longer exists; clear state
@@ -148,8 +175,19 @@ func resourcePDNSRecordRead(ctx context.Context, d *schema.ResourceData, meta in
 		recs = append(recs, r.Content)
 	}
 
+	comments := flattenRRSetComments(nil)
+	if rrSet != nil {
+		comments = flattenRRSetComments(rrSet.Comments)
+	}
+
 	if err := d.Set("records", recs); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS Records: %w", err))
+	}
+	if err := d.Set("comments", comments); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Comments: %w", err))
+	}
+	if err := d.Set("disabled", rrSetDisabled(records)); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Disabled: %w", err))
 	}
 	if err := d.Set("ttl", records[0].TTL); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS TTL: %w", err))
@@ -205,10 +243,11 @@ func resourcePDNSRecordImport(ctx context.Context, d *schema.ResourceData, meta 
 		"zone": zoneName, "recordID": recordID,
 	})
 
-	records, err := client.PDNS.ListRecordsByID(ctx, zoneName, recordID)
+	rrSet, err := client.PDNS.GetRecordSetByID(ctx, zoneName, recordID)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't fetch PowerDNS Record: %w", err)
+		return nil, fmt.Errorf("couldn't fetch PowerDNS RRset details: %w", err)
 	}
+	records := recordsFromRRSet(rrSet)
 	if len(records) == 0 {
 		return nil, fmt.Errorf("rrset has no records to import")
 	}
@@ -216,6 +255,11 @@ func resourcePDNSRecordImport(ctx context.Context, d *schema.ResourceData, meta 
 	recs := make([]string, 0, len(records))
 	for _, r := range records {
 		recs = append(recs, r.Content)
+	}
+
+	comments := flattenRRSetComments(nil)
+	if rrSet != nil {
+		comments = flattenRRSetComments(rrSet.Comments)
 	}
 
 	if err := d.Set("zone", zoneName); err != nil {
@@ -233,7 +277,107 @@ func resourcePDNSRecordImport(ctx context.Context, d *schema.ResourceData, meta 
 	if err := d.Set("records", recs); err != nil {
 		return nil, fmt.Errorf("error setting PowerDNS Records: %w", err)
 	}
+	if err := d.Set("comments", comments); err != nil {
+		return nil, fmt.Errorf("error setting PowerDNS Comments: %w", err)
+	}
+	if err := d.Set("disabled", rrSetDisabled(records)); err != nil {
+		return nil, fmt.Errorf("error setting PowerDNS Disabled: %w", err)
+	}
 
 	d.SetId(recordID)
 	return []*schema.ResourceData{d}, nil
+}
+
+func configuredRRSetComments(d *schema.ResourceData) *[]Comment {
+	if d.HasChange("comments") {
+		_, newComments := d.GetChange("comments")
+		return expandRRSetCommentsValue(newComments)
+	}
+
+	rawConfig := d.GetRawConfig()
+	if !rawConfig.IsNull() && rawConfig.IsKnown() {
+		rawComments := rawConfig.GetAttr("comments")
+		if rawComments.IsKnown() && !rawComments.IsNull() {
+			return expandRRSetCommentsValue(d.Get("comments"))
+		}
+	}
+
+	return nil
+}
+
+func expandRRSetComments(rawComments []interface{}) []Comment {
+	comments := make([]Comment, 0, len(rawComments))
+	for _, rawComment := range rawComments {
+		content, ok := rawComment.(string)
+		if !ok {
+			continue
+		}
+
+		comments = append(comments, Comment{Content: content})
+	}
+
+	return comments
+}
+
+func expandRRSetCommentsValue(rawComments any) *[]Comment {
+	if rawComments == nil {
+		comments := []Comment{}
+		return &comments
+	}
+
+	switch comments := rawComments.(type) {
+	case []interface{}:
+		expanded := expandRRSetComments(comments)
+		return &expanded
+	case []string:
+		raw := make([]interface{}, 0, len(comments))
+		for _, comment := range comments {
+			raw = append(raw, comment)
+		}
+		expanded := expandRRSetComments(raw)
+		return &expanded
+	default:
+		emptyComments := []Comment{}
+		return &emptyComments
+	}
+}
+
+func flattenRRSetComments(comments *[]Comment) []string {
+	if comments == nil {
+		return []string{}
+	}
+
+	flattened := make([]string, 0, len(*comments))
+	for _, comment := range *comments {
+		flattened = append(flattened, comment.Content)
+	}
+
+	return flattened
+}
+
+func rrSetDisabled(records []Record) bool {
+	if len(records) == 0 {
+		return false
+	}
+
+	for _, record := range records {
+		if !record.Disabled {
+			return false
+		}
+	}
+
+	return true
+}
+
+func validateRRSetComment(v interface{}, k string) ([]string, []error) {
+	comment, ok := v.(string)
+	if !ok {
+		return nil, []error{fmt.Errorf("%s must be a string", k)}
+	}
+
+	if strings.TrimSpace(comment) == "" {
+		return nil, []error{fmt.Errorf("%s must not be empty or whitespace only", k)}
+	}
+
+	return nil, nil
 }

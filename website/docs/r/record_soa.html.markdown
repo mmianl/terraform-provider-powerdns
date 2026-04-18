@@ -27,6 +27,7 @@ resource "powerdns_record_soa" "example" {
   zone    = powerdns_zone.example.name
   name    = powerdns_zone.example.name
   ttl     = 3600
+  disabled = false
   mname   = "ns1.example.com."
   rname   = "hostmaster.example.com."
   refresh = 10800
@@ -45,6 +46,7 @@ resource "powerdns_record_soa" "example" {
   zone    = powerdns_zone.example.name
   name    = powerdns_zone.example.name
   ttl     = 3600
+  disabled = false
   mname   = "ns1.example.com."
   rname   = "hostmaster.example.com."
   serial  = 0
@@ -66,6 +68,7 @@ The following arguments are supported:
 - `zone` - (Required, ForceNew) The name of the zone containing this SOA record. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"example.com."`).
 - `name` - (Required, ForceNew) The name of the SOA record (usually the same as the zone name). Must be a fully qualified domain name (FQDN) ending with a trailing dot.
 - `ttl` - (Required) The TTL of the SOA record in seconds.
+- `disabled` - (Optional) Whether the SOA record is disabled in PowerDNS. Defaults to `false`.
 - `mname` - (Required) The primary nameserver for the zone (MNAME field). Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"ns1.example.com."`).
 - `rname` - (Required) The email address of the person responsible for the zone, in DNS format with a dot instead of `@` (RNAME field). Must be a fully qualified domain name (FQDN) ending with a trailing dot. For example, `hostmaster.example.com.` represents `hostmaster@example.com`.
 - `serial` - (Optional) The SOA serial number. If omitted or set to `0`, PowerDNS manages it automatically via the zone's `soa_edit_api` setting. This field is always read back from the server.

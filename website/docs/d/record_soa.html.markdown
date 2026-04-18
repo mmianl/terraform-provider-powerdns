@@ -39,6 +39,7 @@ The following arguments are supported:
 This data source exports the following attributes:
 
 - `ttl` - The TTL of the SOA record in seconds.
+- `disabled` - Whether the SOA record is disabled.
 - `mname` - The primary nameserver for the zone (MNAME field).
 - `rname` - The responsible person email in DNS format (RNAME field).
 - `serial` - The SOA serial number.
