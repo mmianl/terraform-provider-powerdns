@@ -57,3 +57,7 @@ output "powerdns_record_soa" {
 output "data_powerdns_record_soa" {
   value = data.powerdns_record_soa.soa
 }
+
+output "data_powerdns_record_soa_disabled" {
+  value = data.powerdns_record_soa.soa.disabled
+}

@@ -50,6 +50,12 @@ func resourcePDNSRecord() *schema.Resource {
 				Required: true,
 				Set:      schema.HashString,
 			},
+			"comment": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: "Optional RRset comment stored in PowerDNS.",
+			},
 			"set_ptr": {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -68,6 +74,7 @@ func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta 
 	typ := d.Get("type").(string)
 	ttl := d.Get("ttl").(int)
 	recList := d.Get("records").(*schema.Set).List()
+	comment := d.Get("comment").(string)
 
 	if strings.EqualFold(typ, "SOA") {
 		return diag.FromErr(fmt.Errorf("SOA records cannot be managed with powerdns_record; use the powerdns_record_soa resource instead"))
@@ -106,6 +113,9 @@ func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta 
 		})
 	}
 	rrSet.Records = records
+	if strings.TrimSpace(comment) != "" {
+		rrSet.Comments = []Comment{{Content: comment}}
+	}
 
 	tflog.SetField(ctx, "zone", zone)
 	tflog.SetField(ctx, "name", name)
@@ -144,12 +154,34 @@ func resourcePDNSRecordRead(ctx context.Context, d *schema.ResourceData, meta in
 	}
 
 	recs := make([]string, 0, len(records))
+	hasDisabled := false
 	for _, r := range records {
 		recs = append(recs, r.Content)
+		if r.Disabled {
+			hasDisabled = true
+		}
+	}
+	if hasDisabled {
+		tflog.Warn(ctx, "One or more records in this RRset are disabled in PowerDNS", map[string]any{
+			"record_id": d.Id(),
+			"zone":      zone,
+		})
+	}
+
+	rrSet, err := client.PDNS.GetRecordSetByID(ctx, zone, d.Id())
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS RRset details: %w", err))
+	}
+	comment := ""
+	if rrSet != nil && len(rrSet.Comments) > 0 {
+		comment = rrSet.Comments[0].Content
 	}
 
 	if err := d.Set("records", recs); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS Records: %w", err))
+	}
+	if err := d.Set("comment", comment); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Comment: %w", err))
 	}
 	if err := d.Set("ttl", records[0].TTL); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS TTL: %w", err))
@@ -218,6 +250,15 @@ func resourcePDNSRecordImport(ctx context.Context, d *schema.ResourceData, meta 
 		recs = append(recs, r.Content)
 	}
 
+	rrSet, err := client.PDNS.GetRecordSetByID(ctx, zoneName, recordID)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't fetch PowerDNS RRset details: %w", err)
+	}
+	comment := ""
+	if rrSet != nil && len(rrSet.Comments) > 0 {
+		comment = rrSet.Comments[0].Content
+	}
+
 	if err := d.Set("zone", zoneName); err != nil {
 		return nil, fmt.Errorf("error setting PowerDNS Zone: %w", err)
 	}
@@ -232,6 +273,9 @@ func resourcePDNSRecordImport(ctx context.Context, d *schema.ResourceData, meta 
 	}
 	if err := d.Set("records", recs); err != nil {
 		return nil, fmt.Errorf("error setting PowerDNS Records: %w", err)
+	}
+	if err := d.Set("comment", comment); err != nil {
+		return nil, fmt.Errorf("error setting PowerDNS Comment: %w", err)
 	}
 
 	d.SetId(recordID)

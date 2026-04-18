@@ -19,6 +19,7 @@ func TestAccDataSourcePDNSRecordSOA_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(dataSourceName, "zone", "test-ds-soa-sysa.xyz."),
 					resource.TestCheckResourceAttr(dataSourceName, "name", "test-ds-soa-sysa.xyz."),
 					resource.TestCheckResourceAttrSet(dataSourceName, "ttl"),
+					resource.TestCheckResourceAttr(dataSourceName, "disabled", "false"),
 					resource.TestCheckResourceAttr(dataSourceName, "mname", "ns1.sysa.xyz."),
 					resource.TestCheckResourceAttr(dataSourceName, "rname", "hostmaster.sysa.xyz."),
 					resource.TestCheckResourceAttrSet(dataSourceName, "serial"),

@@ -48,6 +48,32 @@ func TestAccPDNSRecord_A(t *testing.T) {
 	})
 }
 
+func TestAccPDNSRecord_WithComment(t *testing.T) {
+	resourceName := "powerdns_record.test-a-comment"
+	resourceID := `{"zone":"rec-acomment.sysa.xyz.","id":"test.rec-acomment.sysa.xyz.:::A"}`
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSRecordDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSRecordConfigAWithComment,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSRecordExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "comment", "managed-by=terraform"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportStateId:     resourceID,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func TestAccPDNSRecord_WithPtr(t *testing.T) {
 	resourceName := "powerdns_record.test-a-ptr"
 	resourceID := `{"zone":"rec-aptr.sysa.xyz.","id":"test.rec-aptr.sysa.xyz.:::A"}`
@@ -520,6 +546,21 @@ resource "powerdns_record" "test-a-ptr" {
 	type = "A"
 	ttl = 60
 	set_ptr = true
+	records = [ "1.1.1.1" ]
+}`
+
+const testPDNSRecordConfigAWithComment = `
+resource "powerdns_zone" "test-zone" {
+	name = "rec-acomment.sysa.xyz."
+	kind = "Native"
+}
+
+resource "powerdns_record" "test-a-comment" {
+	zone = powerdns_zone.test-zone.name
+	name = "test.rec-acomment.sysa.xyz."
+	type = "A"
+	ttl = 60
+	comment = "managed-by=terraform"
 	records = [ "1.1.1.1" ]
 }`
 

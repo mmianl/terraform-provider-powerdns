@@ -1,3 +1,8 @@
+# 2.2.0 (, 2026)
+
+FEATURES:
+  * **Add support for record comments, and disabled records** ([#63](https://github.com/mmianl/terraform-provider-powerdns/pull/63), @mmianl)
+
 # 2.1.0 (April 19, 2026)
 
 FEATURES:

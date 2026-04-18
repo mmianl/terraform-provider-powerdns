@@ -99,6 +99,7 @@ resource "powerdns_record" "foobar" {
   name    = "www.example.com."
   type    = "A"
   ttl     = 300
+  comment = "managed-by=terraform"
   records = ["192.168.0.11"]
 }
 ```
@@ -349,6 +350,7 @@ resource "powerdns_record" "foobar" {
   name    = "www.example.com."
   type    = "A"
   ttl     = 300
+  comment = "managed-by=terraform"
   records = ["192.168.0.11"]
 }
 ```
@@ -428,7 +430,10 @@ The following arguments are supported:
 - `type` - (Required) The record type.
 - `ttl` - (Required) The TTL of the record.
 - `records` - (Required) A string list of records.
+- `comment` - (Optional) RRset comment stored in PowerDNS. This is useful to tag records as Terraform-managed in mixed-management zones.
 - `set_ptr` (Optional) [**_Deprecated in PowerDNS 4.3.0_**] A boolean (true/false), determining whether API server should automatically create PTR record in the matching reverse zone. Existing PTR records are replaced. If no matching reverse zone, an error is thrown.
+
+When reading existing records, this resource maps the first PowerDNS RRset comment into `comment`.
 
 ### Attribute Reference
 
