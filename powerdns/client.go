@@ -220,6 +220,12 @@ type ZoneInfoUpd struct {
 	Masters    []string `json:"masters,omitempty"`
 }
 
+// ZoneMetadata represents a single metadata kind with all configured values.
+type ZoneMetadata struct {
+	Kind     string   `json:"kind"`
+	Metadata []string `json:"metadata"`
+}
+
 // Record represents a PowerDNS record object
 type Record struct {
 	Name     string `json:"name"`
@@ -497,6 +503,159 @@ func (client *PowerDNSClient) DeleteZone(ctx context.Context, name string) error
 		}
 		return fmt.Errorf("error deleting zone: %s, reason: %q", name, errorResp.ErrorMsg)
 	}
+	return nil
+}
+
+// ListZoneMetadata returns all domain metadata entries for a zone.
+func (client *PowerDNSClient) ListZoneMetadata(ctx context.Context, zone string) ([]ZoneMetadata, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s/metadata", zone), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   zone,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return nil, fmt.Errorf("error reading zone metadata: %s", zone)
+		}
+		return nil, fmt.Errorf("error reading zone metadata: %s, reason: %q", zone, errorResp.ErrorMsg)
+	}
+
+	var metadata []ZoneMetadata
+	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+		return nil, err
+	}
+
+	return metadata, nil
+}
+
+// GetZoneMetadata returns one metadata kind for a zone.
+func (client *PowerDNSClient) GetZoneMetadata(ctx context.Context, zone string, kind string) (ZoneMetadata, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s/metadata/%s", zone, kind), nil)
+	if err != nil {
+		return ZoneMetadata{}, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return ZoneMetadata{}, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   zone,
+				"kind":   kind,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return ZoneMetadata{}, fmt.Errorf("error reading zone metadata: %s (%s)", zone, kind)
+		}
+		return ZoneMetadata{}, fmt.Errorf("error reading zone metadata: %s (%s), reason: %q", zone, kind, errorResp.ErrorMsg)
+	}
+
+	var metadata ZoneMetadata
+	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+		return ZoneMetadata{}, err
+	}
+
+	return metadata, nil
+}
+
+// ReplaceZoneMetadata replaces all values for a metadata kind in a zone.
+func (client *PowerDNSClient) ReplaceZoneMetadata(ctx context.Context, zone string, kind string, values []string) error {
+	body, err := json.Marshal(ZoneMetadata{
+		Kind:     kind,
+		Metadata: values,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/zones/%s/metadata/%s", zone, kind), body)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   zone,
+				"kind":   kind,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return fmt.Errorf("error replacing zone metadata: %s (%s)", zone, kind)
+		}
+		return fmt.Errorf("error replacing zone metadata: %s (%s), reason: %q", zone, kind, errorResp.ErrorMsg)
+	}
+
+	return nil
+}
+
+// DeleteZoneMetadata deletes all values for a metadata kind in a zone.
+func (client *PowerDNSClient) DeleteZoneMetadata(ctx context.Context, zone string, kind string) error {
+	req, err := client.newRequest(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/zones/%s/metadata/%s", zone, kind), nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"zone":   zone,
+				"kind":   kind,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusNoContent {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return fmt.Errorf("error deleting zone metadata: %s (%s)", zone, kind)
+		}
+		return fmt.Errorf("error deleting zone metadata: %s (%s), reason: %q", zone, kind, errorResp.ErrorMsg)
+	}
+
 	return nil
 }
 

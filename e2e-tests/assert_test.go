@@ -93,6 +93,11 @@ type authRecord struct {
 	Content string `json:"content"`
 }
 
+type zoneMetadata struct {
+	Kind     string   `json:"kind"`
+	Metadata []string `json:"metadata"`
+}
+
 // Recursor config setting
 type recursorConfig struct {
 	Name  string   `json:"name"`
@@ -145,6 +150,41 @@ func ipv4PtrName(ipStr string) string {
 		strconv.Itoa(int(ip[2])) + "." +
 		strconv.Itoa(int(ip[1])) + "." +
 		strconv.Itoa(int(ip[0])) + ".in-addr.arpa."
+}
+
+func valuesToSet(values []string) map[string]bool {
+	set := map[string]bool{}
+	for _, v := range values {
+		set[v] = true
+	}
+	return set
+}
+
+func assertMetadataKindValues(t *testing.T, metadataByKind map[string][]string, kind string, want []string) {
+	t.Helper()
+
+	values, ok := metadataByKind[kind]
+	if !ok {
+		t.Fatalf("zone metadata %s not found in metadata list", kind)
+	}
+
+	valueSet := valuesToSet(values)
+	for _, w := range want {
+		if !valueSet[w] {
+			t.Fatalf("%s metadata missing value %q in %v", kind, w, values)
+		}
+	}
+}
+
+func assertMetadataValues(t *testing.T, got []string, label string, want []string) {
+	t.Helper()
+
+	gotSet := valuesToSet(got)
+	for _, w := range want {
+		if !gotSet[w] {
+			t.Fatalf("%s missing value %q in %v", label, w, got)
+		}
+	}
 }
 
 // --- Tests ------------------------------------------------------------------
@@ -282,7 +322,22 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		}
 	}
 
-	// 4) Reverse zone: 172.16.0.0/24
+	// 4) Zone metadata: verify resource
+	{
+		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com./metadata")
+		var metadataList []zoneMetadata
+		doJSON(t, req, &metadataList)
+
+		metadataByKind := map[string][]string{}
+		for _, entry := range metadataList {
+			metadataByKind[entry.Kind] = entry.Metadata
+		}
+
+		assertMetadataKindValues(t, metadataByKind, "ALSO-NOTIFY", []string{"192.0.2.10", "192.0.2.11:5300"})
+		assertMetadataKindValues(t, metadataByKind, "ALLOW-AXFR-FROM", []string{"AUTO-NS", "2001:db8::/48"})
+	}
+
+	// 5) Reverse zone: 172.16.0.0/24
 	{
 		reverseZoneName := ipv4ReverseZoneName(t, "172.16.0.0/24")
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/"+reverseZoneName)
