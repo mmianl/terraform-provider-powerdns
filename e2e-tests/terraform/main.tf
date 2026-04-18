@@ -4,6 +4,31 @@ resource "powerdns_zone" "test" {
   soa_edit_api = "DEFAULT"
 }
 
+resource "powerdns_zone_metadata" "test_also_notify" {
+  zone     = powerdns_zone.test.name
+  kind     = "ALSO-NOTIFY"
+  metadata = ["192.0.2.10", "192.0.2.11:5300"]
+}
+
+resource "powerdns_zone_metadata" "test_allow_axfr_from" {
+  zone     = powerdns_zone.test.name
+  kind     = "ALLOW-AXFR-FROM"
+  metadata = ["AUTO-NS", "2001:db8::/48"]
+}
+
+data "powerdns_zone_metadata" "test_also_notify" {
+  zone = powerdns_zone.test.name
+  kind = "ALSO-NOTIFY"
+
+  depends_on = [powerdns_zone_metadata.test_also_notify]
+}
+
+data "powerdns_zone_metadata_list" "test" {
+  zone = powerdns_zone.test.name
+
+  depends_on = [powerdns_zone_metadata.test_also_notify, powerdns_zone_metadata.test_allow_axfr_from]
+}
+
 resource "powerdns_record" "test_ns" {
   zone = powerdns_zone.test.name
   name = powerdns_zone.test.name

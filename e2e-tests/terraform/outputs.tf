@@ -6,6 +6,22 @@ output "data_powerdns_zone_test" {
   value = data.powerdns_zone.test
 }
 
+output "powerdns_zone_metadata_test_also_notify" {
+  value = powerdns_zone_metadata.test_also_notify
+}
+
+output "powerdns_zone_metadata_test_allow_axfr_from" {
+  value = powerdns_zone_metadata.test_allow_axfr_from
+}
+
+output "data_powerdns_zone_metadata_test_also_notify" {
+  value = data.powerdns_zone_metadata.test_also_notify
+}
+
+output "data_powerdns_zone_metadata_list_test" {
+  value = data.powerdns_zone_metadata_list.test
+}
+
 output "powerdns_reverse_zone_172_16_0_0_24" {
   value = powerdns_reverse_zone.zone_172_16_0_0_24
 }

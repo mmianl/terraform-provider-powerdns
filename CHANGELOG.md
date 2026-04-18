@@ -1,3 +1,8 @@
+# 2.1.0 (April 19, 2026)
+
+FEATURES:
+  * **Add support for zone metadata** ([#61](https://github.com/mmianl/terraform-provider-powerdns/pull/61), @mmianl)
+
 # 2.0.2 (March 26, 2026)
 
 FIXES:
@@ -76,7 +81,7 @@ FEATURES:
 ## 1.6.0 (May 23, 2025)
 
 FEATURES:
-  * **Added support for client certificate authentication**
+  * **Add support for client certificate authentication** ([#1](https://github.com/mmianl/terraform-provider-powerdns/pull/1), @mmianl)
 
 ## 1.5.0 (Unreleased)
 
