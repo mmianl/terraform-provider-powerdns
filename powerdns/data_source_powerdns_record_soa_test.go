@@ -19,6 +19,7 @@ func TestAccDataSourcePDNSRecordSOA_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(dataSourceName, "zone", "test-ds-soa-sysa.xyz."),
 					resource.TestCheckResourceAttr(dataSourceName, "name", "test-ds-soa-sysa.xyz."),
 					resource.TestCheckResourceAttrSet(dataSourceName, "ttl"),
+					resource.TestCheckResourceAttr(dataSourceName, "disabled", "false"),
 					resource.TestCheckResourceAttr(dataSourceName, "mname", "ns1.sysa.xyz."),
 					resource.TestCheckResourceAttr(dataSourceName, "rname", "hostmaster.sysa.xyz."),
 					resource.TestCheckResourceAttrSet(dataSourceName, "serial"),
@@ -26,6 +27,27 @@ func TestAccDataSourcePDNSRecordSOA_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(dataSourceName, "retry", "600"),
 					resource.TestCheckResourceAttr(dataSourceName, "expire", "1209600"),
 					resource.TestCheckResourceAttr(dataSourceName, "minimum", "6400"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccDataSourcePDNSRecordSOA_Disabled(t *testing.T) {
+	dataSourceName := "data.powerdns_record_soa.test"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:  func() { testAccPreCheck(t) },
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDataSourcePDNSRecordSOADisabledConfig,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(dataSourceName, "zone", "test-ds-soa-disabled-sysa.xyz."),
+					resource.TestCheckResourceAttr(dataSourceName, "name", "test-ds-soa-disabled-sysa.xyz."),
+					resource.TestCheckResourceAttr(dataSourceName, "disabled", "true"),
+					resource.TestCheckResourceAttr(dataSourceName, "mname", "ns1.sysa.xyz."),
+					resource.TestCheckResourceAttr(dataSourceName, "rname", "hostmaster.sysa.xyz."),
 				),
 			},
 		},
@@ -56,5 +78,33 @@ data "powerdns_record_soa" "test" {
 	name = "test-ds-soa-sysa.xyz."
 
 	depends_on = [powerdns_record_soa.test-ds-soa]
+}
+`
+
+const testAccDataSourcePDNSRecordSOADisabledConfig = `
+resource "powerdns_zone" "test-ds-soa-disabled" {
+	name = "test-ds-soa-disabled-sysa.xyz."
+	kind = "MASTER"
+}
+
+resource "powerdns_record_soa" "test-ds-soa-disabled" {
+	zone     = powerdns_zone.test-ds-soa-disabled.name
+	name     = "test-ds-soa-disabled-sysa.xyz."
+	ttl      = 3600
+	disabled = true
+	mname    = "ns1.sysa.xyz."
+	rname    = "hostmaster.sysa.xyz."
+	serial   = 0
+	refresh  = 7200
+	retry    = 600
+	expire   = 1209600
+	minimum  = 6400
+}
+
+data "powerdns_record_soa" "test" {
+	zone = powerdns_zone.test-ds-soa-disabled.name
+	name = "test-ds-soa-disabled-sysa.xyz."
+
+	depends_on = [powerdns_record_soa.test-ds-soa-disabled]
 }
 `

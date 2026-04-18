@@ -238,15 +238,23 @@ type Record struct {
 
 // ResourceRecordSet represents a PowerDNS RRSet object
 type ResourceRecordSet struct {
-	Name       string   `json:"name"`
-	Type       string   `json:"type"`
-	ChangeType string   `json:"changetype"`
-	TTL        int      `json:"ttl"` // For API v1
-	Records    []Record `json:"records,omitempty"`
+	Name       string     `json:"name"`
+	Type       string     `json:"type"`
+	ChangeType string     `json:"changetype"`
+	TTL        int        `json:"ttl"` // For API v1
+	Records    []Record   `json:"records,omitempty"`
+	Comments   *[]Comment `json:"comments,omitempty"`
 }
 
 type zonePatchRequest struct {
 	RecordSets []ResourceRecordSet `json:"rrsets"`
+}
+
+// Comment represents a PowerDNS RRset comment.
+type Comment struct {
+	Content    string `json:"content"`
+	Account    string `json:"account"`
+	ModifiedAt int64  `json:"modified_at,omitempty"`
 }
 
 type errorResponse struct {
@@ -269,6 +277,26 @@ func (record *Record) ID() string {
 // ID returns a rrSet with the ID format
 func (rrSet *ResourceRecordSet) ID() string {
 	return rrSet.Name + idSeparator + rrSet.Type
+}
+
+func recordsFromRRSet(rrSet *ResourceRecordSet) []Record {
+	if rrSet == nil {
+		return nil
+	}
+
+	records := make([]Record, 0, len(rrSet.Records))
+	for _, record := range rrSet.Records {
+		records = append(records, Record{
+			Name:     rrSet.Name,
+			Type:     rrSet.Type,
+			Content:  record.Content,
+			TTL:      rrSet.TTL,
+			Disabled: record.Disabled,
+			SetPtr:   record.SetPtr,
+		})
+	}
+
+	return records
 }
 
 // Returns name and type of record or record set based on its ID
@@ -324,7 +352,21 @@ func (client *PowerDNSClient) ListZones(ctx context.Context) ([]ZoneInfo, error)
 
 // GetZone gets a zone
 func (client *PowerDNSClient) GetZone(ctx context.Context, name string) (ZoneInfo, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
+	return client.getZone(ctx, name, false)
+}
+
+// GetZoneWithRRsets gets a zone including its RRsets.
+func (client *PowerDNSClient) GetZoneWithRRsets(ctx context.Context, name string) (ZoneInfo, error) {
+	return client.getZone(ctx, name, true)
+}
+
+func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeRRsets bool) (ZoneInfo, error) {
+	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
+	if includeRRsets {
+		endpoint += "?rrsets=true"
+	}
+
+	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return ZoneInfo{}, err
 	}
@@ -690,7 +732,7 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 	}
 
 	if zoneInfo == nil {
-		req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", zone), nil)
+		req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s?rrsets=true", zone), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -731,14 +773,7 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 	records := zoneInfo.Records
 	// Convert the API v1 response to v0 record structure
 	for _, rrs := range zoneInfo.ResourceRecordSets {
-		for _, record := range rrs.Records {
-			records = append(records, Record{
-				Name:    rrs.Name,
-				Type:    rrs.Type,
-				Content: record.Content,
-				TTL:     rrs.TTL,
-			})
-		}
+		records = append(records, recordsFromRRSet(&rrs)...)
 	}
 
 	return records, nil
@@ -768,6 +803,28 @@ func (client *PowerDNSClient) ListRecordsByID(ctx context.Context, zone string, 
 		return nil, err
 	}
 	return client.ListRecordsInRRSet(ctx, zone, name, tpe)
+}
+
+// GetRecordSetByID returns the full RRset (including comments) for the given ID.
+func (client *PowerDNSClient) GetRecordSetByID(ctx context.Context, zone string, recID string) (*ResourceRecordSet, error) {
+	name, tpe, err := parseID(recID)
+	if err != nil {
+		return nil, err
+	}
+
+	zoneInfo, err := client.GetZoneWithRRsets(ctx, zone)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, rrSet := range zoneInfo.ResourceRecordSets {
+		if strings.EqualFold(rrSet.Name, name) && strings.EqualFold(rrSet.Type, tpe) {
+			found := rrSet
+			return &found, nil
+		}
+	}
+
+	return nil, nil
 }
 
 // RecordExists checks if requested record exists in Zone

@@ -27,6 +27,7 @@ func TestAccPDNSRecordSOA_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "zone", "test-soa2-sysa.xyz."),
 					resource.TestCheckResourceAttr(resourceName, "name", "test-soa2-sysa.xyz."),
 					resource.TestCheckResourceAttr(resourceName, "ttl", "3600"),
+					resource.TestCheckResourceAttr(resourceName, "disabled", "false"),
 					resource.TestCheckResourceAttr(resourceName, "mname", "ns1.sysa.xyz."),
 					resource.TestCheckResourceAttr(resourceName, "rname", "hostmaster.sysa.xyz."),
 					resource.TestCheckResourceAttr(resourceName, "refresh", "7200"),
@@ -52,6 +53,7 @@ func TestAccPDNSRecordSOA_Update(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPDNSRecordSOAExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "ttl", "3600"),
+					resource.TestCheckResourceAttr(resourceName, "disabled", "false"),
 					resource.TestCheckResourceAttr(resourceName, "refresh", "7200"),
 				),
 			},
@@ -60,6 +62,7 @@ func TestAccPDNSRecordSOA_Update(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPDNSRecordSOAExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "ttl", "7200"),
+					resource.TestCheckResourceAttr(resourceName, "disabled", "true"),
 					resource.TestCheckResourceAttr(resourceName, "refresh", "14400"),
 				),
 			},
@@ -229,6 +232,7 @@ resource "powerdns_record_soa" "test-soa-upd" {
 	zone    = powerdns_zone.test-soa-upd.name
 	name    = "test-soa-upd-sysa.xyz."
 	ttl     = 7200
+	disabled = true
 	mname   = "ns1.sysa.xyz."
 	rname   = "hostmaster.sysa.xyz."
 	serial  = 0

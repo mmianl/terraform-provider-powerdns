@@ -111,3 +111,87 @@ func TestDeleteZoneMetadata(t *testing.T) {
 	err := client.DeleteZoneMetadata(context.Background(), "example.com.", "ALSO-NOTIFY")
 	assert.NoError(t, err)
 }
+
+func TestGetRecordSetByIDWithComments(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v1/servers/localhost/zones/example.com.", r.URL.Path)
+		assert.Equal(t, "rrsets=true", r.URL.RawQuery)
+		return jsonResponse(http.StatusOK, `{
+			"name":"example.com.",
+			"rrsets":[
+				{
+					"name":"www.example.com.",
+					"type":"A",
+					"ttl":300,
+					"records":[{"content":"192.0.2.1","disabled":false}],
+					"comments":[
+						{"content":"managed-by=terraform"},
+						{"content":"owner=dns-team"}
+					]
+				}
+			]
+		}`), nil
+	})
+
+	rrSet, err := client.GetRecordSetByID(context.Background(), "example.com.", "www.example.com.:::A")
+	if !assert.NoError(t, err) {
+		return
+	}
+	if !assert.NotNil(t, rrSet) {
+		return
+	}
+
+	assert.Equal(t, "www.example.com.", rrSet.Name)
+	assert.Equal(t, "A", rrSet.Type)
+	if assert.NotNil(t, rrSet.Comments) && assert.Len(t, *rrSet.Comments, 2) {
+		assert.Equal(t, "managed-by=terraform", (*rrSet.Comments)[0].Content)
+		assert.Equal(t, "owner=dns-team", (*rrSet.Comments)[1].Content)
+	}
+}
+
+func TestGetZoneDoesNotRequestRRsets(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v1/servers/localhost/zones/example.com.", r.URL.Path)
+		assert.Empty(t, r.URL.RawQuery)
+		return jsonResponse(http.StatusOK, `{"name":"example.com.","kind":"Native","account":"admin"}`), nil
+	})
+
+	zone, err := client.GetZone(context.Background(), "example.com.")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	assert.Equal(t, "example.com.", zone.Name)
+	assert.Equal(t, "Native", zone.Kind)
+}
+
+func TestListRecordsInRRSetPreservesDisabledFlag(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v1/servers/localhost/zones/example.com.", r.URL.Path)
+		assert.Equal(t, "rrsets=true", r.URL.RawQuery)
+		return jsonResponse(http.StatusOK, `{
+			"name":"example.com.",
+			"rrsets":[
+				{
+					"name":"example.com.",
+					"type":"SOA",
+					"ttl":300,
+					"records":[{"content":"ns1.example.com. hostmaster.example.com. 1 7200 600 1209600 300","disabled":true}]
+				}
+			]
+		}`), nil
+	})
+
+	records, err := client.ListRecordsInRRSet(context.Background(), "example.com.", "example.com.", "SOA")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	if assert.Len(t, records, 1) {
+		assert.True(t, records[0].Disabled)
+		assert.Equal(t, 300, records[0].TTL)
+	}
+}

@@ -36,6 +36,61 @@ func TestAccPDNSRecord_A(t *testing.T) {
 				Config: testPDNSRecordConfigA,
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPDNSRecordExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "disabled", "false"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportStateId:     resourceID,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestAccPDNSRecord_Disabled(t *testing.T) {
+	resourceName := "powerdns_record.test-a-disabled"
+	resourceID := `{"zone":"rec-adisabled.sysa.xyz.","id":"test.rec-adisabled.sysa.xyz.:::A"}`
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSRecordDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSRecordConfigADisabled,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSRecordExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "disabled", "true"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportStateId:     resourceID,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestAccPDNSRecord_WithComments(t *testing.T) {
+	resourceName := "powerdns_record.test-a-comments"
+	resourceID := `{"zone":"rec-acomments.sysa.xyz.","id":"test.rec-acomments.sysa.xyz.:::A"}`
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSRecordDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSRecordConfigAWithComments,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSRecordExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "comments.#", "2"),
+					resource.TestCheckResourceAttr(resourceName, "comments.0", "managed-by=terraform"),
+					resource.TestCheckResourceAttr(resourceName, "comments.1", "owner=dns-team"),
 				),
 			},
 			{
@@ -508,6 +563,21 @@ resource "powerdns_record" "test-a" {
 	records = [ "1.1.1.1", "2.2.2.2" ]
 }`
 
+const testPDNSRecordConfigADisabled = `
+resource "powerdns_zone" "test-zone" {
+	name = "rec-adisabled.sysa.xyz."
+	kind = "Native"
+}
+
+resource "powerdns_record" "test-a-disabled" {
+	zone = powerdns_zone.test-zone.name
+	name = "test.rec-adisabled.sysa.xyz."
+	type = "A"
+	ttl = 60
+	disabled = true
+	records = [ "1.1.1.1", "2.2.2.2" ]
+}`
+
 const testPDNSRecordConfigAWithPtr = `
 resource "powerdns_zone" "test-zone" {
 	name = "rec-aptr.sysa.xyz."
@@ -520,6 +590,24 @@ resource "powerdns_record" "test-a-ptr" {
 	type = "A"
 	ttl = 60
 	set_ptr = true
+	records = [ "1.1.1.1" ]
+}`
+
+const testPDNSRecordConfigAWithComments = `
+resource "powerdns_zone" "test-zone" {
+	name = "rec-acomments.sysa.xyz."
+	kind = "Native"
+}
+
+resource "powerdns_record" "test-a-comments" {
+	zone = powerdns_zone.test-zone.name
+	name = "test.rec-acomments.sysa.xyz."
+	type = "A"
+	ttl = 60
+	comments = [
+		"managed-by=terraform",
+		"owner=dns-team",
+	]
 	records = [ "1.1.1.1" ]
 }`
 

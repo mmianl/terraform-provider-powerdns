@@ -31,6 +31,11 @@ func dataSourcePDNSRecordSOA() *schema.Resource {
 				Computed:    true,
 				Description: "The TTL of the SOA record.",
 			},
+			"disabled": {
+				Type:        schema.TypeBool,
+				Computed:    true,
+				Description: "Whether the SOA record is disabled.",
+			},
 			"mname": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -97,6 +102,9 @@ func dataSourcePDNSRecordSOARead(ctx context.Context, d *schema.ResourceData, me
 	d.SetId(records[0].ID())
 
 	if err := d.Set("ttl", records[0].TTL); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("disabled", records[0].Disabled); err != nil {
 		return diag.FromErr(err)
 	}
 	if err := d.Set("mname", mname); err != nil {

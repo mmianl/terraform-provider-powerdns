@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,6 +72,20 @@ func doJSON(t *testing.T, req *http.Request, v interface{}) *http.Response {
 	return resp
 }
 
+func terraformOutput(t *testing.T, name string, v interface{}) {
+	t.Helper()
+
+	cmd := exec.Command("terraform", "output", "-json", name)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("terraform output %q failed: %v\n%s", name, err, string(out))
+	}
+
+	if err := json.Unmarshal(out, v); err != nil {
+		t.Fatalf("failed to decode terraform output %q: %v\n%s", name, err, string(out))
+	}
+}
+
 // --- Types matching PowerDNS / Recursor APIs --------------------------------
 
 // Authoritative zone (subset)
@@ -83,14 +99,43 @@ type authZone struct {
 }
 
 type authRRSet struct {
-	Name    string       `json:"name"`
-	Type    string       `json:"type"`
-	TTL     int          `json:"ttl"`
-	Records []authRecord `json:"records"`
+	Name     string        `json:"name"`
+	Type     string        `json:"type"`
+	TTL      int           `json:"ttl"`
+	Records  []authRecord  `json:"records"`
+	Comments []authComment `json:"comments"`
 }
 
 type authRecord struct {
+	Content  string `json:"content"`
+	Disabled bool   `json:"disabled"`
+}
+
+type authComment struct {
 	Content string `json:"content"`
+}
+
+type recordDataSourceOutput struct {
+	Zone     string   `json:"zone"`
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	TTL      int      `json:"ttl"`
+	Disabled bool     `json:"disabled"`
+	Records  []string `json:"records"`
+	Comments []string `json:"comments"`
+}
+
+type soaDataSourceOutput struct {
+	Zone     string `json:"zone"`
+	Name     string `json:"name"`
+	TTL      int    `json:"ttl"`
+	Disabled bool   `json:"disabled"`
+	MName    string `json:"mname"`
+	RName    string `json:"rname"`
+	Refresh  int    `json:"refresh"`
+	Retry    int    `json:"retry"`
+	Expire   int    `json:"expire"`
+	Minimum  int    `json:"minimum"`
 }
 
 type zoneMetadata struct {
@@ -220,11 +265,61 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 				if rrset.Records[0].Content != "172.16.0.10" {
 					t.Fatalf("A record content: got %q, want %q", rrset.Records[0].Content, "172.16.0.10")
 				}
+				if rrset.Records[0].Disabled {
+					t.Fatalf("A record unexpectedly disabled")
+				}
+				if len(rrset.Comments) != 2 {
+					t.Fatalf("A record comments: got %d, want 2", len(rrset.Comments))
+				}
+				if rrset.Comments[0].Content != "managed-by=terraform" {
+					t.Fatalf("A record comment: got %q, want %q", rrset.Comments[0].Content, "managed-by=terraform")
+				}
+				if rrset.Comments[1].Content != "owner=dns-team" {
+					t.Fatalf("A record comment: got %q, want %q", rrset.Comments[1].Content, "owner=dns-team")
+				}
 				break
 			}
 		}
 		if !foundA {
 			t.Fatalf("A record host01.test.example.com. not found in zone")
+		}
+
+		// Check disabled RRset with comments and multiple records.
+		var foundDisabledA bool
+		for _, rrset := range zone.RRSets {
+			if rrset.Name == "host02-disabled.test.example.com." && rrset.Type == "A" {
+				foundDisabledA = true
+				if rrset.TTL != 45 {
+					t.Fatalf("disabled A record TTL: got %d, want 45", rrset.TTL)
+				}
+				if len(rrset.Records) != 2 {
+					t.Fatalf("disabled A record count: got %d, want 2", len(rrset.Records))
+				}
+				if rrset.Records[0].Content != "172.16.0.11" {
+					t.Fatalf("disabled A record content: got %q, want %q", rrset.Records[0].Content, "172.16.0.11")
+				}
+				if rrset.Records[1].Content != "172.16.0.12" {
+					t.Fatalf("disabled A record content: got %q, want %q", rrset.Records[1].Content, "172.16.0.12")
+				}
+				for _, record := range rrset.Records {
+					if !record.Disabled {
+						t.Fatalf("disabled A record unexpectedly enabled: %+v", rrset.Records)
+					}
+				}
+				if len(rrset.Comments) != 2 {
+					t.Fatalf("disabled A record comments: got %d, want 2", len(rrset.Comments))
+				}
+				if rrset.Comments[0].Content != "managed-by=terraform" {
+					t.Fatalf("disabled A record comment: got %q, want %q", rrset.Comments[0].Content, "managed-by=terraform")
+				}
+				if rrset.Comments[1].Content != "owner=dns-team" {
+					t.Fatalf("disabled A record comment: got %q, want %q", rrset.Comments[1].Content, "owner=dns-team")
+				}
+				break
+			}
+		}
+		if !foundDisabledA {
+			t.Fatalf("disabled A record host02-disabled.test.example.com. not found in zone")
 		}
 
 		// Check SOA record test.example.com.
@@ -237,6 +332,9 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 				}
 				if len(rrset.Records) == 0 {
 					t.Fatalf("SOA record has no records")
+				}
+				if rrset.Records[0].Disabled {
+					t.Fatalf("SOA record unexpectedly disabled")
 				}
 				content := rrset.Records[0].Content
 				// Verify mname and rname are present in the SOA content
@@ -268,7 +366,41 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		}
 	}
 
-	// 3) SOA record: verify the SOA record can be read back
+	// 3) Disabled SOA record: verify explicit disabled management on powerdns_record_soa.
+	{
+		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test-disabled-soa.example.com.")
+		var zone authZone
+		doJSON(t, req, &zone)
+
+		var foundSOA bool
+		for _, rrset := range zone.RRSets {
+			if rrset.Name == "test-disabled-soa.example.com." && rrset.Type == "SOA" {
+				foundSOA = true
+				if rrset.TTL != 1800 {
+					t.Fatalf("disabled SOA TTL: got %d, want 1800", rrset.TTL)
+				}
+				if len(rrset.Records) != 1 {
+					t.Fatalf("disabled SOA record count: got %d, want 1", len(rrset.Records))
+				}
+				if !rrset.Records[0].Disabled {
+					t.Fatalf("disabled SOA record unexpectedly enabled")
+				}
+				content := rrset.Records[0].Content
+				if !strings.Contains(content, "dns1.test-disabled-soa.example.com.") {
+					t.Fatalf("disabled SOA record content missing mname: got %q", content)
+				}
+				if !strings.Contains(content, "hostmaster.test-disabled-soa.example.com.") {
+					t.Fatalf("disabled SOA record content missing rname: got %q", content)
+				}
+				break
+			}
+		}
+		if !foundSOA {
+			t.Fatalf("SOA record test-disabled-soa.example.com. not found in zone")
+		}
+	}
+
+	// 4) SOA record: verify the SOA record can be read back
 	//    via the API and matches the values set in main.tf.
 	{
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com.")
@@ -314,6 +446,9 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 				if rrset.TTL != 3600 {
 					t.Fatalf("SOA TTL: got %d, want 3600", rrset.TTL)
 				}
+				if rrset.Records[0].Disabled {
+					t.Fatalf("SOA record unexpectedly disabled")
+				}
 				break
 			}
 		}
@@ -322,7 +457,7 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		}
 	}
 
-	// 4) Zone metadata: verify resource
+	// 5) Zone metadata: verify resource
 	{
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com./metadata")
 		var metadataList []zoneMetadata
@@ -337,7 +472,7 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		assertMetadataKindValues(t, metadataByKind, "ALLOW-AXFR-FROM", []string{"AUTO-NS", "2001:db8::/48"})
 	}
 
-	// 5) Reverse zone: 172.16.0.0/24
+	// 6) Reverse zone: 172.16.0.0/24
 	{
 		reverseZoneName := ipv4ReverseZoneName(t, "172.16.0.0/24")
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/"+reverseZoneName)
@@ -371,6 +506,87 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		}
 		if !foundPTR {
 			t.Fatalf("PTR record %q not found in reverse zone", ptrName)
+		}
+	}
+}
+
+func TestTerraformDataSourceOutputs(t *testing.T) {
+	{
+		var disabled bool
+		terraformOutput(t, "data_powerdns_record_host02_disabled_disabled", &disabled)
+		if !disabled {
+			t.Fatalf("data_powerdns_record_host02_disabled_disabled: got false, want true")
+		}
+	}
+
+	{
+		var record recordDataSourceOutput
+		terraformOutput(t, "data_powerdns_record_host02_disabled", &record)
+
+		if record.Zone != "test.example.com." {
+			t.Fatalf("record data source zone: got %q, want %q", record.Zone, "test.example.com.")
+		}
+		if record.Name != "host02-disabled.test.example.com." {
+			t.Fatalf("record data source name: got %q, want %q", record.Name, "host02-disabled.test.example.com.")
+		}
+		if record.Type != "A" {
+			t.Fatalf("record data source type: got %q, want %q", record.Type, "A")
+		}
+		if record.TTL != 45 {
+			t.Fatalf("record data source TTL: got %d, want 45", record.TTL)
+		}
+		if !record.Disabled {
+			t.Fatalf("record data source disabled: got false, want true")
+		}
+		if !reflect.DeepEqual(record.Records, []string{"172.16.0.11", "172.16.0.12"}) {
+			t.Fatalf("record data source records: got %v, want %v", record.Records, []string{"172.16.0.11", "172.16.0.12"})
+		}
+		if !reflect.DeepEqual(record.Comments, []string{"managed-by=terraform", "owner=dns-team"}) {
+			t.Fatalf("record data source comments: got %v, want %v", record.Comments, []string{"managed-by=terraform", "owner=dns-team"})
+		}
+	}
+
+	{
+		var disabled bool
+		terraformOutput(t, "data_powerdns_record_soa_disabled_zone_disabled", &disabled)
+		if !disabled {
+			t.Fatalf("data_powerdns_record_soa_disabled_zone_disabled: got false, want true")
+		}
+	}
+
+	{
+		var soa soaDataSourceOutput
+		terraformOutput(t, "data_powerdns_record_soa_disabled_zone", &soa)
+
+		if soa.Zone != "test-disabled-soa.example.com." {
+			t.Fatalf("SOA data source zone: got %q, want %q", soa.Zone, "test-disabled-soa.example.com.")
+		}
+		if soa.Name != "test-disabled-soa.example.com." {
+			t.Fatalf("SOA data source name: got %q, want %q", soa.Name, "test-disabled-soa.example.com.")
+		}
+		if soa.TTL != 1800 {
+			t.Fatalf("SOA data source TTL: got %d, want 1800", soa.TTL)
+		}
+		if !soa.Disabled {
+			t.Fatalf("SOA data source disabled: got false, want true")
+		}
+		if soa.MName != "dns1.test-disabled-soa.example.com." {
+			t.Fatalf("SOA data source mname: got %q, want %q", soa.MName, "dns1.test-disabled-soa.example.com.")
+		}
+		if soa.RName != "hostmaster.test-disabled-soa.example.com." {
+			t.Fatalf("SOA data source rname: got %q, want %q", soa.RName, "hostmaster.test-disabled-soa.example.com.")
+		}
+		if soa.Refresh != 7200 {
+			t.Fatalf("SOA data source refresh: got %d, want 7200", soa.Refresh)
+		}
+		if soa.Retry != 1800 {
+			t.Fatalf("SOA data source retry: got %d, want 1800", soa.Retry)
+		}
+		if soa.Expire != 1209600 {
+			t.Fatalf("SOA data source expire: got %d, want 1209600", soa.Expire)
+		}
+		if soa.Minimum != 600 {
+			t.Fatalf("SOA data source minimum: got %d, want 600", soa.Minimum)
 		}
 	}
 }

@@ -34,6 +34,18 @@ output "powerdns_record_host01" {
   value = powerdns_record.host01
 }
 
+output "powerdns_record_host02_disabled" {
+  value = powerdns_record.host02_disabled
+}
+
+output "data_powerdns_record_host02_disabled" {
+  value = data.powerdns_record.host02_disabled
+}
+
+output "data_powerdns_record_host02_disabled_disabled" {
+  value = data.powerdns_record.host02_disabled.disabled
+}
+
 output "powerdns_ptr_record_host01_ipv4" {
   value = powerdns_ptr_record.host01_ipv4
 }
@@ -56,4 +68,20 @@ output "powerdns_record_soa" {
 
 output "data_powerdns_record_soa" {
   value = data.powerdns_record_soa.soa
+}
+
+output "data_powerdns_record_soa_disabled" {
+  value = data.powerdns_record_soa.soa.disabled
+}
+
+output "powerdns_record_soa_disabled_zone" {
+  value = powerdns_record_soa.disabled_soa
+}
+
+output "data_powerdns_record_soa_disabled_zone" {
+  value = data.powerdns_record_soa.disabled_soa
+}
+
+output "data_powerdns_record_soa_disabled_zone_disabled" {
+  value = data.powerdns_record_soa.disabled_soa.disabled
 }

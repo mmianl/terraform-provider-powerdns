@@ -68,11 +68,39 @@ data "powerdns_reverse_zone" "zone_172_16_0_0_24" {
 }
 
 resource "powerdns_record" "host01" {
-  zone    = powerdns_zone.test.name
-  name    = "host01.test.example.com."
-  type    = "A"
-  ttl     = 30
+  zone = powerdns_zone.test.name
+  name = "host01.test.example.com."
+  type = "A"
+  ttl  = 30
+  comments = [
+    "managed-by=terraform",
+    "owner=dns-team",
+  ]
   records = [cidrhost("172.16.0.0/24", 10)]
+}
+
+resource "powerdns_record" "host02_disabled" {
+  zone     = powerdns_zone.test.name
+  name     = "host02-disabled.test.example.com."
+  type     = "A"
+  ttl      = 45
+  disabled = true
+  comments = [
+    "managed-by=terraform",
+    "owner=dns-team",
+  ]
+  records = [
+    cidrhost("172.16.0.0/24", 11),
+    cidrhost("172.16.0.0/24", 12),
+  ]
+}
+
+data "powerdns_record" "host02_disabled" {
+  zone = powerdns_zone.test.name
+  name = powerdns_record.host02_disabled.name
+  type = powerdns_record.host02_disabled.type
+
+  depends_on = [powerdns_record.host02_disabled]
 }
 
 resource "powerdns_ptr_record" "host01_ipv4" {
@@ -120,4 +148,29 @@ resource "powerdns_record_soa" "soa" {
 resource "powerdns_zone" "test2" {
   name = "test2.example.com."
   kind = "Native"
+}
+
+resource "powerdns_zone" "test_disabled_soa" {
+  name = "test-disabled-soa.example.com."
+  kind = "Native"
+}
+
+resource "powerdns_record_soa" "disabled_soa" {
+  zone     = powerdns_zone.test_disabled_soa.name
+  name     = powerdns_zone.test_disabled_soa.name
+  ttl      = 1800
+  disabled = true
+  mname    = "dns1.${powerdns_zone.test_disabled_soa.name}"
+  rname    = "hostmaster.${powerdns_zone.test_disabled_soa.name}"
+  refresh  = 7200
+  retry    = 1800
+  expire   = 1209600
+  minimum  = 600
+}
+
+data "powerdns_record_soa" "disabled_soa" {
+  zone = powerdns_zone.test_disabled_soa.name
+  name = powerdns_zone.test_disabled_soa.name
+
+  depends_on = [powerdns_record_soa.disabled_soa]
 }

@@ -40,6 +40,12 @@ func resourcePDNSRecordSOA() *schema.Resource {
 				Type:     schema.TypeInt,
 				Required: true,
 			},
+			"disabled": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "Whether the SOA record is disabled in PowerDNS.",
+			},
 			"mname": {
 				Type:         schema.TypeString,
 				Required:     true,
@@ -127,6 +133,7 @@ func resourcePDNSRecordSOACreateOrUpdate(ctx context.Context, d *schema.Resource
 	zone := d.Get("zone").(string)
 	name := d.Get("name").(string)
 	ttl := d.Get("ttl").(int)
+	disabled := d.Get("disabled").(bool)
 	content := buildSOAContent(d)
 
 	rrSet := ResourceRecordSet{
@@ -135,10 +142,11 @@ func resourcePDNSRecordSOACreateOrUpdate(ctx context.Context, d *schema.Resource
 		TTL:  ttl,
 		Records: []Record{
 			{
-				Name:    name,
-				Type:    "SOA",
-				TTL:     ttl,
-				Content: content,
+				Name:     name,
+				Type:     "SOA",
+				TTL:      ttl,
+				Content:  content,
+				Disabled: disabled,
 			},
 		},
 	}
@@ -183,6 +191,9 @@ func resourcePDNSRecordSOARead(ctx context.Context, d *schema.ResourceData, meta
 	}
 
 	if err := d.Set("ttl", records[0].TTL); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("disabled", records[0].Disabled); err != nil {
 		return diag.FromErr(err)
 	}
 	if err := d.Set("name", records[0].Name); err != nil {
@@ -272,6 +283,9 @@ func resourcePDNSRecordSOAImport(ctx context.Context, d *schema.ResourceData, me
 		return nil, err
 	}
 	if err := d.Set("ttl", records[0].TTL); err != nil {
+		return nil, err
+	}
+	if err := d.Set("disabled", records[0].Disabled); err != nil {
 		return nil, err
 	}
 	if err := d.Set("mname", mname); err != nil {

@@ -1,3 +1,10 @@
+# 2.2.0 (May 6, 2026)
+
+FEATURES:
+  * **Add RRset `comments` support to `powerdns_record`** ([#63](https://github.com/mmianl/terraform-provider-powerdns/pull/63), @mmianl)
+  * **New `powerdns_record` datasource for reading record sets** ([#63](https://github.com/mmianl/terraform-provider-powerdns/pull/63), @mmianl)
+  * **Add `disabled` management for `powerdns_record` and `powerdns_record_soa`, and `disabled` export from `powerdns_record` data sources** ([#63](https://github.com/mmianl/terraform-provider-powerdns/pull/63), @mmianl)
+
 # 2.1.0 (April 19, 2026)
 
 FEATURES:
