@@ -83,13 +83,19 @@ type authZone struct {
 }
 
 type authRRSet struct {
-	Name    string       `json:"name"`
-	Type    string       `json:"type"`
-	TTL     int          `json:"ttl"`
-	Records []authRecord `json:"records"`
+	Name     string        `json:"name"`
+	Type     string        `json:"type"`
+	TTL      int           `json:"ttl"`
+	Records  []authRecord  `json:"records"`
+	Comments []authComment `json:"comments"`
 }
 
 type authRecord struct {
+	Content  string `json:"content"`
+	Disabled bool   `json:"disabled"`
+}
+
+type authComment struct {
 	Content string `json:"content"`
 }
 
@@ -220,6 +226,15 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 				if rrset.Records[0].Content != "172.16.0.10" {
 					t.Fatalf("A record content: got %q, want %q", rrset.Records[0].Content, "172.16.0.10")
 				}
+				if rrset.Records[0].Disabled {
+					t.Fatalf("A record unexpectedly disabled")
+				}
+				if len(rrset.Comments) == 0 {
+					t.Fatalf("A record missing comment")
+				}
+				if rrset.Comments[0].Content != "managed-by=terraform" {
+					t.Fatalf("A record comment: got %q, want %q", rrset.Comments[0].Content, "managed-by=terraform")
+				}
 				break
 			}
 		}
@@ -237,6 +252,9 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 				}
 				if len(rrset.Records) == 0 {
 					t.Fatalf("SOA record has no records")
+				}
+				if rrset.Records[0].Disabled {
+					t.Fatalf("SOA record unexpectedly disabled")
 				}
 				content := rrset.Records[0].Content
 				// Verify mname and rname are present in the SOA content
@@ -313,6 +331,9 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 				}
 				if rrset.TTL != 3600 {
 					t.Fatalf("SOA TTL: got %d, want 3600", rrset.TTL)
+				}
+				if rrset.Records[0].Disabled {
+					t.Fatalf("SOA record unexpectedly disabled")
 				}
 				break
 			}

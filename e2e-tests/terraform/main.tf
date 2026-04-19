@@ -72,6 +72,7 @@ resource "powerdns_record" "host01" {
   name    = "host01.test.example.com."
   type    = "A"
   ttl     = 30
+  comment = "managed-by=terraform"
   records = [cidrhost("172.16.0.0/24", 10)]
 }
 

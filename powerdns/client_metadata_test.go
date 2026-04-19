@@ -111,3 +111,36 @@ func TestDeleteZoneMetadata(t *testing.T) {
 	err := client.DeleteZoneMetadata(context.Background(), "example.com.", "ALSO-NOTIFY")
 	assert.NoError(t, err)
 }
+
+func TestGetRecordSetByIDWithComment(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v1/servers/localhost/zones/example.com.", r.URL.Path)
+		return jsonResponse(http.StatusOK, `{
+			"name":"example.com.",
+			"rrsets":[
+				{
+					"name":"www.example.com.",
+					"type":"A",
+					"ttl":300,
+					"records":[{"content":"192.0.2.1","disabled":false}],
+					"comments":[{"content":"managed-by=terraform"}]
+				}
+			]
+		}`), nil
+	})
+
+	rrSet, err := client.GetRecordSetByID(context.Background(), "example.com.", "www.example.com.:::A")
+	if !assert.NoError(t, err) {
+		return
+	}
+	if !assert.NotNil(t, rrSet) {
+		return
+	}
+
+	assert.Equal(t, "www.example.com.", rrSet.Name)
+	assert.Equal(t, "A", rrSet.Type)
+	if assert.Len(t, rrSet.Comments, 1) {
+		assert.Equal(t, "managed-by=terraform", rrSet.Comments[0].Content)
+	}
+}
