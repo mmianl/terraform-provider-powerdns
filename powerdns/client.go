@@ -253,7 +253,7 @@ type zonePatchRequest struct {
 // Comment represents a PowerDNS RRset comment.
 type Comment struct {
 	Content    string `json:"content"`
-	Account    string `json:"account,omitempty"`
+	Account    string `json:"account"`
 	ModifiedAt int64  `json:"modified_at,omitempty"`
 }
 
@@ -332,7 +332,7 @@ func (client *PowerDNSClient) ListZones(ctx context.Context) ([]ZoneInfo, error)
 
 // GetZone gets a zone
 func (client *PowerDNSClient) GetZone(ctx context.Context, name string) (ZoneInfo, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
+	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s?rrsets=true", name), nil)
 	if err != nil {
 		return ZoneInfo{}, err
 	}
@@ -698,7 +698,7 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 	}
 
 	if zoneInfo == nil {
-		req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", zone), nil)
+		req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s?rrsets=true", zone), nil)
 		if err != nil {
 			return nil, err
 		}
