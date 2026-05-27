@@ -201,6 +201,7 @@ type ZoneInfo struct {
 	Name               string              `json:"name"`
 	URL                string              `json:"url"`
 	Kind               string              `json:"kind"`
+	Catalog            string              `json:"catalog,omitempty"`
 	DNSSec             bool                `json:"dnsssec"`
 	Serial             int64               `json:"serial"`
 	Records            []Record            `json:"records,omitempty"`
@@ -215,9 +216,23 @@ type ZoneInfo struct {
 type ZoneInfoUpd struct {
 	Name       string   `json:"name"`
 	Kind       string   `json:"kind"`
+	Catalog    string   `json:"catalog,omitempty"`
 	SoaEditAPI string   `json:"soa_edit_api,omitempty"`
 	Account    string   `json:"account"`
 	Masters    []string `json:"masters,omitempty"`
+}
+
+// View represents a PowerDNS view object.
+type View struct {
+	ID    string   `json:"id,omitempty"`
+	Name  string   `json:"name,omitempty"`
+	Zones []string `json:"zones,omitempty"`
+}
+
+// Network represents a PowerDNS network object.
+type Network struct {
+	Network string `json:"network"`
+	View    string `json:"view"`
 }
 
 // ZoneMetadata represents a single metadata kind with all configured values.
@@ -634,7 +649,6 @@ func (client *PowerDNSClient) ReplaceZoneMetadata(ctx context.Context, zone stri
 	if err != nil {
 		return err
 	}
-
 	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/zones/%s/metadata/%s", zone, kind), body)
 	if err != nil {
 		return err
@@ -941,6 +955,324 @@ func (client *PowerDNSClient) DeleteRecordSetByID(ctx context.Context, zone stri
 		return err
 	}
 	return client.DeleteRecordSet(ctx, zone, name, tpe)
+}
+
+// ListViews returns all configured views.
+func (client *PowerDNSClient) ListViews(ctx context.Context) ([]string, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost/views", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error listing views: failed to decode error response: %w", err)
+		}
+		return nil, fmt.Errorf("error listing views: %q", errorResp.ErrorMsg)
+	}
+
+	var views []string
+	if err := json.NewDecoder(resp.Body).Decode(&views); err != nil {
+		return nil, err
+	}
+
+	return views, nil
+}
+
+// GetView retrieves a specific view.
+func (client *PowerDNSClient) GetView(ctx context.Context, viewName string) (*View, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/views/%s", viewName), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"view":   viewName,
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var view View
+		if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
+			return nil, err
+		}
+		if view.Name == "" {
+			view.Name = viewName
+		}
+		return &view, nil
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error getting view %s: failed to decode error response: %w", viewName, err)
+		}
+		return nil, fmt.Errorf("error getting view %s: %q", viewName, errorResp.ErrorMsg)
+	}
+}
+
+// AddZoneToView associates a zone with a view.
+func (client *PowerDNSClient) AddZoneToView(ctx context.Context, viewName, zoneName string) error {
+	body, err := json.Marshal(struct {
+		Name string `json:"name"`
+	}{Name: zoneName})
+	if err != nil {
+		return err
+	}
+
+	req, err := client.newRequest(ctx, http.MethodPost, fmt.Sprintf("/servers/localhost/views/%s", viewName), body)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"view":   viewName,
+				"zone":   zoneName,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error adding zone %s to view %s: failed to decode error response: %w", zoneName, viewName, err)
+		}
+		return fmt.Errorf("error adding zone %s to view %s: %q", zoneName, viewName, errorResp.ErrorMsg)
+	}
+
+	return nil
+}
+
+// RemoveZoneFromView removes a zone from a view.
+func (client *PowerDNSClient) RemoveZoneFromView(ctx context.Context, viewName, zoneName string) error {
+	req, err := client.newRequest(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/views/%s/%s", viewName, zoneName), nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+				"view":   viewName,
+				"zone":   zoneName,
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusNoContent:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error removing zone %s from view %s: failed to decode error response: %w", zoneName, viewName, err)
+		}
+		return fmt.Errorf("error removing zone %s from view %s: %q", zoneName, viewName, errorResp.ErrorMsg)
+	}
+}
+
+// ListNetworks returns all configured networks.
+func (client *PowerDNSClient) ListNetworks(ctx context.Context) ([]Network, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost/networks", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error listing networks: failed to decode error response: %w", err)
+		}
+		return nil, fmt.Errorf("error listing networks: %q", errorResp.ErrorMsg)
+	}
+
+	var networks []Network
+	if err := json.NewDecoder(resp.Body).Decode(&networks); err != nil {
+		return nil, err
+	}
+
+	return networks, nil
+}
+
+// GetNetwork retrieves a specific network definition.
+func (client *PowerDNSClient) GetNetwork(ctx context.Context, ip, prefixlen string) (*Network, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/networks/%s/%s", ip, prefixlen), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":      err.Error(),
+				"method":     req.Method,
+				"url":        req.URL.String(),
+				"ip":         ip,
+				"prefix_len": prefixlen,
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var network Network
+		if err := json.NewDecoder(resp.Body).Decode(&network); err != nil {
+			return nil, err
+		}
+		return &network, nil
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error getting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
+		}
+		return nil, fmt.Errorf("error getting network %s/%s: %q", ip, prefixlen, errorResp.ErrorMsg)
+	}
+}
+
+// SetNetwork creates or updates a network definition.
+func (client *PowerDNSClient) SetNetwork(ctx context.Context, ip, prefixlen, view string) error {
+	body, err := json.Marshal(Network{View: view})
+	if err != nil {
+		return err
+	}
+
+	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/networks/%s/%s", ip, prefixlen), body)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":      err.Error(),
+				"method":     req.Method,
+				"url":        req.URL.String(),
+				"ip":         ip,
+				"prefix_len": prefixlen,
+				"view":       view,
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error setting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
+		}
+		return fmt.Errorf("error setting network %s/%s: %q", ip, prefixlen, errorResp.ErrorMsg)
+	}
+
+	return nil
+}
+
+// DeleteNetwork deletes a network definition.
+func (client *PowerDNSClient) DeleteNetwork(ctx context.Context, ip, prefixlen string) error {
+	body, err := json.Marshal(Network{View: ""})
+	if err != nil {
+		return err
+	}
+
+	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/networks/%s/%s", ip, prefixlen), body)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":      err.Error(),
+				"method":     req.Method,
+				"url":        req.URL.String(),
+				"ip":         ip,
+				"prefix_len": prefixlen,
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated, http.StatusNoContent:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error deleting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
+		}
+		return fmt.Errorf("error deleting network %s/%s: %q", ip, prefixlen, errorResp.ErrorMsg)
+	}
 }
 
 // RecursorClient talks to the PowerDNS Recursor API.

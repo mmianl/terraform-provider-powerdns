@@ -17,7 +17,7 @@ func dataSourcePDNSZoneMetadata() *schema.Resource {
 			"zone": {
 				Type:         schema.TypeString,
 				Required:     true,
-				ValidateFunc: ValidateFQDN,
+				ValidateFunc: ValidateZoneName,
 				Description:  "Zone name, as FQDN with trailing dot.",
 			},
 			"kind": {

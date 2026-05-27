@@ -18,8 +18,8 @@ func dataSourcePDNSZone() *schema.Resource {
 			"name": {
 				Type:         schema.TypeString,
 				Required:     true,
-				ValidateFunc: ValidateFQDN,
-				Description:  "The name of the zone to retrieve. Must be a fully qualified domain name ending with a trailing dot.",
+				ValidateFunc: ValidateZoneName,
+				Description:  "The name of the zone to retrieve. Must be a fully qualified domain name ending with a trailing dot or zone variant.",
 			},
 			"kind": {
 				Type:        schema.TypeString,

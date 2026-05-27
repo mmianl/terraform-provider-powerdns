@@ -1,6 +1,6 @@
 # terraform-provider-powerdns
 
-The Terraform PowerDNS provider allows you to manage PowerDNS zones and records using Terraform. It is maintained by mmianl.
+The Terraform PowerDNS provider allows you to manage PowerDNS zones, records, views, and networks using Terraform. It is maintained by mmianl.
 
 ## Requirements
 
@@ -31,6 +31,17 @@ provider "powerdns" {
 # Note: The provider supports both PowerDNS Authoritative Server and PowerDNS Recursor.
 # Configure server_url for authoritative operations and recursor_server_url for recursor operations.
 ```
+
+### Supported authoritative resources
+
+- `powerdns_zone`
+- `powerdns_zone_metadata`
+- `powerdns_record`
+- `powerdns_record_soa`
+- `powerdns_ptr_record`
+- `powerdns_reverse_zone`
+- `powerdns_view`
+- `powerdns_network`
 
 For detailed usage see [provider's documentation page](https://registry.terraform.io/providers/mmianl/powerdns/latest/docs)
 

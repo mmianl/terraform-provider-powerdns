@@ -29,7 +29,7 @@ func resourcePDNSZone() *schema.Resource {
 				Type:         schema.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: ValidateFQDN,
+				ValidateFunc: ValidateZoneName,
 			},
 
 			"kind": {
@@ -46,6 +46,13 @@ func resourcePDNSZone() *schema.Resource {
 				Default:      "admin",
 				ForceNew:     false,
 				ValidateFunc: validation.StringLenBetween(0, 40),
+			},
+
+			"catalog": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ForceNew:     false,
+				ValidateFunc: ValidateZoneName,
 			},
 
 			"masters": {
@@ -94,6 +101,7 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 	zoneInfo := ZoneInfo{
 		Name:        d.Get("name").(string),
 		Kind:        d.Get("kind").(string),
+		Catalog:     d.Get("catalog").(string),
 		Account:     d.Get("account").(string),
 		Nameservers: []string{},
 		SoaEditAPI:  d.Get("soa_edit_api").(string),
@@ -147,6 +155,9 @@ func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta inte
 	if err := d.Set("account", zoneInfo.Account); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS Account: %w", err))
 	}
+	if err := d.Set("catalog", zoneInfo.Catalog); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Catalog: %w", err))
+	}
 	if err := d.Set("soa_edit_api", zoneInfo.SoaEditAPI); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit API: %w", err))
 	}
@@ -166,7 +177,7 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 
 	client := meta.(*ProviderClients)
 
-	if d.HasChange("kind") || d.HasChange("account") || d.HasChange("soa_edit_api") || d.HasChange("masters") {
+	if d.HasChange("kind") || d.HasChange("account") || d.HasChange("catalog") || d.HasChange("soa_edit_api") || d.HasChange("masters") {
 		var masters []string
 		for _, m := range d.Get("masters").(*schema.Set).List() {
 			masters = append(masters, m.(string))
@@ -175,6 +186,7 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 		zoneInfo := ZoneInfoUpd{
 			Name:       d.Get("name").(string),
 			Kind:       d.Get("kind").(string),
+			Catalog:    d.Get("catalog").(string),
 			Account:    d.Get("account").(string),
 			SoaEditAPI: d.Get("soa_edit_api").(string),
 			Masters:    masters,

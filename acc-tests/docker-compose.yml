@@ -9,14 +9,7 @@ services:
     command: >
       -lc '
         set -eu;
-        if [ ! -s /data/pdns.sqlite3 ]; then
-          sqlite3 /var/lib/powerdns/pdns.sqlite3 '.schema' > /var/lib/powerdns/pdns.sqlite3.sql
-          sqlite3 /data/pdns.sqlite3 < /var/lib/powerdns/pdns.sqlite3.sql;
-          chown -R pdns:pdns /data
-          echo "SQLite schema created at /data/pdns.sqlite3";
-        else
-          echo "SQLite DB already present; skipping init.";
-        fi
+        chown -R pdns:pdns /data
       '
     volumes:
       - "pdns_data:/data"

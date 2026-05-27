@@ -17,7 +17,7 @@ func dataSourcePDNSRecordSOA() *schema.Resource {
 			"zone": {
 				Type:         schema.TypeString,
 				Required:     true,
-				ValidateFunc: ValidateFQDN,
+				ValidateFunc: ValidateZoneName,
 				Description:  "The name of the zone containing the SOA record. Must be a fully qualified domain name ending with a trailing dot.",
 			},
 			"name": {

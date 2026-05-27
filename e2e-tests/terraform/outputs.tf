@@ -70,18 +70,42 @@ output "data_powerdns_record_soa" {
   value = data.powerdns_record_soa.soa
 }
 
-output "data_powerdns_record_soa_disabled" {
-  value = data.powerdns_record_soa.soa.disabled
+output "powerdns_zone_test_disabled_soa" {
+  value = powerdns_zone.test_disabled_soa
 }
 
 output "powerdns_record_soa_disabled_zone" {
-  value = powerdns_record_soa.disabled_soa
+  value = powerdns_record_soa.disabled_zone
 }
 
 output "data_powerdns_record_soa_disabled_zone" {
-  value = data.powerdns_record_soa.disabled_soa
+  value = data.powerdns_record_soa.disabled_zone
 }
 
 output "data_powerdns_record_soa_disabled_zone_disabled" {
-  value = data.powerdns_record_soa.disabled_soa.disabled
+  value = data.powerdns_record_soa.disabled_zone.disabled
+}
+
+output "powerdns_zone_test_variant" {
+  value = powerdns_zone.test_variant
+}
+
+output "powerdns_zone_catalog" {
+  value = powerdns_zone.catalog
+}
+
+output "powerdns_zone_catalog_member" {
+  value = powerdns_zone.catalog_member
+}
+
+output "powerdns_view_zone_association_test2" {
+  value = powerdns_view_zone_association.test2
+}
+
+output "powerdns_view_zone_association_test_variant" {
+  value = powerdns_view_zone_association.test_variant
+}
+
+output "powerdns_network_internal_clients" {
+  value = powerdns_network.internal_clients
 }

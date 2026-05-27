@@ -28,7 +28,7 @@ func resourcePDNSRecordSOA() *schema.Resource {
 				Type:         schema.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: ValidateFQDN,
+				ValidateFunc: ValidateZoneName,
 			},
 			"name": {
 				Type:         schema.TypeString,
