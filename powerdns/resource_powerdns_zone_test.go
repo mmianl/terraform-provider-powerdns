@@ -212,6 +212,32 @@ func TestAccPDNSZoneAccount(t *testing.T) {
 	})
 }
 
+func TestAccPDNSZoneCatalog(t *testing.T) {
+	resourceName := "powerdns_zone.test-catalog"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigCatalog,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "name", "catalog.sysa.abc."),
+					resource.TestCheckResourceAttr(resourceName, "kind", "Master"),
+					resource.TestCheckResourceAttr(resourceName, "catalog", "catalog-a.example."),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func TestAccPDNSZoneAccountEmpty(t *testing.T) {
 	resourceName := "powerdns_zone.test-account-empty"
 	resourceAccount := ``
@@ -386,6 +412,58 @@ func TestAccPDNSZoneMasterWithMasters(t *testing.T) {
 	})
 }
 
+func TestAccPDNSZoneInvalidDomain(t *testing.T) {
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:  func() { testAccPreCheck(t) },
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:      testPDNSZoneConfigInvalidDomain,
+				ExpectError: regexp.MustCompile("fully qualified domain name ending with a trailing dot"),
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneInvalidVariant(t *testing.T) {
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:  func() { testAccPreCheck(t) },
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:      testPDNSZoneConfigInvalidVariant,
+				ExpectError: regexp.MustCompile("variant name may contain only lowercase letters"),
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneInvalidVariantTrailingDot(t *testing.T) {
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:  func() { testAccPreCheck(t) },
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:      testPDNSZoneConfigInvalidVariantTrailingDot,
+				ExpectError: regexp.MustCompile("variant name must not end with a dot"),
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneInvalidVariantMultipleSeparators(t *testing.T) {
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:  func() { testAccPreCheck(t) },
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:      testPDNSZoneConfigInvalidVariantMultipleSeparators,
+				ExpectError: regexp.MustCompile("only one variant separator"),
+			},
+		},
+	})
+}
+
 func testAccCheckPDNSZoneDestroy(s *terraform.State) error {
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "powerdns_zone" {
@@ -448,6 +526,30 @@ resource "powerdns_zone" "test-master" {
 	kind = "Master"
 }`
 
+const testPDNSZoneConfigInvalidDomain = `
+resource "powerdns_zone" "test-invalid-domain" {
+	name = "invalid.example.com"
+	kind = "Native"
+}`
+
+const testPDNSZoneConfigInvalidVariant = `
+resource "powerdns_zone" "test-invalid-variant" {
+	name = "invalid.example.com..BadVariant"
+	kind = "Native"
+}`
+
+const testPDNSZoneConfigInvalidVariantTrailingDot = `
+resource "powerdns_zone" "test-invalid-variant-trailing-dot" {
+	name = "invalid.example.com..variant."
+	kind = "Native"
+}`
+
+const testPDNSZoneConfigInvalidVariantMultipleSeparators = `
+resource "powerdns_zone" "test-invalid-variant-multiple-separators" {
+	name = "invalid.example.com..variant..blue"
+	kind = "Native"
+}`
+
 const testPDNSZoneConfigMasterSOAEDITAPI = `
 resource "powerdns_zone" "test-master-soa-edit-api" {
 	name = "master-soa-edit-api.sysa.abc."
@@ -493,6 +595,13 @@ const testPDNSZoneConfigSlave = `
 resource "powerdns_zone" "test-slave" {
 	name = "slave.sysa.abc."
 	kind = "Slave"
+}`
+
+const testPDNSZoneConfigCatalog = `
+resource "powerdns_zone" "test-catalog" {
+	name    = "catalog.sysa.abc."
+	kind    = "Master"
+	catalog = "catalog-a.example."
 }`
 
 const testPDNSZoneConfigSlaveWithMasters = `

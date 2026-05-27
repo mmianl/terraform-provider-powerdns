@@ -78,6 +78,24 @@ resource "powerdns_zone" "fubar" {
 }
 ```
 
+```hcl
+# Create a catalog zone.
+resource "powerdns_zone" "catalog" {
+  name = "catalog-a.example."
+  kind = "Producer"
+}
+
+```
+
+```hcl
+# Add a zone to a catalog zone.
+resource "powerdns_zone" "catalog_member" {
+  name    = "catalog-member.example.com."
+  kind    = "Master"
+  catalog = "catalog-a.example."
+}
+```
+
 ## Argument Reference
 
 This resource supports the following arguments:
@@ -85,6 +103,7 @@ This resource supports the following arguments:
 - `name` - (Required) The name of zone. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"example.com."`).
 - `kind` - (Required) The kind of the zone.
 - `account` - (Optional) The account owning the zone. (Default to "admin")
+- `catalog` - (Optional) Catalog zone FQDN, ending with a trailing dot, to assign this zone to. This can be used to create or update PowerDNS catalog zone membership.
 - `masters` - (Optional) List of IP addresses configured as a master for this zone. This argument must be provided when `kind` is set to `Slave`.
 - `soa_edit_api` - (Optional) This should map to one of the [supported API values](https://doc.powerdns.com/authoritative/dnsupdate.html#soa-edit-dnsupdate-settings) *or* in [case you wish to remove the setting](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit-api), set this argument as `""` (that will translate to the API value `""`).
 

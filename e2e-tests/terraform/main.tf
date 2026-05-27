@@ -145,32 +145,65 @@ resource "powerdns_record_soa" "soa" {
   minimum = 3600
 }
 
-resource "powerdns_zone" "test2" {
-  name = "test2.example.com."
-  kind = "Native"
-}
-
 resource "powerdns_zone" "test_disabled_soa" {
   name = "test-disabled-soa.example.com."
   kind = "Native"
 }
 
-resource "powerdns_record_soa" "disabled_soa" {
+resource "powerdns_record_soa" "disabled_zone" {
   zone     = powerdns_zone.test_disabled_soa.name
   name     = powerdns_zone.test_disabled_soa.name
   ttl      = 1800
-  disabled = true
   mname    = "dns1.${powerdns_zone.test_disabled_soa.name}"
   rname    = "hostmaster.${powerdns_zone.test_disabled_soa.name}"
   refresh  = 7200
   retry    = 1800
   expire   = 1209600
   minimum  = 600
+  disabled = true
 }
 
-data "powerdns_record_soa" "disabled_soa" {
+data "powerdns_record_soa" "disabled_zone" {
   zone = powerdns_zone.test_disabled_soa.name
   name = powerdns_zone.test_disabled_soa.name
 
-  depends_on = [powerdns_record_soa.disabled_soa]
+  depends_on = [powerdns_record_soa.disabled_zone]
+}
+
+resource "powerdns_zone" "test2" {
+  name = "test2.example.com."
+  kind = "Native"
+}
+
+resource "powerdns_zone" "test_variant" {
+  name = "test.example.com..internal"
+  kind = "Native"
+}
+
+resource "powerdns_zone" "catalog" {
+  name = "catalog-a.example."
+  kind = "Producer"
+}
+
+resource "powerdns_zone" "catalog_member" {
+  name    = "catalog-member.example.com."
+  kind    = "Master"
+  catalog = "catalog-a.example."
+
+  depends_on = [powerdns_zone.catalog]
+}
+
+resource "powerdns_view_zone_association" "test2" {
+  view = "internal"
+  zone = powerdns_zone.test2.name
+}
+
+resource "powerdns_view_zone_association" "test_variant" {
+  view = "internal"
+  zone = powerdns_zone.test_variant.name
+}
+
+resource "powerdns_network" "internal_clients" {
+  network = "192.0.2.0/24"
+  view    = powerdns_view_zone_association.test2.view
 }

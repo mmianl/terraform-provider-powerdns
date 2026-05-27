@@ -82,6 +82,8 @@ func Provider() *schema.Provider {
 
 		ResourcesMap: map[string]*schema.Resource{
 			"powerdns_zone":                  resourcePDNSZone(),
+			"powerdns_view_zone_association": resourcePDNSViewZoneAssociation(),
+			"powerdns_network":               resourcePDNSNetwork(),
 			"powerdns_zone_metadata":         resourcePDNSZoneMetadata(),
 			"powerdns_record":                resourcePDNSRecord(),
 			"powerdns_record_soa":            resourcePDNSRecordSOA(),

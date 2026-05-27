@@ -92,6 +92,7 @@ func terraformOutput(t *testing.T, name string, v interface{}) {
 type authZone struct {
 	Name        string      `json:"name"`
 	Kind        string      `json:"kind"`
+	Catalog     string      `json:"catalog"`
 	Masters     []string    `json:"masters"`
 	Nameservers []string    `json:"nameservers"`
 	RRSets      []authRRSet `json:"rrsets"`
@@ -141,6 +142,22 @@ type soaDataSourceOutput struct {
 type zoneMetadata struct {
 	Kind     string   `json:"kind"`
 	Metadata []string `json:"metadata"`
+}
+
+type authView struct {
+	ID    string   `json:"id"`
+	Name  string   `json:"name"`
+	Zones []string `json:"zones"`
+}
+
+type authNetwork struct {
+	Network string `json:"network"`
+	View    string `json:"view"`
+}
+
+type viewZoneAssociationOutput struct {
+	View string `json:"view"`
+	Zone string `json:"zone"`
 }
 
 // Recursor config setting
@@ -392,6 +409,26 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 				if !strings.Contains(content, "hostmaster.test-disabled-soa.example.com.") {
 					t.Fatalf("disabled SOA record content missing rname: got %q", content)
 				}
+				parts := strings.Fields(content)
+				if len(parts) != 7 {
+					t.Fatalf("disabled SOA content: expected 7 fields, got %d: %q", len(parts), content)
+				}
+				refresh, _ := strconv.Atoi(parts[3])
+				retry, _ := strconv.Atoi(parts[4])
+				expire, _ := strconv.Atoi(parts[5])
+				minimum, _ := strconv.Atoi(parts[6])
+				if refresh != 7200 {
+					t.Fatalf("disabled SOA refresh: got %d, want 7200", refresh)
+				}
+				if retry != 1800 {
+					t.Fatalf("disabled SOA retry: got %d, want 1800", retry)
+				}
+				if expire != 1209600 {
+					t.Fatalf("disabled SOA expire: got %d, want 1209600", expire)
+				}
+				if minimum != 600 {
+					t.Fatalf("disabled SOA minimum: got %d, want 600", minimum)
+				}
 				break
 			}
 		}
@@ -457,7 +494,21 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		}
 	}
 
-	// 5) Zone metadata: verify resource
+	// 5) Zone variant: test.example.com..internal
+	{
+		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com..internal")
+		var zone authZone
+		doJSON(t, req, &zone)
+
+		if zone.Name != "test.example.com..internal" {
+			t.Fatalf("variant zone name: got %q, want %q", zone.Name, "test.example.com..internal")
+		}
+		if zone.Kind != "Native" {
+			t.Fatalf("variant zone kind: got %q, want %q", zone.Kind, "Native")
+		}
+	}
+
+	// 6) Zone metadata: verify resource
 	{
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com./metadata")
 		var metadataList []zoneMetadata
@@ -472,7 +523,78 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		assertMetadataKindValues(t, metadataByKind, "ALLOW-AXFR-FROM", []string{"AUTO-NS", "2001:db8::/48"})
 	}
 
-	// 6) Reverse zone: 172.16.0.0/24
+	// 7) View and network mapping
+	{
+		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/views/internal")
+		var view authView
+		doJSON(t, req, &view)
+
+		zoneSet := valuesToSet(view.Zones)
+		for _, want := range []string{"test2.example.com.", "test.example.com..internal"} {
+			if !zoneSet[want] {
+				t.Fatalf("view internal missing zone %q in %v", want, view.Zones)
+			}
+		}
+
+		var test2Association viewZoneAssociationOutput
+		terraformOutput(t, "powerdns_view_zone_association_test2", &test2Association)
+		if test2Association.View != "internal" {
+			t.Fatalf("test2 view association view: got %q, want %q", test2Association.View, "internal")
+		}
+		if test2Association.Zone != "test2.example.com." {
+			t.Fatalf("test2 view association zone: got %q, want %q", test2Association.Zone, "test2.example.com.")
+		}
+
+		var variantAssociation viewZoneAssociationOutput
+		terraformOutput(t, "powerdns_view_zone_association_test_variant", &variantAssociation)
+		if variantAssociation.View != "internal" {
+			t.Fatalf("variant view association view: got %q, want %q", variantAssociation.View, "internal")
+		}
+		if variantAssociation.Zone != "test.example.com..internal" {
+			t.Fatalf("variant view association zone: got %q, want %q", variantAssociation.Zone, "test.example.com..internal")
+		}
+
+		req = newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/networks/192.0.2.0/24")
+		var network authNetwork
+		doJSON(t, req, &network)
+
+		if network.Network != "192.0.2.0/24" {
+			t.Fatalf("network CIDR: got %q, want %q", network.Network, "192.0.2.0/24")
+		}
+		if network.View != "internal" {
+			t.Fatalf("network view: got %q, want %q", network.View, "internal")
+		}
+	}
+
+	// 8) Catalog producer zone and catalog zone membership
+	{
+		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/catalog-a.example.")
+		var catalogZone authZone
+		doJSON(t, req, &catalogZone)
+
+		if catalogZone.Name != "catalog-a.example." {
+			t.Fatalf("catalog producer zone name: got %q, want %q", catalogZone.Name, "catalog-a.example.")
+		}
+		if catalogZone.Kind != "Producer" {
+			t.Fatalf("catalog producer zone kind: got %q, want %q", catalogZone.Kind, "Producer")
+		}
+
+		req = newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/catalog-member.example.com.")
+		var zone authZone
+		doJSON(t, req, &zone)
+
+		if zone.Name != "catalog-member.example.com." {
+			t.Fatalf("catalog member zone name: got %q, want %q", zone.Name, "catalog-member.example.com.")
+		}
+		if zone.Kind != "Master" {
+			t.Fatalf("catalog member zone kind: got %q, want %q", zone.Kind, "Master")
+		}
+		if zone.Catalog != "catalog-a.example." {
+			t.Fatalf("catalog member catalog: got %q, want %q", zone.Catalog, "catalog-a.example.")
+		}
+	}
+
+	// 9) Reverse zone: 172.16.0.0/24
 	{
 		reverseZoneName := ipv4ReverseZoneName(t, "172.16.0.0/24")
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/"+reverseZoneName)

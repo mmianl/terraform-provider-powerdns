@@ -26,7 +26,7 @@ func resourcePDNSZoneMetadata() *schema.Resource {
 				Type:         schema.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: ValidateFQDN,
+				ValidateFunc: ValidateZoneName,
 				Description:  "Zone name, for example \"example.com.\".",
 			},
 			"kind": {

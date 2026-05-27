@@ -2,6 +2,66 @@ package powerdns
 
 import "testing"
 
+func TestValidateViewName(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		expectError bool
+	}{
+		{name: "Valid lowercase", value: "internal", expectError: false},
+		{name: "Valid uppercase", value: "Internal", expectError: false},
+		{name: "Valid with dash", value: "internal-view", expectError: false},
+		{name: "Valid with dot", value: "internal.view", expectError: false},
+		{name: "Valid with underscore", value: "internal_view", expectError: false},
+		{name: "Valid with space", value: "internal view", expectError: false},
+		{name: "Invalid empty", value: "", expectError: true},
+		{name: "Invalid starts with dot", value: ".internal", expectError: true},
+		{name: "Invalid starts with space", value: " internal", expectError: true},
+		{name: "Invalid slash", value: "internal/view", expectError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := validateViewName(tt.value, "view")
+			if tt.expectError && len(errs) == 0 {
+				t.Errorf("validateViewName(%q) expected error but got none", tt.value)
+			}
+			if !tt.expectError && len(errs) > 0 {
+				t.Errorf("validateViewName(%q) unexpected error: %v", tt.value, errs)
+			}
+		})
+	}
+}
+
+func TestValidateZoneName(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		expectError bool
+	}{
+		{name: "Valid FQDN", value: "example.com.", expectError: false},
+		{name: "Valid variant", value: "example.com..internal", expectError: false},
+		{name: "Valid root variant", value: "..internal", expectError: false},
+		{name: "Invalid missing trailing dot", value: "example.com", expectError: true},
+		{name: "Invalid variant ending with dot", value: "example.com..internal.", expectError: true},
+		{name: "Invalid multiple variant separators", value: "example.com..internal..blue", expectError: true},
+		{name: "Invalid variant uppercase", value: "example.com..Internal", expectError: true},
+		{name: "Invalid base with trailing dot before variant", value: "example.com...internal", expectError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := ValidateZoneName(tt.value, "name")
+			if tt.expectError && len(errs) == 0 {
+				t.Errorf("ValidateZoneName(%q) expected error but got none", tt.value)
+			}
+			if !tt.expectError && len(errs) > 0 {
+				t.Errorf("ValidateZoneName(%q) unexpected error: %v", tt.value, errs)
+			}
+		})
+	}
+}
+
 func TestValidateFQDN(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -7,12 +7,97 @@ import (
 	"strings"
 )
 
+func validateViewName(v interface{}, k string) (ws []string, errors []error) {
+	value := v.(string)
+	if value == "" {
+		errors = append(errors, fmt.Errorf("%q must be non-empty", k))
+		return
+	}
+	if strings.HasPrefix(value, ".") || strings.HasPrefix(value, " ") {
+		errors = append(errors, fmt.Errorf("%q must not start with a dot or a space, got: %s", k, value))
+		return
+	}
+
+	for _, ch := range value {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.' || ch == ' ' {
+			continue
+		}
+		errors = append(errors, fmt.Errorf("%q may contain only letters, digits, spaces, dash, dot and underscore, got: %s", k, value))
+		break
+	}
+
+	return
+}
+
 // ValidateFQDN validates that a string is a fully qualified domain name ending with a trailing dot.
 func ValidateFQDN(v interface{}, k string) (ws []string, errors []error) {
 	value := v.(string)
 	if !strings.HasSuffix(value, ".") {
 		errors = append(errors, fmt.Errorf("%q must be a fully qualified domain name ending with a trailing dot (e.g., \"example.com.\"), got: %s", k, value))
 	}
+	return
+}
+
+// ValidateZoneName validates a PowerDNS zone name, including PowerDNS view variants.
+//
+// Accepted forms:
+//   - standard zone FQDN with trailing dot, e.g. `example.com.`
+//   - PowerDNS zone variant, e.g. `example.com..internal`
+//   - root zone variant, e.g. `..variant`
+//
+// Variant names must contain only lowercase letters, digits, underscore and dash.
+func ValidateZoneName(v interface{}, k string) (ws []string, errors []error) {
+	value := v.(string)
+
+	if value == "." {
+		return
+	}
+
+	if !strings.Contains(value, "..") {
+		return ValidateFQDN(v, k)
+	}
+
+	if strings.Count(value, "..") > 1 {
+		errors = append(errors, fmt.Errorf("%q must contain only one variant separator '..', got: %s", k, value))
+		return
+	}
+
+	parts := strings.SplitN(value, "..", 2)
+	if len(parts) != 2 {
+		errors = append(errors, fmt.Errorf("%q must be a fully qualified domain name ending with a trailing dot or a PowerDNS zone variant (e.g., \"example.com.\" or \"example.com..internal\"), got: %s", k, value))
+		return
+	}
+
+	base := parts[0]
+	variant := parts[1]
+
+	if strings.Contains(base, "..") {
+		errors = append(errors, fmt.Errorf("%q variant base must not contain an additional variant separator, got: %s", k, value))
+	}
+
+	if base == "" {
+		// root zone variant like `..variant`
+	} else if strings.HasSuffix(base, ".") {
+		errors = append(errors, fmt.Errorf("%q variant base must not end with a trailing dot before splitting, got: %s", k, value))
+	}
+
+	if variant == "" {
+		errors = append(errors, fmt.Errorf("%q variant name must be non-empty, got: %s", k, value))
+		return
+	}
+	if strings.HasSuffix(variant, ".") {
+		errors = append(errors, fmt.Errorf("%q variant name must not end with a dot, got: %s", k, value))
+		return
+	}
+
+	for _, ch := range variant {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			continue
+		}
+		errors = append(errors, fmt.Errorf("%q variant name may contain only lowercase letters, digits, underscore and dash, got: %s", k, value))
+		break
+	}
+
 	return
 }
 
