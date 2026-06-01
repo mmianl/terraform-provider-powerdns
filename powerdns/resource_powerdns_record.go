@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -47,7 +48,7 @@ func resourcePDNSRecord() *schema.Resource {
 			"disabled": {
 				Type:        schema.TypeBool,
 				Optional:    true,
-				Default:     false,
+				Computed:    true,
 				Description: "Whether all records in this RRset are disabled in PowerDNS.",
 			},
 			"records": {
@@ -91,7 +92,7 @@ func resourcePDNSRecordUpsert(ctx context.Context, d *schema.ResourceData, meta 
 	name := d.Get("name").(string)
 	typ := d.Get("type").(string)
 	ttl := d.Get("ttl").(int)
-	disabled := d.Get("disabled").(bool)
+	disabled := configuredRRSetDisabledValue(d.GetRawConfig(), d.Get("disabled").(bool))
 	recList := d.Get("records").(*schema.Set).List()
 	if strings.EqualFold(typ, "SOA") {
 		return diag.FromErr(fmt.Errorf("SOA records cannot be managed with powerdns_record; use the powerdns_record_soa resource instead"))
@@ -119,14 +120,27 @@ func resourcePDNSRecordUpsert(ctx context.Context, d *schema.ResourceData, meta 
 		TTL:  ttl,
 	}
 
+	disabledByContent := map[string]bool{}
+	if shouldPreserveRecordDisabledFlags(d.Id() != "", rrSetDisabledConfigured(d.GetRawConfig()), d.HasChange("disabled")) {
+		existingRRSet, err := client.PDNS.GetRecordSetByID(ctx, zone, d.Id())
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to fetch existing PowerDNS Record: %w", err))
+		}
+
+		disabledByContent = rrSetDisabledByContent(recordsFromRRSet(existingRRSet))
+	}
+
 	records := make([]Record, 0, len(recList))
 	for _, rc := range recList {
+		content := rc.(string)
+		recordDisabled := recordDisabledValue(disabledByContent, content, disabled)
+
 		records = append(records, Record{
 			Name:     rrSet.Name,
 			Type:     rrSet.Type,
 			TTL:      ttl,
-			Content:  rc.(string),
-			Disabled: disabled,
+			Content:  content,
+			Disabled: recordDisabled,
 			SetPtr:   setPtr,
 		})
 	}
@@ -305,6 +319,27 @@ func configuredRRSetComments(d *schema.ResourceData) *[]Comment {
 	return nil
 }
 
+func rrSetDisabledConfigured(rawConfig cty.Value) bool {
+	if rawConfig.IsNull() || !rawConfig.IsKnown() {
+		return false
+	}
+
+	rawDisabled := rawConfig.GetAttr("disabled")
+	return rawDisabled.IsKnown() && !rawDisabled.IsNull()
+}
+
+func shouldPreserveRecordDisabledFlags(hasExistingID bool, disabledConfigured bool, disabledChanged bool) bool {
+	return hasExistingID && !disabledConfigured && !disabledChanged
+}
+
+func configuredRRSetDisabledValue(rawConfig cty.Value, disabled bool) bool {
+	if !rrSetDisabledConfigured(rawConfig) {
+		return false
+	}
+
+	return disabled
+}
+
 func expandRRSetComments(rawComments []interface{}) []Comment {
 	comments := make([]Comment, 0, len(rawComments))
 	for _, rawComment := range rawComments {
@@ -367,6 +402,23 @@ func rrSetDisabled(records []Record) bool {
 	}
 
 	return true
+}
+
+func rrSetDisabledByContent(records []Record) map[string]bool {
+	disabledByContent := make(map[string]bool, len(records))
+	for _, record := range records {
+		disabledByContent[record.Content] = record.Disabled
+	}
+
+	return disabledByContent
+}
+
+func recordDisabledValue(disabledByContent map[string]bool, content string, defaultDisabled bool) bool {
+	if disabled, ok := disabledByContent[content]; ok {
+		return disabled
+	}
+
+	return defaultDisabled
 }
 
 func validateRRSetComment(v interface{}, k string) ([]string, []error) {
