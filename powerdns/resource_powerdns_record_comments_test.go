@@ -114,6 +114,28 @@ func TestRRSetDisabledReturnsFalseWhenNoRecordsExist(t *testing.T) {
 	assert.False(t, rrSetDisabled(nil))
 }
 
+func TestRRSetDisabledByContentPreservesPerRecordFlags(t *testing.T) {
+	assert.Equal(t, map[string]bool{
+		"192.0.2.1": true,
+		"192.0.2.2": false,
+	}, rrSetDisabledByContent([]Record{
+		{Content: "192.0.2.1", Disabled: true},
+		{Content: "192.0.2.2", Disabled: false},
+	}))
+}
+
+func TestRecordDisabledValueUsesExistingFlagWhenPresent(t *testing.T) {
+	assert.True(t, recordDisabledValue(map[string]bool{
+		"192.0.2.1": true,
+	}, "192.0.2.1", false))
+}
+
+func TestRecordDisabledValueFallsBackToConfiguredValueForNewRecords(t *testing.T) {
+	assert.False(t, recordDisabledValue(map[string]bool{
+		"192.0.2.1": true,
+	}, "192.0.2.2", false))
+}
+
 func TestValidateRRSetCommentRejectsWhitespaceOnlyValues(t *testing.T) {
 	_, errs := validateRRSetComment("   ", "comments.0")
 	if assert.Len(t, errs, 1) {

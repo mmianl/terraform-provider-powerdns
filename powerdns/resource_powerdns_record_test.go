@@ -6,9 +6,180 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
+
+func TestRRSetDisabledConfigured(t *testing.T) {
+	testCases := []struct {
+		name     string
+		raw      cty.Value
+		expected bool
+	}{
+		{
+			name: "omitted",
+			raw: cty.ObjectVal(map[string]cty.Value{
+				"zone":     cty.StringVal("example.com."),
+				"name":     cty.StringVal("www.example.com."),
+				"type":     cty.StringVal("A"),
+				"ttl":      cty.NumberIntVal(300),
+				"disabled": cty.NullVal(cty.Bool),
+				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
+				"comments": cty.NullVal(cty.List(cty.String)),
+				"set_ptr":  cty.NullVal(cty.Bool),
+			}),
+			expected: false,
+		},
+		{
+			name: "explicit false",
+			raw: cty.ObjectVal(map[string]cty.Value{
+				"zone":     cty.StringVal("example.com."),
+				"name":     cty.StringVal("www.example.com."),
+				"type":     cty.StringVal("A"),
+				"ttl":      cty.NumberIntVal(300),
+				"disabled": cty.BoolVal(false),
+				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
+				"comments": cty.NullVal(cty.List(cty.String)),
+				"set_ptr":  cty.NullVal(cty.Bool),
+			}),
+			expected: true,
+		},
+		{
+			name: "explicit true",
+			raw: cty.ObjectVal(map[string]cty.Value{
+				"zone":     cty.StringVal("example.com."),
+				"name":     cty.StringVal("www.example.com."),
+				"type":     cty.StringVal("A"),
+				"ttl":      cty.NumberIntVal(300),
+				"disabled": cty.BoolVal(true),
+				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
+				"comments": cty.NullVal(cty.List(cty.String)),
+				"set_ptr":  cty.NullVal(cty.Bool),
+			}),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rrSetDisabledConfigured(tc.raw); got != tc.expected {
+				t.Fatalf("rrSetDisabledConfigured() = %t, want %t", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestShouldPreserveRecordDisabledFlags(t *testing.T) {
+	testCases := []struct {
+		name               string
+		hasExistingID      bool
+		disabledConfigured bool
+		disabledChanged    bool
+		expected           bool
+	}{
+		{
+			name:               "preserve when omitted and unchanged",
+			hasExistingID:      true,
+			disabledConfigured: false,
+			disabledChanged:    false,
+			expected:           true,
+		},
+		{
+			name:               "do not preserve when explicitly false",
+			hasExistingID:      true,
+			disabledConfigured: true,
+			disabledChanged:    false,
+			expected:           false,
+		},
+		{
+			name:               "do not preserve when disabled changed",
+			hasExistingID:      true,
+			disabledConfigured: false,
+			disabledChanged:    true,
+			expected:           false,
+		},
+		{
+			name:               "do not preserve on create",
+			hasExistingID:      false,
+			disabledConfigured: false,
+			disabledChanged:    false,
+			expected:           false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldPreserveRecordDisabledFlags(tc.hasExistingID, tc.disabledConfigured, tc.disabledChanged)
+			if got != tc.expected {
+				t.Fatalf("shouldPreserveRecordDisabledFlags() = %t, want %t", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestConfiguredRRSetDisabledValue(t *testing.T) {
+	testCases := []struct {
+		name     string
+		raw      cty.Value
+		disabled bool
+		expected bool
+	}{
+		{
+			name: "omitted keeps default false",
+			raw: cty.ObjectVal(map[string]cty.Value{
+				"zone":     cty.StringVal("example.com."),
+				"name":     cty.StringVal("www.example.com."),
+				"type":     cty.StringVal("A"),
+				"ttl":      cty.NumberIntVal(300),
+				"disabled": cty.NullVal(cty.Bool),
+				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
+				"comments": cty.NullVal(cty.List(cty.String)),
+				"set_ptr":  cty.NullVal(cty.Bool),
+			}),
+			disabled: true,
+			expected: false,
+		},
+		{
+			name: "explicit true is preserved",
+			raw: cty.ObjectVal(map[string]cty.Value{
+				"zone":     cty.StringVal("example.com."),
+				"name":     cty.StringVal("www.example.com."),
+				"type":     cty.StringVal("A"),
+				"ttl":      cty.NumberIntVal(300),
+				"disabled": cty.BoolVal(true),
+				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
+				"comments": cty.NullVal(cty.List(cty.String)),
+				"set_ptr":  cty.NullVal(cty.Bool),
+			}),
+			disabled: true,
+			expected: true,
+		},
+		{
+			name: "explicit false is preserved",
+			raw: cty.ObjectVal(map[string]cty.Value{
+				"zone":     cty.StringVal("example.com."),
+				"name":     cty.StringVal("www.example.com."),
+				"type":     cty.StringVal("A"),
+				"ttl":      cty.NumberIntVal(300),
+				"disabled": cty.BoolVal(false),
+				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
+				"comments": cty.NullVal(cty.List(cty.String)),
+				"set_ptr":  cty.NullVal(cty.Bool),
+			}),
+			disabled: false,
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := configuredRRSetDisabledValue(tc.raw, tc.disabled); got != tc.expected {
+				t.Fatalf("configuredRRSetDisabledValue() = %t, want %t", got, tc.expected)
+			}
+		})
+	}
+}
 
 func TestAccPDNSRecord_Empty(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
@@ -70,6 +241,73 @@ func TestAccPDNSRecord_Disabled(t *testing.T) {
 				ImportStateId:     resourceID,
 				ImportState:       true,
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestAccPDNSRecord_DisabledRefreshNoDiff(t *testing.T) {
+	resourceName := "powerdns_record.test-a-disabled-refresh"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSRecordDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSRecordConfigADisabledRefresh,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSRecordExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "disabled", "true"),
+					testAccCheckPDNSRecordAllDisabled(resourceName, true),
+				),
+			},
+			{
+				ResourceName: resourceName,
+				RefreshState: true,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "disabled", "true"),
+					testAccCheckPDNSRecordAllDisabled(resourceName, true),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPDNSRecord_OmittedDisabledPreservesExistingFlags(t *testing.T) {
+	resourceName := "powerdns_record.test-a-omit-disabled"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSRecordDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSRecordConfigAOmittedDisabledInitial,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSRecordExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "disabled", "true"),
+					resource.TestCheckResourceAttr(resourceName, "ttl", "60"),
+					testAccCheckPDNSRecordAllDisabled(resourceName, true),
+				),
+			},
+			{
+				Config: testPDNSRecordConfigAOmittedDisabledUpdated,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSRecordExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "disabled", "true"),
+					resource.TestCheckResourceAttr(resourceName, "ttl", "120"),
+					testAccCheckPDNSRecordAllDisabled(resourceName, true),
+				),
+			},
+			{
+				ResourceName: resourceName,
+				RefreshState: true,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "disabled", "true"),
+					resource.TestCheckResourceAttr(resourceName, "ttl", "120"),
+					testAccCheckPDNSRecordAllDisabled(resourceName, true),
+				),
 			},
 		},
 	})
@@ -535,6 +773,36 @@ func testAccCheckPDNSRecordExists(n string) resource.TestCheckFunc {
 	}
 }
 
+func testAccCheckPDNSRecordAllDisabled(n string, expected bool) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		if rs.Primary.ID == "" {
+			return fmt.Errorf("No Record ID is set")
+		}
+
+		client := testAccProvider.Meta().(*ProviderClients).PDNS
+		foundRecords, err := client.ListRecordsByID(context.Background(), rs.Primary.Attributes["zone"], rs.Primary.ID)
+		if err != nil {
+			return err
+		}
+		if len(foundRecords) == 0 {
+			return fmt.Errorf("Record does not exist")
+		}
+
+		for _, rec := range foundRecords {
+			if rec.Disabled != expected {
+				return fmt.Errorf("record %q disabled = %t, want %t", rec.Content, rec.Disabled, expected)
+			}
+		}
+
+		return nil
+	}
+}
+
 const testPDNSRecordConfigRecordEmpty = `
 resource "powerdns_zone" "test-zone" {
 	name = "rec-empty.sysa.xyz."
@@ -575,6 +843,50 @@ resource "powerdns_record" "test-a-disabled" {
 	type = "A"
 	ttl = 60
 	disabled = true
+	records = [ "1.1.1.1", "2.2.2.2" ]
+}`
+
+const testPDNSRecordConfigADisabledRefresh = `
+resource "powerdns_zone" "test-zone" {
+	name = "rec-adisabled-refresh.sysa.xyz."
+	kind = "Native"
+}
+
+resource "powerdns_record" "test-a-disabled-refresh" {
+	zone = powerdns_zone.test-zone.name
+	name = "test.rec-adisabled-refresh.sysa.xyz."
+	type = "A"
+	ttl = 60
+	disabled = true
+	records = [ "1.1.1.1", "2.2.2.2" ]
+}`
+
+const testPDNSRecordConfigAOmittedDisabledInitial = `
+resource "powerdns_zone" "test-zone" {
+	name = "rec-a-omit-disabled.sysa.xyz."
+	kind = "Native"
+}
+
+resource "powerdns_record" "test-a-omit-disabled" {
+	zone = powerdns_zone.test-zone.name
+	name = "test.rec-a-omit-disabled.sysa.xyz."
+	type = "A"
+	ttl = 60
+	disabled = true
+	records = [ "1.1.1.1", "2.2.2.2" ]
+}`
+
+const testPDNSRecordConfigAOmittedDisabledUpdated = `
+resource "powerdns_zone" "test-zone" {
+	name = "rec-a-omit-disabled.sysa.xyz."
+	kind = "Native"
+}
+
+resource "powerdns_record" "test-a-omit-disabled" {
+	zone = powerdns_zone.test-zone.name
+	name = "test.rec-a-omit-disabled.sysa.xyz."
+	type = "A"
+	ttl = 120
 	records = [ "1.1.1.1", "2.2.2.2" ]
 }`
 
