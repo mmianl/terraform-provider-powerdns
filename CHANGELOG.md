@@ -1,3 +1,11 @@
+# 2.3.0 (June 4, 2026)
+
+FEATURES:
+  * **Add PowerDNS 5.0 catalog, views, and networks support** ([#66](https://github.com/mmianl/terraform-provider-powerdns/pull/66), @mglants)
+
+FIXES:
+  * **Preserve the disabled state of existing `powerdns_record` RRsets when `disabled` is omitted from configuration** ([#68](https://github.com/mmianl/terraform-provider-powerdns/pull/68), @mmianl)
+
 # 2.2.0 (May 6, 2026)
 
 FEATURES:
