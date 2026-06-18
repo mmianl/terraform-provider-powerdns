@@ -12,8 +12,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
-	freecache "github.com/coocood/freecache"
 	cleanhttp "github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -22,8 +23,11 @@ import (
 // no schema is explicitly defined
 var DefaultSchema = "https"
 
-// DefaultCacheSize is client default cache size
-var DefaultCacheSize int
+// cachedZone is a memoized full-zone (rrsets=true) payload with its expiry.
+type cachedZone struct {
+	info    ZoneInfo
+	expires time.Time // zero means no expiry within the run
+}
 
 // sanitizeURL will output:
 // <scheme>://<host>[:port]
@@ -78,11 +82,16 @@ type BaseClient struct {
 	APIVersion  int    // API version to use
 	HTTP        *http.Client
 	CacheEnable bool // Enable/Disable cache for REST API requests
-	Cache       *freecache.Cache
-	CacheTTL    int
+	CacheTTL    int  // seconds; <= 0 means entries never expire within the run
+
+	// zoneCache memoizes full-zone payloads by zone name; guarded by cacheMu
+	// since Terraform calls CRUD concurrently on this shared client.
+	cacheMu   sync.RWMutex
+	zoneCache map[string]cachedZone
 }
 
 // NewBaseClient constructs a BaseClient with HTTP, TLS and cache configuration.
+// cacheSizeMB is accepted for compatibility but ignored (memo is unbounded).
 func NewBaseClient(serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*BaseClient, error) {
 	cleanURL, err := sanitizeURL(serverURL)
 	if err != nil {
@@ -92,22 +101,14 @@ func NewBaseClient(serverURL string, apiKey string, configTLS *tls.Config, cache
 	httpClient := cleanhttp.DefaultClient()
 	httpClient.Transport.(*http.Transport).TLSClientConfig = configTLS
 
-	if cacheEnable {
-		cacheSize, err := strconv.Atoi(cacheSizeMB)
-		if err != nil {
-			return nil, fmt.Errorf("error while creating client: %s", err)
-		}
-		DefaultCacheSize = cacheSize * 1024 * 1024
-	}
-
 	base := &BaseClient{
 		ServerURL:   cleanURL,
 		APIKey:      apiKey,
 		HTTP:        httpClient,
 		APIVersion:  -1,
 		CacheEnable: cacheEnable,
-		Cache:       freecache.NewCache(DefaultCacheSize),
 		CacheTTL:    cacheTTL,
+		zoneCache:   make(map[string]cachedZone),
 	}
 
 	return base, nil
@@ -376,6 +377,15 @@ func (client *PowerDNSClient) GetZoneWithRRsets(ctx context.Context, name string
 }
 
 func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeRRsets bool) (ZoneInfo, error) {
+	// Only the full-zone (rrsets=true) variant is cached: it's the hot path for
+	// record Read/Import, and a rrset-less payload must not reuse the same key.
+	cacheable := includeRRsets && client.CacheEnable
+	if cacheable {
+		if cached, err := client.GetZoneInfoFromCache(ctx, name); err == nil && cached != nil {
+			return *cached, nil
+		}
+	}
+
 	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
 	if includeRRsets {
 		endpoint += "?rrsets=true"
@@ -414,7 +424,28 @@ func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeR
 		return ZoneInfo{}, err
 	}
 
+	if cacheable {
+		var expires time.Time
+		if client.CacheTTL > 0 {
+			expires = time.Now().Add(time.Duration(client.CacheTTL) * time.Second)
+		}
+		client.cacheMu.Lock()
+		client.zoneCache[name] = cachedZone{info: zoneInfo, expires: expires}
+		client.cacheMu.Unlock()
+	}
+
 	return zoneInfo, nil
+}
+
+// invalidateZoneCache evicts a zone's cached payload; call it after any
+// successful mutation so subsequent reads don't return stale data.
+func (client *PowerDNSClient) invalidateZoneCache(zone string) {
+	if !client.CacheEnable {
+		return
+	}
+	client.cacheMu.Lock()
+	delete(client.zoneCache, zone)
+	client.cacheMu.Unlock()
 }
 
 // ZoneExists checks if requested zone exists
@@ -490,6 +521,7 @@ func (client *PowerDNSClient) CreateZone(ctx context.Context, zoneInfo ZoneInfo)
 		return ZoneInfo{}, err
 	}
 
+	client.invalidateZoneCache(zoneInfo.Name)
 	return createdZoneInfo, nil
 }
 
@@ -528,6 +560,7 @@ func (client *PowerDNSClient) UpdateZone(ctx context.Context, name string, zoneI
 		return fmt.Errorf("error updating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
 	}
 
+	client.invalidateZoneCache(name)
 	return nil
 }
 
@@ -560,6 +593,7 @@ func (client *PowerDNSClient) DeleteZone(ctx context.Context, name string) error
 		}
 		return fmt.Errorf("error deleting zone: %s, reason: %q", name, errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(name)
 	return nil
 }
 
@@ -715,73 +749,32 @@ func (client *PowerDNSClient) DeleteZoneMetadata(ctx context.Context, zone strin
 	return nil
 }
 
-// GetZoneInfoFromCache return ZoneInfo struct
+// GetZoneInfoFromCache returns the memoized ZoneInfo, or nil on miss/expiry.
 func (client *PowerDNSClient) GetZoneInfoFromCache(ctx context.Context, zone string) (*ZoneInfo, error) {
-	if client.CacheEnable {
-		cacheZoneInfo, err := client.Cache.Get([]byte(zone))
-		if err != nil {
-			return nil, err
-		}
-
-		zoneInfo := new(ZoneInfo)
-		if err := json.Unmarshal(cacheZoneInfo, &zoneInfo); err != nil {
-			return nil, err
-		}
-
-		return zoneInfo, nil
+	if !client.CacheEnable {
+		return nil, nil
 	}
 
-	return nil, nil
+	client.cacheMu.RLock()
+	entry, ok := client.zoneCache[zone]
+	client.cacheMu.RUnlock()
+	if !ok {
+		return nil, nil
+	}
+	if !entry.expires.IsZero() && time.Now().After(entry.expires) {
+		return nil, nil
+	}
+
+	info := entry.info
+	return &info, nil
 }
 
 // ListRecords returns all records in Zone
 func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]Record, error) {
-	zoneInfo, err := client.GetZoneInfoFromCache(ctx, zone)
+	// Reuse the cached full-zone read path rather than a duplicate cache block.
+	zoneInfo, err := client.GetZoneWithRRsets(ctx, zone)
 	if err != nil {
-		tflog.Warn(ctx, "Cache get failed", map[string]interface{}{
-			"zone":  zone,
-			"error": err.Error(),
-		})
 		return nil, err
-	}
-
-	if zoneInfo == nil {
-		req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s?rrsets=true", zone), nil)
-		if err != nil {
-			return nil, err
-		}
-
-		resp, err := client.HTTP.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-					"error":  err.Error(),
-					"method": req.Method,
-					"url":    req.URL.String(),
-					"zone":   zone,
-				})
-			}
-		}()
-
-		zoneInfo = new(ZoneInfo)
-		if err := json.NewDecoder(resp.Body).Decode(zoneInfo); err != nil {
-			return nil, err
-		}
-
-		if client.CacheEnable {
-			cacheValue, err := json.Marshal(zoneInfo)
-			if err != nil {
-				return nil, err
-			}
-
-			if err := client.Cache.Set([]byte(zone), cacheValue, client.CacheTTL); err != nil {
-				return nil, fmt.Errorf("the cache for REST API requests is enabled but the size isn't enough: cacheSize: %db \n %s",
-					DefaultCacheSize, err)
-			}
-		}
 	}
 
 	records := zoneInfo.Records
@@ -901,6 +894,7 @@ func (client *PowerDNSClient) ReplaceRecordSet(ctx context.Context, zone string,
 		}
 		return "", fmt.Errorf("error creating record set: %s, reason: %q", rrSet.ID(), errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(zone)
 	return rrSet.ID(), nil
 }
 
@@ -945,6 +939,7 @@ func (client *PowerDNSClient) DeleteRecordSet(ctx context.Context, zone string, 
 		}
 		return fmt.Errorf("error deleting record: %s %s, reason: %q", name, tpe, errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(zone)
 	return nil
 }
 

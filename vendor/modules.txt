@@ -28,9 +28,6 @@ github.com/agext/levenshtein
 # github.com/apparentlymart/go-textseg/v15 v15.0.0
 ## explicit; go 1.16
 github.com/apparentlymart/go-textseg/v15/textseg
-# github.com/cespare/xxhash/v2 v2.3.0
-## explicit; go 1.11
-github.com/cespare/xxhash/v2
 # github.com/cloudflare/circl v1.6.3
 ## explicit; go 1.22.0
 github.com/cloudflare/circl/dh/x25519
@@ -45,9 +42,6 @@ github.com/cloudflare/circl/math/mlsbset
 github.com/cloudflare/circl/sign
 github.com/cloudflare/circl/sign/ed25519
 github.com/cloudflare/circl/sign/ed448
-# github.com/coocood/freecache v1.2.7
-## explicit; go 1.21
-github.com/coocood/freecache
 # github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 ## explicit
 github.com/davecgh/go-spew/spew
