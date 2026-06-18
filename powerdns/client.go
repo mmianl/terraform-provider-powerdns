@@ -376,6 +376,11 @@ func (client *PowerDNSClient) GetZoneWithRRsets(ctx context.Context, name string
 	return client.getZone(ctx, name, true)
 }
 
+// errZoneNotFound is returned by getZone when the zone does not exist (HTTP
+// 404). Callers that only care whether records are present (ListRecords) treat
+// it as an empty zone rather than a hard error.
+var errZoneNotFound = errors.New("zone not found")
+
 func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeRRsets bool) (ZoneInfo, error) {
 	// Only the full-zone (rrsets=true) variant is cached: it's the hot path for
 	// record Read/Import, and a rrset-less payload must not reuse the same key.
@@ -412,6 +417,9 @@ func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeR
 	}()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return ZoneInfo{}, errZoneNotFound
+		}
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return ZoneInfo{}, fmt.Errorf("error getting zone: %s", name)
@@ -774,6 +782,11 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 	// Reuse the cached full-zone read path rather than a duplicate cache block.
 	zoneInfo, err := client.GetZoneWithRRsets(ctx, zone)
 	if err != nil {
+		// A missing zone has no records; don't surface the 404 as an error.
+		// Callers like RecordExists query records after a zone is torn down.
+		if errors.Is(err, errZoneNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
