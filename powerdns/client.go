@@ -202,7 +202,7 @@ type ZoneInfo struct {
 	URL                string              `json:"url"`
 	Kind               string              `json:"kind"`
 	Catalog            string              `json:"catalog,omitempty"`
-	DNSSec             bool                `json:"dnsssec"`
+	DNSSec             bool                `json:"dnssec"`
 	Serial             int64               `json:"serial"`
 	Records            []Record            `json:"records,omitempty"`
 	ResourceRecordSets []ResourceRecordSet `json:"rrsets,omitempty"`
