@@ -357,6 +357,14 @@ func (client *PowerDNSClient) ListZones(ctx context.Context) ([]ZoneInfo, error)
 		}
 	}()
 
+	if resp.StatusCode != http.StatusOK {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return nil, fmt.Errorf("error listing zones")
+		}
+		return nil, fmt.Errorf("error listing zones, reason: %q", errorResp.ErrorMsg)
+	}
+
 	var zoneInfos []ZoneInfo
 	if err := json.NewDecoder(resp.Body).Decode(&zoneInfos); err != nil {
 		return nil, err
@@ -765,6 +773,14 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 				})
 			}
 		}()
+
+		if resp.StatusCode != http.StatusOK {
+			errorResp := new(errorResponse)
+			if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+				return nil, fmt.Errorf("error listing records for zone: %s", zone)
+			}
+			return nil, fmt.Errorf("error listing records for zone: %s, reason: %q", zone, errorResp.ErrorMsg)
+		}
 
 		zoneInfo = new(ZoneInfo)
 		if err := json.NewDecoder(resp.Body).Decode(zoneInfo); err != nil {
