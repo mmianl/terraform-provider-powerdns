@@ -11,6 +11,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
+// writableRecursorSettings lists the settings the recursor API accepts a write
+// for. Verified against Recursor 5.4.4: ws-recursor.cc registers handlers for
+// /config/allow-from and /config/allow-notify-from only, and any other name
+// returns 404 for both GET and PUT.
+var writableRecursorSettings = []string{
+	"allow-from",
+	"allow-notify-from",
+}
+
 func resourcePDNSRecursorConfig() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourcePDNSRecursorConfigCreate,
@@ -20,11 +29,15 @@ func resourcePDNSRecursorConfig() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"name": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ForceNew:     true,
-				ValidateFunc: validation.StringLenBetween(1, 255),
-				Description:  "The name of the recursor config setting",
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
+				// The recursor exposes exactly two settings for writing. Every
+				// other name answers 404 on both GET and PUT, so accepting one
+				// only defers the failure to apply.
+				ValidateFunc: validation.StringInSlice(writableRecursorSettings, false),
+				Description: "The name of the recursor config setting. The recursor API only " +
+					"exposes allow-from and allow-notify-from for writing.",
 			},
 			"value": {
 				Type: schema.TypeSet,
