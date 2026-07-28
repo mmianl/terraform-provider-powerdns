@@ -40,8 +40,13 @@ provider "powerdns" {
 - `powerdns_record_soa`
 - `powerdns_ptr_record`
 - `powerdns_reverse_zone`
-- `powerdns_view`
+- `powerdns_view_zone_association`
 - `powerdns_network`
+
+### Supported recursor resources
+
+- `powerdns_recursor_config`
+- `powerdns_recursor_forward_zone`
 
 For detailed usage see [provider's documentation page](https://registry.terraform.io/providers/mmianl/powerdns/latest/docs)
 
