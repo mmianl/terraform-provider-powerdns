@@ -1105,7 +1105,8 @@ func (client *PowerDNSClient) AddZoneToView(ctx context.Context, viewName, zoneN
 		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
 			return fmt.Errorf("error adding zone %s to view %s: failed to decode error response: %w", zoneName, viewName, err)
 		}
-		return fmt.Errorf("error adding zone %s to view %s: %q", zoneName, viewName, errorResp.ErrorMsg)
+		return fmt.Errorf("error adding zone %s to view %s: %q%s", zoneName, viewName,
+			errorResp.ErrorMsg, viewsHint(resp.StatusCode))
 	}
 
 	return nil
@@ -1144,7 +1145,8 @@ func (client *PowerDNSClient) RemoveZoneFromView(ctx context.Context, viewName, 
 		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
 			return fmt.Errorf("error removing zone %s from view %s: failed to decode error response: %w", zoneName, viewName, err)
 		}
-		return fmt.Errorf("error removing zone %s from view %s: %q", zoneName, viewName, errorResp.ErrorMsg)
+		return fmt.Errorf("error removing zone %s from view %s: %q%s", zoneName, viewName,
+			errorResp.ErrorMsg, viewsHint(resp.StatusCode))
 	}
 }
 
@@ -1260,7 +1262,8 @@ func (client *PowerDNSClient) SetNetwork(ctx context.Context, ip, prefixlen, vie
 		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
 			return fmt.Errorf("error setting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
 		}
-		return fmt.Errorf("error setting network %s/%s: %q", ip, prefixlen, errorResp.ErrorMsg)
+		return fmt.Errorf("error setting network %s/%s: %q%s", ip, prefixlen,
+			errorResp.ErrorMsg, viewsHint(resp.StatusCode))
 	}
 
 	return nil
@@ -1304,7 +1307,8 @@ func (client *PowerDNSClient) DeleteNetwork(ctx context.Context, ip, prefixlen s
 		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
 			return fmt.Errorf("error deleting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
 		}
-		return fmt.Errorf("error deleting network %s/%s: %q", ip, prefixlen, errorResp.ErrorMsg)
+		return fmt.Errorf("error deleting network %s/%s: %q%s", ip, prefixlen,
+			errorResp.ErrorMsg, viewsHint(resp.StatusCode))
 	}
 }
 
@@ -1426,7 +1430,8 @@ func (client *RecursorClient) CreateForwardZone(ctx context.Context, zone *Recur
 		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
 			return fmt.Errorf("error creating forward zone %s", zone.Name)
 		}
-		return fmt.Errorf("error creating forward zone %s: %q", zone.Name, errorResp.ErrorMsg)
+		return fmt.Errorf("error creating forward zone %s: %q%s", zone.Name,
+			errorResp.ErrorMsg, recursorHint(errorResp.ErrorMsg))
 	}
 
 	return nil
@@ -1468,7 +1473,8 @@ func (client *RecursorClient) DeleteForwardZone(ctx context.Context, name string
 		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
 			return fmt.Errorf("error deleting forward zone %s", name)
 		}
-		return fmt.Errorf("error deleting forward zone %s: %q", name, errorResp.ErrorMsg)
+		return fmt.Errorf("error deleting forward zone %s: %q%s", name,
+			errorResp.ErrorMsg, recursorHint(errorResp.ErrorMsg))
 	}
 }
 
@@ -1555,7 +1561,8 @@ func (client *RecursorClient) SetConfig(ctx context.Context, name string, values
 		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
 			return fmt.Errorf("error setting recursor config %s", name)
 		}
-		return fmt.Errorf("error setting recursor config %s: %q", name, errorResp.ErrorMsg)
+		return fmt.Errorf("error setting recursor config %s: %q%s", name,
+			errorResp.ErrorMsg, recursorHint(errorResp.ErrorMsg))
 	}
 
 	return nil
