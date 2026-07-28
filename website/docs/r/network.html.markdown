@@ -8,6 +8,11 @@ description: |-
 
 # powerdns_network
 
+~> **Backend requirement** Views and networks are only implemented by the LMDB
+backend. On a generic SQL backend a read returns an empty list while a write
+fails with `422`, so this resource cannot be used there. Check the `launch=`
+setting on the server.
+
 Manages one PowerDNS authoritative network-to-view mapping.
 
 PowerDNS networks map client source networks to views. Use this resource together with `powerdns_view` to route clients from a CIDR range to a specific view.
