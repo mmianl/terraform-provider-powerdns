@@ -774,7 +774,15 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 			}
 		}()
 
-		if resp.StatusCode != http.StatusOK {
+		// A missing zone has no records, and callers rely on that: the
+		// CheckDestroy helpers ask for the records of a zone Terraform has
+		// just deleted. Anything other than 404 is a real failure and must not
+		// be decoded into an empty result — a 401 would otherwise read as "the
+		// zone is empty".
+		switch {
+		case resp.StatusCode == http.StatusNotFound:
+			return []Record{}, nil
+		case resp.StatusCode != http.StatusOK:
 			errorResp := new(errorResponse)
 			if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 				return nil, fmt.Errorf("error listing records for zone: %s", zone)
