@@ -8,6 +8,11 @@ description: |-
 
 # powerdns_recursor_config
 
+~> **Server requirement** The recursor only accepts writes when
+`api-config-dir` is set (`webservice.api_dir` in the YAML settings). It is
+unset by default, which makes the whole recursor API read-only and causes this
+resource to fail with `422`.
+
 Provides a PowerDNS recursor config resource for managing PowerDNS recursor configuration settings via the recursor API. This resource only supports `incoming.allow_from` and `incoming.allow_notify_from` as per the [PowerDNS Recursor documentation](https://doc.powerdns.com/recursor/http-api/endpoint-servers-config.html).
 
 ## Example Usage

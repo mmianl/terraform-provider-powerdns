@@ -8,6 +8,11 @@ description: |-
 
 # powerdns_recursor_forward_zone
 
+~> **Server requirement** The recursor only accepts writes when
+`api-config-dir` is set (`webservice.api_dir` in the YAML settings). It is
+unset by default, which makes the whole recursor API read-only and causes this
+resource to fail with `422`.
+
 Provides a PowerDNS recursor forward zone resource for managing DNS forwarding configuration via the recursor API.
 
 ## Example Usage
