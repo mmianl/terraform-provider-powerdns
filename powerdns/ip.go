@@ -332,3 +332,77 @@ func GetReverseZoneName(cidr string) (string, error) {
 	return zone, nil
 
 }
+
+// ValidateMasterAddress validates a single entry of the masters attribute.
+//
+// PowerDNS accepts four forms: a bare IPv4 or IPv6 address, and either of them
+// with a port. The bare-address check has to come first, because
+// net.SplitHostPort cannot distinguish an IPv6 address from a host-port pair —
+// both are full of colons. Splitting on ":" instead, as the previous
+// implementation did, rejected every IPv6 address.
+//
+// The error messages match the ones the create path used, so existing
+// expectations still hold.
+func ValidateMasterAddress(v interface{}, k string) (ws []string, errors []error) {
+	value, ok := v.(string)
+	if !ok {
+		errors = append(errors, fmt.Errorf("values in masters list attribute must be valid IPs"))
+		return
+	}
+
+	// A bare address of either family, including an IPv6 address with colons.
+	if net.ParseIP(value) != nil {
+		return
+	}
+
+	host, port, err := net.SplitHostPort(value)
+	if err != nil {
+		errors = append(errors, fmt.Errorf("values in masters list attribute must be valid IPs"))
+		return
+	}
+
+	if net.ParseIP(host) == nil {
+		errors = append(errors, fmt.Errorf("values in masters list attribute must be valid IPs"))
+		return
+	}
+
+	portNumber, err := strconv.Atoi(port)
+	if err != nil {
+		errors = append(errors, fmt.Errorf("error converting port value in masters attribute"))
+		return
+	}
+
+	if portNumber < 1 || portNumber > 65535 {
+		errors = append(errors, fmt.Errorf("invalid port value in masters attribute"))
+	}
+
+	return
+}
+
+// NormalizeMasterAddress renders a master entry in the canonical text form Go
+// produces for the parsed address, so configuration and state agree.
+//
+// PowerDNS stores the compressed form: a master written
+// fd92:81e1:e314:ea7b:0000:1234:5678:60ab is returned as
+// fd92:81e1:e314:ea7b:0:1234:5678:60ab. Without normalising, the configured
+// spelling and the stored one differ and every plan wants to change the zone.
+//
+// Anything that does not parse is returned unchanged; ValidateMasterAddress
+// reports it.
+func NormalizeMasterAddress(value string) string {
+	if ip := net.ParseIP(value); ip != nil {
+		return ip.String()
+	}
+
+	host, port, err := net.SplitHostPort(value)
+	if err != nil {
+		return value
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return value
+	}
+
+	return net.JoinHostPort(ip.String(), port)
+}

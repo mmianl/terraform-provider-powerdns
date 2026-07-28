@@ -630,3 +630,37 @@ func TestGetReverseZoneName(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMasterAddress(t *testing.T) {
+	valid := []string{
+		"192.0.2.1",
+		"2001:db8::1",
+		"fd92:81e1:e314:ea7b:0000:1234:5678:60ab",
+		"::1",
+		"192.0.2.1:53",
+		"[2001:db8::1]:53",
+		"192.0.2.1:1",
+		"192.0.2.1:65535",
+	}
+	for _, value := range valid {
+		if _, errs := ValidateMasterAddress(value, "masters"); len(errs) != 0 {
+			t.Errorf("%q should be a valid master, got: %v", value, errs)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"ns1.example.com",
+		"ns1.example.com:53",
+		"192.0.2.1:0",
+		"192.0.2.1:65536",
+		"192.0.2.1:dns",
+		"999.0.2.1",
+		"not an address",
+	}
+	for _, value := range invalid {
+		if _, errs := ValidateMasterAddress(value, "masters"); len(errs) == 0 {
+			t.Errorf("%q should not be a valid master", value)
+		}
+	}
+}
