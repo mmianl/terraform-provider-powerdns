@@ -13,6 +13,7 @@ import (
 // Config describes the configuration interface of this provider
 type Config struct {
 	ServerURL         string
+	ServerID          string
 	RecursorServerURL string
 	APIKey            string
 	ClientCertFile    string
@@ -68,6 +69,7 @@ func (c *Config) Clients(ctx context.Context) (*PowerDNSClient, *RecursorClient,
 	pdnsClient, err := NewPowerDNSClient(
 		ctx,
 		c.ServerURL,
+		c.ServerID,
 		c.APIKey,
 		tlsConfig,
 		c.CacheEnable,

@@ -20,6 +20,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func newTestClient(fn roundTripFunc) *PowerDNSClient {
 	return &PowerDNSClient{
+		serverID: "localhost",
 		BaseClient: &BaseClient{
 			ServerURL:  "https://pdns.example.test",
 			APIKey:     "test-key",
@@ -35,6 +36,66 @@ func jsonResponse(statusCode int, body string) *http.Response {
 		Body:       io.NopCloser(strings.NewReader(body)),
 		Header:     make(http.Header),
 	}
+}
+
+func TestAuthoritativeServerIDRoutes(t *testing.T) {
+	expectedPaths := []string{
+		"/api/v1/servers/zonecontrol-primary/zones",
+		"/api/v1/servers/zonecontrol-primary/zones/example.com./metadata",
+		"/api/v1/servers/zonecontrol-primary/zones/example.com.",
+		"/api/v1/servers/zonecontrol-primary/views/test-view",
+		"/api/v1/servers/zonecontrol-primary/networks",
+	}
+	responses := []*http.Response{
+		jsonResponse(http.StatusOK, `[]`),
+		jsonResponse(http.StatusOK, `[]`),
+		jsonResponse(http.StatusNoContent, ``),
+		jsonResponse(http.StatusOK, `{"id":"test-view","name":"test-view","zones":[]}`),
+		jsonResponse(http.StatusOK, `[]`),
+	}
+	requestIndex := 0
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		if requestIndex >= len(expectedPaths) {
+			t.Fatalf("unexpected request %s", r.URL.Path)
+		}
+		assert.Equal(t, expectedPaths[requestIndex], r.URL.Path)
+		response := responses[requestIndex]
+		requestIndex++
+		return response, nil
+	})
+	client.serverID = "zonecontrol-primary"
+
+	_, err := client.ListZones(context.Background())
+	assert.NoError(t, err)
+	_, err = client.ListZoneMetadata(context.Background(), "example.com.")
+	assert.NoError(t, err)
+	_, err = client.ReplaceRecordSet(context.Background(), "example.com.", ResourceRecordSet{Name: "www.example.com.", Type: "A"})
+	assert.NoError(t, err)
+	_, err = client.GetView(context.Background(), "test-view")
+	assert.NoError(t, err)
+	_, err = client.ListNetworks(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, len(expectedPaths), requestIndex)
+}
+
+func TestServerEndpointEscapesServerID(t *testing.T) {
+	client := &PowerDNSClient{serverID: "zonecontrol/primary"}
+	assert.Equal(t, "/servers/zonecontrol%2Fprimary/zones", client.serverEndpoint("/zones"))
+}
+
+func TestRecursorRoutesRemainLocalhost(t *testing.T) {
+	client := &RecursorClient{BaseClient: &BaseClient{
+		ServerURL:  "https://pdns.example.test",
+		APIKey:     "test-key",
+		APIVersion: 1,
+		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			assert.Equal(t, "/api/v1/servers/localhost/config/incoming.allow_from", r.URL.Path)
+			return jsonResponse(http.StatusOK, `{"name":"incoming.allow_from","value":["192.0.2.1"]}`), nil
+		})},
+	}}
+
+	_, err := client.GetConfig(context.Background(), "incoming.allow_from")
+	assert.NoError(t, err)
 }
 
 func TestListZoneMetadata(t *testing.T) {

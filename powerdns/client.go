@@ -325,20 +325,29 @@ func parseID(recID string) (string, string, error) {
 
 type PowerDNSClient struct {
 	*BaseClient
+	serverID string
 }
 
 // NewPowerDNSClient constructs the derived PowerDNS client used by the provider.
-func NewPowerDNSClient(ctx context.Context, serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*PowerDNSClient, error) {
+func NewPowerDNSClient(ctx context.Context, serverURL string, serverID string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*PowerDNSClient, error) {
 	base, err := NewBaseClient(serverURL, apiKey, configTLS, cacheEnable, cacheSizeMB, cacheTTL)
 	if err != nil {
 		return nil, err
 	}
-	return &PowerDNSClient{BaseClient: base}, nil
+	if serverID == "" {
+		serverID = "localhost"
+	}
+	return &PowerDNSClient{BaseClient: base, serverID: serverID}, nil
+}
+
+// serverEndpoint returns an API path scoped to the configured authoritative server.
+func (client *PowerDNSClient) serverEndpoint(path string) string {
+	return "/servers/" + url.PathEscape(client.serverID) + path
 }
 
 // ListZones returns all Zones of server, without records
 func (client *PowerDNSClient) ListZones(ctx context.Context) ([]ZoneInfo, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost/zones", nil)
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint("/zones"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +393,7 @@ func (client *PowerDNSClient) GetZoneWithRRsets(ctx context.Context, name string
 }
 
 func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeRRsets bool) (ZoneInfo, error) {
-	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
+	endpoint := client.serverEndpoint(fmt.Sprintf("/zones/%s", name))
 	if includeRRsets {
 		endpoint += "?rrsets=true"
 	}
@@ -427,7 +436,7 @@ func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeR
 
 // ZoneExists checks if requested zone exists
 func (client *PowerDNSClient) ZoneExists(ctx context.Context, name string) (bool, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/zones/%s", name)), nil)
 	if err != nil {
 		return false, err
 	}
@@ -465,7 +474,7 @@ func (client *PowerDNSClient) CreateZone(ctx context.Context, zoneInfo ZoneInfo)
 		return ZoneInfo{}, err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPost, "/servers/localhost/zones", body)
+	req, err := client.newRequest(ctx, http.MethodPost, client.serverEndpoint("/zones"), body)
 	if err != nil {
 		return ZoneInfo{}, err
 	}
@@ -508,7 +517,7 @@ func (client *PowerDNSClient) UpdateZone(ctx context.Context, name string, zoneI
 		return err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/zones/%s", name), body)
+	req, err := client.newRequest(ctx, http.MethodPut, client.serverEndpoint(fmt.Sprintf("/zones/%s", name)), body)
 	if err != nil {
 		return err
 	}
@@ -541,7 +550,7 @@ func (client *PowerDNSClient) UpdateZone(ctx context.Context, name string, zoneI
 
 // DeleteZone deletes a zone
 func (client *PowerDNSClient) DeleteZone(ctx context.Context, name string) error {
-	req, err := client.newRequest(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
+	req, err := client.newRequest(ctx, http.MethodDelete, client.serverEndpoint(fmt.Sprintf("/zones/%s", name)), nil)
 	if err != nil {
 		return err
 	}
@@ -573,7 +582,7 @@ func (client *PowerDNSClient) DeleteZone(ctx context.Context, name string) error
 
 // ListZoneMetadata returns all domain metadata entries for a zone.
 func (client *PowerDNSClient) ListZoneMetadata(ctx context.Context, zone string) ([]ZoneMetadata, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s/metadata", zone), nil)
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/zones/%s/metadata", zone)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +620,7 @@ func (client *PowerDNSClient) ListZoneMetadata(ctx context.Context, zone string)
 
 // GetZoneMetadata returns one metadata kind for a zone.
 func (client *PowerDNSClient) GetZoneMetadata(ctx context.Context, zone string, kind string) (ZoneMetadata, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s/metadata/%s", zone, kind), nil)
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/zones/%s/metadata/%s", zone, kind)), nil)
 	if err != nil {
 		return ZoneMetadata{}, err
 	}
@@ -657,7 +666,7 @@ func (client *PowerDNSClient) ReplaceZoneMetadata(ctx context.Context, zone stri
 	if err != nil {
 		return err
 	}
-	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/zones/%s/metadata/%s", zone, kind), body)
+	req, err := client.newRequest(ctx, http.MethodPut, client.serverEndpoint(fmt.Sprintf("/zones/%s/metadata/%s", zone, kind)), body)
 	if err != nil {
 		return err
 	}
@@ -691,7 +700,7 @@ func (client *PowerDNSClient) ReplaceZoneMetadata(ctx context.Context, zone stri
 
 // DeleteZoneMetadata deletes all values for a metadata kind in a zone.
 func (client *PowerDNSClient) DeleteZoneMetadata(ctx context.Context, zone string, kind string) error {
-	req, err := client.newRequest(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/zones/%s/metadata/%s", zone, kind), nil)
+	req, err := client.newRequest(ctx, http.MethodDelete, client.serverEndpoint(fmt.Sprintf("/zones/%s/metadata/%s", zone, kind)), nil)
 	if err != nil {
 		return err
 	}
@@ -754,7 +763,7 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 	}
 
 	if zoneInfo == nil {
-		req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s?rrsets=true", zone), nil)
+		req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/zones/%s?rrsets=true", zone)), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -897,7 +906,7 @@ func (client *PowerDNSClient) ReplaceRecordSet(ctx context.Context, zone string,
 		RecordSets: []ResourceRecordSet{rrSet},
 	})
 
-	req, err := client.newRequest(ctx, http.MethodPatch, fmt.Sprintf("/servers/localhost/zones/%s", zone), reqBody)
+	req, err := client.newRequest(ctx, http.MethodPatch, client.serverEndpoint(fmt.Sprintf("/zones/%s", zone)), reqBody)
 	if err != nil {
 		return "", err
 	}
@@ -940,7 +949,7 @@ func (client *PowerDNSClient) DeleteRecordSet(ctx context.Context, zone string, 
 		},
 	})
 
-	req, err := client.newRequest(ctx, http.MethodPatch, fmt.Sprintf("/servers/localhost/zones/%s", zone), reqBody)
+	req, err := client.newRequest(ctx, http.MethodPatch, client.serverEndpoint(fmt.Sprintf("/zones/%s", zone)), reqBody)
 	if err != nil {
 		return err
 	}
@@ -983,7 +992,7 @@ func (client *PowerDNSClient) DeleteRecordSetByID(ctx context.Context, zone stri
 
 // ListViews returns all configured views.
 func (client *PowerDNSClient) ListViews(ctx context.Context) ([]string, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost/views", nil)
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint("/views"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1020,7 +1029,7 @@ func (client *PowerDNSClient) ListViews(ctx context.Context) ([]string, error) {
 
 // GetView retrieves a specific view.
 func (client *PowerDNSClient) GetView(ctx context.Context, viewName string) (*View, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/views/%s", viewName), nil)
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/views/%s", viewName)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1070,7 +1079,7 @@ func (client *PowerDNSClient) AddZoneToView(ctx context.Context, viewName, zoneN
 		return err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPost, fmt.Sprintf("/servers/localhost/views/%s", viewName), body)
+	req, err := client.newRequest(ctx, http.MethodPost, client.serverEndpoint(fmt.Sprintf("/views/%s", viewName)), body)
 	if err != nil {
 		return err
 	}
@@ -1104,7 +1113,7 @@ func (client *PowerDNSClient) AddZoneToView(ctx context.Context, viewName, zoneN
 
 // RemoveZoneFromView removes a zone from a view.
 func (client *PowerDNSClient) RemoveZoneFromView(ctx context.Context, viewName, zoneName string) error {
-	req, err := client.newRequest(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/views/%s/%s", viewName, zoneName), nil)
+	req, err := client.newRequest(ctx, http.MethodDelete, client.serverEndpoint(fmt.Sprintf("/views/%s/%s", viewName, zoneName)), nil)
 	if err != nil {
 		return err
 	}
@@ -1141,7 +1150,7 @@ func (client *PowerDNSClient) RemoveZoneFromView(ctx context.Context, viewName, 
 
 // ListNetworks returns all configured networks.
 func (client *PowerDNSClient) ListNetworks(ctx context.Context) ([]Network, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, "/servers/localhost/networks", nil)
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint("/networks"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1178,7 +1187,7 @@ func (client *PowerDNSClient) ListNetworks(ctx context.Context) ([]Network, erro
 
 // GetNetwork retrieves a specific network definition.
 func (client *PowerDNSClient) GetNetwork(ctx context.Context, ip, prefixlen string) (*Network, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/networks/%s/%s", ip, prefixlen), nil)
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/networks/%s/%s", ip, prefixlen)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1224,7 +1233,7 @@ func (client *PowerDNSClient) SetNetwork(ctx context.Context, ip, prefixlen, vie
 		return err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/networks/%s/%s", ip, prefixlen), body)
+	req, err := client.newRequest(ctx, http.MethodPut, client.serverEndpoint(fmt.Sprintf("/networks/%s/%s", ip, prefixlen)), body)
 	if err != nil {
 		return err
 	}
@@ -1264,7 +1273,7 @@ func (client *PowerDNSClient) DeleteNetwork(ctx context.Context, ip, prefixlen s
 		return err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/networks/%s/%s", ip, prefixlen), body)
+	req, err := client.newRequest(ctx, http.MethodPut, client.serverEndpoint(fmt.Sprintf("/networks/%s/%s", ip, prefixlen)), body)
 	if err != nil {
 		return err
 	}

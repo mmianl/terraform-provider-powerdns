@@ -23,7 +23,8 @@ terraform {
 }
 
 provider "powerdns" {
-  server_url = "https://host:port/"           # authoritative server url (can also be provided with PDNS_SERVER_URL variable)
+  server_url          = "https://host:port/"  # authoritative server url (can also be provided with PDNS_SERVER_URL variable)
+  server_id           = "localhost"           # authoritative server ID (can also be provided with PDNS_SERVER_ID variable)
   recursor_server_url = "https://host:port/"  # recursor server url (can also be provided with PDNS_RECURSOR_SERVER_URL variable)
   api_key             = "secret"              # can also be provided with PDNS_API_KEY variable
 }
@@ -55,6 +56,7 @@ For detailed usage see [provider's documentation page](https://registry.terrafor
 The provider supports configuration via environment variables as an alternative to the provider block configuration:
 
 - `PDNS_SERVER_URL` - The URL of the PowerDNS Authoritative Server (e.g., `https://host:port/`)
+- `PDNS_SERVER_ID` - The ID of the PowerDNS Authoritative Server (defaults to `localhost`)
 - `PDNS_API_KEY` - The API key for authenticating with the PowerDNS server
 - `PDNS_RECURSOR_SERVER_URL` - The URL of the PowerDNS Recursor Server (e.g., `https://host:port/`)
 

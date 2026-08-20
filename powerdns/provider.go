@@ -42,6 +42,12 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_SERVER_URL", nil),
 				Description: "Base URL of the PowerDNS server (e.g., https://pdns.example.com). Can also be set via PDNS_SERVER_URL.",
 			},
+			"server_id": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PDNS_SERVER_ID", "localhost"),
+				Description: "ID of the PowerDNS Authoritative Server to manage. Can also be set via PDNS_SERVER_ID.",
+			},
 			"insecure_https": {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -114,6 +120,7 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 		ClientCertFile:    data.Get("client_cert_file").(string),
 		ClientCertKeyFile: data.Get("client_cert_key_file").(string),
 		ServerURL:         data.Get("server_url").(string),
+		ServerID:          data.Get("server_id").(string),
 		RecursorServerURL: data.Get("recursor_server_url").(string),
 		InsecureHTTPS:     data.Get("insecure_https").(bool),
 		CACertificate:     data.Get("ca_certificate").(string),
@@ -134,6 +141,7 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 	}
 
 	tflog.SetField(ctx, "server_url", config.ServerURL)
+	tflog.SetField(ctx, "server_id", config.ServerID)
 	if config.RecursorServerURL != "" {
 		tflog.SetField(ctx, "recursor_server_url", config.RecursorServerURL)
 	}
