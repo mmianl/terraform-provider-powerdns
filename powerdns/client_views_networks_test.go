@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -88,6 +89,43 @@ func TestAddZoneToView(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestAddZoneToViewBackendHint(t *testing.T) {
+	tests := []struct {
+		name          string
+		serverMessage string
+		wantHint      bool
+	}{
+		{
+			name:          "backend failure",
+			serverMessage: "Failed to add example.com. to view test-view",
+			wantHint:      true,
+		},
+		{
+			name:          "semantic failure",
+			serverMessage: "Empty view names are not allowed",
+			wantHint:      false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := newTestClient(func(r *http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusUnprocessableEntity, `{"error":`+strconv.Quote(test.serverMessage)+`}`), nil
+			})
+
+			err := client.AddZoneToView(context.Background(), "test-view", "example.com.")
+			if !assert.Error(t, err) {
+				return
+			}
+			if test.wantHint {
+				assert.ErrorContains(t, err, "LMDB")
+			} else {
+				assert.NotContains(t, err.Error(), "LMDB")
+			}
+		})
+	}
+}
+
 func TestRemoveZoneFromView(t *testing.T) {
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, http.MethodDelete, r.Method)
@@ -156,6 +194,43 @@ func TestSetNetwork(t *testing.T) {
 
 	err := client.SetNetwork(context.Background(), "192.0.2.0", "24", "blue")
 	assert.NoError(t, err)
+}
+
+func TestSetNetworkBackendHint(t *testing.T) {
+	tests := []struct {
+		name          string
+		serverMessage string
+		wantHint      bool
+	}{
+		{
+			name:          "backend failure",
+			serverMessage: "Failed to setup view blue for network 192.0.2.0/24",
+			wantHint:      true,
+		},
+		{
+			name:          "semantic failure",
+			serverMessage: "Invalid network format",
+			wantHint:      false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := newTestClient(func(r *http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusUnprocessableEntity, `{"error":`+strconv.Quote(test.serverMessage)+`}`), nil
+			})
+
+			err := client.SetNetwork(context.Background(), "192.0.2.0", "24", "blue")
+			if !assert.Error(t, err) {
+				return
+			}
+			if test.wantHint {
+				assert.ErrorContains(t, err, "LMDB")
+			} else {
+				assert.NotContains(t, err.Error(), "LMDB")
+			}
+		})
+	}
 }
 
 func TestDeleteNetwork(t *testing.T) {
