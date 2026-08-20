@@ -24,6 +24,7 @@ Use the navigation to the left to read about the available resources.
 provider "powerdns" {
   api_key    = "${var.pdns_api_key}"
   server_url = "${var.pdns_server_url}"
+  server_id  = "${var.pdns_server_id}"
 }
 
 # Create a record
@@ -40,6 +41,7 @@ The following arguments are supported:
 - `client_cert_file` - (Optional) The PowerDNS API client certificate file path. This can also be specified with `PDNS_CLIENT_CERT_FILE` environment variable. Using this also requires the `client_cert_key_file` argument to be defined.
 - `client_cert_key_file` - (Optional) The PowerDNS API client certificate key file path. This can also be specified with `PDNS_CLIENT_CERT_KEY_FILE` environment variable. Using this also requires the `client_cert_file` argument to be defined.
 - `server_url` - (Required) The address of PowerDNS server. This can also be specified with `PDNS_SERVER_URL` environment variable. When no schema is provided, the default is `https`.
+- `server_id` - (Optional) The PowerDNS Authoritative Server ID. This can also be specified with `PDNS_SERVER_ID` environment variable. Defaults to `localhost`.
 - `recursor_server_url` - (Optional) The address of PowerDNS Recursor server. This can also be specified with `PDNS_RECURSOR_SERVER_URL` environment variable. When no schema is provided, the default is `https`.
 - `ca_certificate` - (Optional) A valid path of a Root CA Certificate in PEM format _or_ the content of a Root CA certificate in PEM format. This can also be specified with `PDNS_CACERT` environment variable.
 - `insecure_https` - (Optional) Set this to `true` to disable verification of the PowerDNS server's TLS certificate. This can also be specified with the `PDNS_INSECURE_HTTPS` environment variable.
