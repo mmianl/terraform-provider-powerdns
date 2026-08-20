@@ -3,8 +3,6 @@ package powerdns
 import (
 	"context"
 	"fmt"
-	"net"
-	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -56,8 +54,23 @@ func resourcePDNSZone() *schema.Resource {
 			},
 
 			"masters": {
-				Type:     schema.TypeSet,
-				Elem:     &schema.Schema{Type: schema.TypeString},
+				Type: schema.TypeSet,
+				// TypeSet identities are computed before an element StateFunc runs.
+				// Hashing the canonical form makes expanded and compressed IPv6
+				// spellings represent the same set element.
+				Set: func(value interface{}) int {
+					return schema.HashString(NormalizeMasterAddress(value.(string)))
+				},
+				Elem: &schema.Schema{
+					Type:         schema.TypeString,
+					ValidateFunc: ValidateMasterAddress,
+					// PowerDNS returns IPv6 addresses in compressed form. Normalizing
+					// the configured value prevents a perpetual diff when users write
+					// an equivalent expanded address.
+					StateFunc: func(value interface{}) string {
+						return NormalizeMasterAddress(value.(string))
+					},
+				},
 				Optional: true,
 			},
 
@@ -73,29 +86,11 @@ func resourcePDNSZone() *schema.Resource {
 func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*ProviderClients)
 
+	// Each element is validated by the schema's ValidateFunc, which runs on
+	// create and on update alike.
 	var masters []string
-	for _, masterIPPort := range d.Get("masters").(*schema.Set).List() {
-		splitIPPort := strings.Split(masterIPPort.(string), ":")
-		// if there are more elements
-		if len(splitIPPort) > 2 {
-			return diag.FromErr(fmt.Errorf("more than one colon in <ip>:<port> string"))
-		}
-		// when there are exactly 2 elements in list, assume second is port and check the port range
-		if len(splitIPPort) == 2 {
-			port, err := strconv.Atoi(splitIPPort[1])
-			if err != nil {
-				return diag.FromErr(fmt.Errorf("error converting port value in masters attribute"))
-			}
-			if port < 1 || port > 65535 {
-				return diag.FromErr(fmt.Errorf("invalid port value in masters attribute"))
-			}
-		}
-		// first element is IP
-		masterIP := splitIPPort[0]
-		if net.ParseIP(masterIP) == nil {
-			return diag.FromErr(fmt.Errorf("values in masters list attribute must be valid IPs"))
-		}
-		masters = append(masters, masterIPPort.(string))
+	for _, masterAddress := range d.Get("masters").(*schema.Set).List() {
+		masters = append(masters, masterAddress.(string))
 	}
 
 	zoneInfo := ZoneInfo{

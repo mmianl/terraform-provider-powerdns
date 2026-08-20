@@ -126,6 +126,90 @@ func TestValidateFQDN(t *testing.T) {
 	}
 }
 
+func TestValidateMasterAddress(t *testing.T) {
+	valid := []string{
+		"192.0.2.1",
+		"2001:db8::1",
+		"fd92:81e1:e314:ea7b:0000:1234:5678:60ab",
+		"::1",
+		"192.0.2.1:53",
+		"[2001:db8::1]:53",
+		"192.0.2.1:1",
+		"192.0.2.1:65535",
+	}
+	for _, value := range valid {
+		if _, errs := ValidateMasterAddress(value, "masters"); len(errs) != 0 {
+			t.Errorf("%q should be a valid master, got: %v", value, errs)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"ns1.example.com",
+		"ns1.example.com:53",
+		"192.0.2.1:0",
+		"192.0.2.1:65536",
+		"192.0.2.1:dns",
+		"999.0.2.1",
+		"not an address",
+	}
+	for _, value := range invalid {
+		if _, errs := ValidateMasterAddress(value, "masters"); len(errs) == 0 {
+			t.Errorf("%q should not be a valid master", value)
+		}
+	}
+}
+
+func TestNormalizeMasterAddress(t *testing.T) {
+	tests := map[string]struct {
+		value    string
+		expected string
+	}{
+		"IPv4":           {value: "192.0.2.1", expected: "192.0.2.1"},
+		"IPv6":           {value: "fd92:81e1:e314:ea7b:0000:1234:5678:60ab", expected: "fd92:81e1:e314:ea7b:0:1234:5678:60ab"},
+		"IPv4 with port": {value: "192.0.2.1:53", expected: "192.0.2.1:53"},
+		"IPv6 with port": {value: "[fd92:81e1:e314:ea7b:0000:1234:5678:60ab]:53", expected: "[fd92:81e1:e314:ea7b:0:1234:5678:60ab]:53"},
+		"invalid":        {value: "example.com", expected: "example.com"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if actual := NormalizeMasterAddress(tt.value); actual != tt.expected {
+				t.Errorf("NormalizeMasterAddress(%q) = %q, want %q", tt.value, actual, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMasterAddressSetHashNormalizesIPv6(t *testing.T) {
+	masters := resourcePDNSZone().Schema["masters"]
+
+	tests := []struct {
+		name       string
+		expanded   string
+		compressed string
+	}{
+		{
+			name:       "bare address",
+			expanded:   "fd92:81e1:e314:ea7b:0000:1234:5678:60ab",
+			compressed: "fd92:81e1:e314:ea7b:0:1234:5678:60ab",
+		},
+		{
+			name:       "address with port",
+			expanded:   "[fd92:81e1:e314:ea7b:0000:1234:5678:60ab]:53",
+			compressed: "[fd92:81e1:e314:ea7b:0:1234:5678:60ab]:53",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, want := masters.Set(tt.expanded), masters.Set(tt.compressed); got != want {
+				t.Errorf("masters.Set(%q) = %d, want hash %d for %q", tt.expanded, got, want, tt.compressed)
+			}
+		})
+	}
+}
+
 func TestValidateCIDR(t *testing.T) {
 	tests := []struct {
 		name        string

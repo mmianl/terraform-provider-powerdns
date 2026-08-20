@@ -371,6 +371,30 @@ func TestAccPDNSZoneSlaveWithMastersWithPort(t *testing.T) {
 	})
 }
 
+func TestAccPDNSZoneSlaveWithIPv6Masters(t *testing.T) {
+	resourceName := "powerdns_zone.test-slave-with-ipv6-masters"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigSlaveWithIPv6Masters,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "masters.#", "2"),
+					// Stored in the canonical compressed form, which is also what
+					// PowerDNS returns — so a re-plan is empty.
+					resource.TestCheckTypeSetElemAttr(resourceName, "masters.*",
+						"fd92:81e1:e314:ea7b:0:1234:5678:60ab"),
+					resource.TestCheckTypeSetElemAttr(resourceName, "masters.*", "192.168.123.45"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccPDNSZoneSlaveWithMastersWithInvalidPort(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
@@ -637,4 +661,15 @@ resource "powerdns_zone" "test-master-with-masters" {
 	name = "master-with-masters.sysa.abc."
 	kind = "Master"
 	masters = ["1.1.1.1", "2.2.2.2"]
+}`
+
+const testPDNSZoneConfigSlaveWithIPv6Masters = `
+resource "powerdns_zone" "test-slave-with-ipv6-masters" {
+	name = "slave-with-ipv6-masters.sysa.abc."
+	kind = "Slave"
+	soa_edit_api = "DEFAULT"
+	masters = [
+		"fd92:81e1:e314:ea7b:0000:1234:5678:60ab",
+		"192.168.123.45",
+	]
 }`
