@@ -1106,7 +1106,7 @@ func (client *PowerDNSClient) AddZoneToView(ctx context.Context, viewName, zoneN
 			return fmt.Errorf("error adding zone %s to view %s: failed to decode error response: %w", zoneName, viewName, err)
 		}
 		return fmt.Errorf("error adding zone %s to view %s: %q%s", zoneName, viewName,
-			errorResp.ErrorMsg, viewsHint(resp.StatusCode))
+			errorResp.ErrorMsg, viewsHint(resp.StatusCode, errorResp.ErrorMsg))
 	}
 
 	return nil
@@ -1146,7 +1146,7 @@ func (client *PowerDNSClient) RemoveZoneFromView(ctx context.Context, viewName, 
 			return fmt.Errorf("error removing zone %s from view %s: failed to decode error response: %w", zoneName, viewName, err)
 		}
 		return fmt.Errorf("error removing zone %s from view %s: %q%s", zoneName, viewName,
-			errorResp.ErrorMsg, viewsHint(resp.StatusCode))
+			errorResp.ErrorMsg, viewsHint(resp.StatusCode, errorResp.ErrorMsg))
 	}
 }
 
@@ -1263,7 +1263,7 @@ func (client *PowerDNSClient) SetNetwork(ctx context.Context, ip, prefixlen, vie
 			return fmt.Errorf("error setting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
 		}
 		return fmt.Errorf("error setting network %s/%s: %q%s", ip, prefixlen,
-			errorResp.ErrorMsg, viewsHint(resp.StatusCode))
+			errorResp.ErrorMsg, viewsHint(resp.StatusCode, errorResp.ErrorMsg))
 	}
 
 	return nil
@@ -1308,7 +1308,7 @@ func (client *PowerDNSClient) DeleteNetwork(ctx context.Context, ip, prefixlen s
 			return fmt.Errorf("error deleting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
 		}
 		return fmt.Errorf("error deleting network %s/%s: %q%s", ip, prefixlen,
-			errorResp.ErrorMsg, viewsHint(resp.StatusCode))
+			errorResp.ErrorMsg, viewsHint(resp.StatusCode, errorResp.ErrorMsg))
 	}
 }
 

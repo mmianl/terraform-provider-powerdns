@@ -11,19 +11,29 @@ import (
 // server's own wording does not point at the fix.
 
 const (
-	viewsBackendHint = "\n\nViews and networks are only implemented by the LMDB backend. " +
-		"The generic SQL backends have no tables for them, so a read returns an empty " +
-		"list while a write fails like this. Check the launch= setting on the server."
+	viewsBackendHint = "\n\nPowerDNS authoritative views and networks require the LMDB backend, " +
+		"views=yes, and a non-zero zone-cache-refresh-interval. Check these settings " +
+		"on the server."
 
 	recursorAPIDirHint = "\n\nThe recursor only accepts writes when api-config-dir is set " +
 		"(webservice.api_dir in the YAML settings). It is unset by default, which makes " +
 		"the whole recursor API read-only."
 )
 
-// viewsHint explains the backend requirement behind a rejected view or network
-// write. Only 422 is annotated: a 404 or 401 means something else entirely.
-func viewsHint(statusCode int) string {
-	if statusCode == http.StatusUnprocessableEntity {
+// viewsHint explains the backend requirement only when PowerDNS reports the
+// failure emitted after a view-capable backend operation returns false. Other
+// 422 responses describe semantic errors and must retain their original meaning.
+func viewsHint(statusCode int, serverMessage string) string {
+	if statusCode != http.StatusUnprocessableEntity {
+		return ""
+	}
+
+	switch {
+	case strings.HasPrefix(serverMessage, "Failed to add ") && strings.Contains(serverMessage, " to view "):
+		return viewsBackendHint
+	case strings.HasPrefix(serverMessage, "Failed to remove ") && strings.Contains(serverMessage, " from view "):
+		return viewsBackendHint
+	case strings.HasPrefix(serverMessage, "Failed to setup view ") && strings.Contains(serverMessage, " for network "):
 		return viewsBackendHint
 	}
 	return ""
