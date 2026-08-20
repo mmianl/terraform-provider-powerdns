@@ -8,6 +8,11 @@ description: |-
 
 # powerdns_network
 
+~> **Server requirements** PowerDNS authoritative views and networks require
+the LMDB backend, `views=yes`, and a non-zero `zone-cache-refresh-interval`.
+Generic SQL backends do not implement views or networks, so this resource
+cannot be used with them.
+
 Manages one PowerDNS authoritative network-to-view mapping.
 
 PowerDNS networks map client source networks to views. Use this resource together with `powerdns_view` to route clients from a CIDR range to a specific view.

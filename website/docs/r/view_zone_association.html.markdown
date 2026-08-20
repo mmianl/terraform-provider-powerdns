@@ -8,6 +8,11 @@ description: |-
 
 # powerdns_view_zone_association
 
+~> **Server requirements** PowerDNS authoritative views and networks require
+the LMDB backend, `views=yes`, and a non-zero `zone-cache-refresh-interval`.
+Generic SQL backends do not implement views or networks, so this resource
+cannot be used with them.
+
 Manages one PowerDNS authoritative view-to-zone association.
 
 Use this resource together with `powerdns_view` to manage each zone membership independently. This is useful when multiple Terraform resources need to add or remove zones from the same view without replacing the whole view membership set.
