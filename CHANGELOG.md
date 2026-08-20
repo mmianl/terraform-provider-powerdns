@@ -1,3 +1,17 @@
+# 2.4.0 (August 20, 2026)
+
+FIXES:
+  * **Correct the `dnssec` JSON tag on `ZoneInfo`** ([#77](https://github.com/mmianl/terraform-provider-powerdns/pull/77), @dantte-lp)
+  * **Correct the resource list in the README** ([#78](https://github.com/mmianl/terraform-provider-powerdns/pull/78), @dantte-lp)
+  * **Handle API errors when listing zones and records, including missing zones with no records** ([#80](https://github.com/mmianl/terraform-provider-powerdns/pull/80), @dantte-lp)
+
+FEATURES:
+  * **Dependency updates** ([#72](https://github.com/mmianl/terraform-provider-powerdns/pull/72), @dependabot)
+  * **Dependency updates** ([#74](https://github.com/mmianl/terraform-provider-powerdns/pull/74), @dependabot)
+  * **Explicitly require TLS 1.2 or later for PowerDNS API connections** ([#76](https://github.com/mmianl/terraform-provider-powerdns/pull/76), @dantte-lp)
+  * **Validate `powerdns_recursor_config` setting names during planning, limiting them to settings writable through the PowerDNS API** ([#79](https://github.com/mmianl/terraform-provider-powerdns/pull/79), @dantte-lp)
+  * **Dependency updates** ([#82](https://github.com/mmianl/terraform-provider-powerdns/pull/82), @dependabot)
+
 # 2.3.0 (June 4, 2026)
 
 FEATURES:
