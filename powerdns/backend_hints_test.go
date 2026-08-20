@@ -7,14 +7,25 @@ import (
 )
 
 func TestViewsHint(t *testing.T) {
-	if hint := viewsHint(http.StatusUnprocessableEntity); !strings.Contains(hint, "LMDB") {
-		t.Errorf("a 422 should mention the LMDB requirement, got: %q", hint)
+	backendFailures := []string{
+		"Failed to add example.com. to view internal",
+		"Failed to remove example.com. from view internal",
+		"Failed to setup view internal for network 192.0.2.0/24",
+	}
+	for _, message := range backendFailures {
+		if hint := viewsHint(http.StatusUnprocessableEntity, message); !strings.Contains(hint, "LMDB") {
+			t.Errorf("a backend failure should mention the LMDB requirement, got: %q", hint)
+		}
 	}
 
 	for _, code := range []int{http.StatusOK, http.StatusNotFound, http.StatusUnauthorized} {
-		if hint := viewsHint(code); hint != "" {
+		if hint := viewsHint(code, backendFailures[0]); hint != "" {
 			t.Errorf("status %d should not be annotated, got: %q", code, hint)
 		}
+	}
+
+	if hint := viewsHint(http.StatusUnprocessableEntity, "Empty view names are not allowed"); hint != "" {
+		t.Errorf("a semantic 422 should not be annotated, got: %q", hint)
 	}
 }
 
