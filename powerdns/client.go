@@ -209,7 +209,7 @@ type ZoneInfo struct {
 	Account            string              `json:"account"`
 	Nameservers        []string            `json:"nameservers,omitempty"`
 	Masters            []string            `json:"masters,omitempty"`
-	SoaEditAPI         string              `json:"soa_edit_api"`
+	SoaEditAPI         string              `json:"soa_edit_api,omitempty"`
 }
 
 // ZoneInfoUpd is a limited subset for supported updates

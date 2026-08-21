@@ -59,9 +59,15 @@ func resourcePDNSRecordSOA() *schema.Resource {
 				Description:  "Responsible person email in DNS format (RNAME). Must be a fully qualified domain name ending with a trailing dot.",
 			},
 			"serial": {
-				Type:        schema.TypeInt,
-				Optional:    true,
-				Computed:    true,
+				Type:     schema.TypeInt,
+				Optional: true,
+				Computed: true,
+				// Configuring 0 means "let soa_edit_api manage this", so whatever
+				// PowerDNS actually computes and stores should never be treated as
+				// drift against that 0.
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					return new == "0"
+				},
 				Description: "SOA serial number. If omitted or 0, PowerDNS manages it via soa_edit_api.",
 			},
 			"refresh": {

@@ -77,6 +77,7 @@ func resourcePDNSZone() *schema.Resource {
 			"soa_edit_api": {
 				Type:     schema.TypeString,
 				Optional: true,
+				Computed: true,
 				ForceNew: false,
 			},
 		},
