@@ -15,7 +15,9 @@ func TestGetView(t *testing.T) {
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "/api/v1/servers/localhost/views/test-view", r.URL.Path)
-		return jsonResponse(http.StatusOK, `{"id":"test-view","name":"test-view","zones":[]}`), nil
+		// The real API returns only {"zones": [...]} - no "id"/"name" key at
+		// all. GetView must fall back to the requested view name itself.
+		return jsonResponse(http.StatusOK, `{"zones":[]}`), nil
 	})
 
 	view, err := client.GetView(context.Background(), "test-view")
@@ -30,7 +32,7 @@ func TestGetViewWithZoneAssociations(t *testing.T) {
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "/api/v1/servers/localhost/views/test-view", r.URL.Path)
-		return jsonResponse(http.StatusOK, `{"id":"test-view","name":"test-view","zones":["example.com.","example.com..internal"]}`), nil
+		return jsonResponse(http.StatusOK, `{"zones":["example.com.","example.com..internal"]}`), nil
 	})
 
 	view, err := client.GetView(context.Background(), "test-view")
