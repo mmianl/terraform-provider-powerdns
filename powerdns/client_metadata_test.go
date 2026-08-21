@@ -51,7 +51,7 @@ func TestAuthoritativeServerIDRoutes(t *testing.T) {
 		jsonResponse(http.StatusOK, `[]`),
 		jsonResponse(http.StatusNoContent, ``),
 		jsonResponse(http.StatusOK, `{"zones":[]}`),
-		jsonResponse(http.StatusOK, `[]`),
+		jsonResponse(http.StatusOK, `{"networks":[]}`),
 	}
 	requestIndex := 0
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
