@@ -71,7 +71,8 @@ func resourcePDNSRecord() *schema.Resource {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				ForceNew:    true,
-				Description: "For A and AAAA records, if true, create corresponding PTR.",
+				Deprecated:  "PowerDNS removed API support for automatic PTR record creation in Authoritative Server 4.4.0; setting this has no effect. Manage the PTR record explicitly with the powerdns_ptr_record resource instead.",
+				Description: "Deprecated and non-functional: PowerDNS has not honored this flag since Authoritative Server 4.4.0. Use the powerdns_ptr_record resource instead.",
 			},
 		},
 	}
