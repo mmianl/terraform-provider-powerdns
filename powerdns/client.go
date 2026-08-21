@@ -1019,12 +1019,14 @@ func (client *PowerDNSClient) ListViews(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("error listing views: %q", errorResp.ErrorMsg)
 	}
 
-	var views []string
-	if err := json.NewDecoder(resp.Body).Decode(&views); err != nil {
+	var wrapper struct {
+		Views []string `json:"views"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
 		return nil, err
 	}
 
-	return views, nil
+	return wrapper.Views, nil
 }
 
 // GetView retrieves a specific view.
@@ -1177,10 +1179,13 @@ func (client *PowerDNSClient) ListNetworks(ctx context.Context) ([]Network, erro
 		return nil, fmt.Errorf("error listing networks: %q", errorResp.ErrorMsg)
 	}
 
-	var networks []Network
-	if err := json.NewDecoder(resp.Body).Decode(&networks); err != nil {
+	var wrapper struct {
+		Networks []Network `json:"networks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
 		return nil, err
 	}
+	networks := wrapper.Networks
 
 	return networks, nil
 }

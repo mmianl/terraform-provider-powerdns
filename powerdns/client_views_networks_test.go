@@ -118,7 +118,8 @@ func TestListNetworks(t *testing.T) {
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "/api/v1/servers/localhost/networks", r.URL.Path)
-		return jsonResponse(http.StatusOK, `[{"network":"192.0.2.0/24","view":"blue"},{"network":"2001:db8::/32","view":"green"}]`), nil
+		// PowerDNS wraps the list in a "networks" object, not a bare array.
+		return jsonResponse(http.StatusOK, `{"networks":[{"network":"192.0.2.0/24","view":"blue"},{"network":"2001:db8::/32","view":"green"}]}`), nil
 	})
 
 	networks, err := client.ListNetworks(context.Background())
@@ -129,6 +130,21 @@ func TestListNetworks(t *testing.T) {
 		{Network: "192.0.2.0/24", View: "blue"},
 		{Network: "2001:db8::/32", View: "green"},
 	}, networks)
+}
+
+func TestListViews(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v1/servers/localhost/views", r.URL.Path)
+		// PowerDNS wraps the list in a "views" object, not a bare array.
+		return jsonResponse(http.StatusOK, `{"views":["blue","green"]}`), nil
+	})
+
+	views, err := client.ListViews(context.Background())
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, []string{"blue", "green"}, views)
 }
 
 func TestSetNetwork(t *testing.T) {
