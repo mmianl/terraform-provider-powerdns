@@ -50,7 +50,7 @@ func TestAuthoritativeServerIDRoutes(t *testing.T) {
 		jsonResponse(http.StatusOK, `[]`),
 		jsonResponse(http.StatusOK, `[]`),
 		jsonResponse(http.StatusNoContent, ``),
-		jsonResponse(http.StatusOK, `{"id":"test-view","name":"test-view","zones":[]}`),
+		jsonResponse(http.StatusOK, `{"zones":[]}`),
 		jsonResponse(http.StatusOK, `[]`),
 	}
 	requestIndex := 0
