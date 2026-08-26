@@ -1,3 +1,18 @@
+# 2.5.0 (August 27, 2026)
+
+FEATURES:
+  * **Support IPv6 addresses in the `masters` attribute** ([#73](https://github.com/mmianl/terraform-provider-powerdns/pull/73), @dantte-lp, @mmianl)
+  * **Add configurable authoritative PowerDNS server ID** ([#83](https://github.com/mmianl/terraform-provider-powerdns/pull/83), @mmianl)
+  * **Dependency updates** ([#92](https://github.com/mmianl/terraform-provider-powerdns/pull/92), @dependabot)
+
+FIXES:
+  * **Only show authoritative views and networks backend guidance for relevant API errors** ([#81](https://github.com/mmianl/terraform-provider-powerdns/pull/81), @dantte-lp)
+  * **Do not send an empty `soa_edit_api` value when creating a zone** ([#89](https://github.com/mmianl/terraform-provider-powerdns/pull/89), @MrKeiKun)
+  * **Correctly decode wrapped API responses when listing views and networks** ([#90](https://github.com/mmianl/terraform-provider-powerdns/pull/90), @MrKeiKun)
+
+DEPRECATIONS:
+  * **Deprecate `set_ptr` on `powerdns_record`**, as PowerDNS removed API support in version 4.4.0 ([#88](https://github.com/mmianl/terraform-provider-powerdns/pull/88), @MrKeiKun)
+
 # 2.4.0 (August 20, 2026)
 
 FIXES:
