@@ -732,10 +732,25 @@ func (client *PowerDNSClient) DeleteZoneMetadata(ctx context.Context, zone strin
 	return nil
 }
 
+// zoneCacheKey is the cache key for a zone. DNS names are case-insensitive, so
+// "example.com." and "Example.COM." name one zone and must share one entry:
+// keying on the caller's spelling would let a write under one spelling leave a
+// stale entry under another. Only the zone part is lowered - a PowerDNS zone
+// variant ("example.com..internal") keeps its variant suffix verbatim, since
+// that is an API identifier rather than a DNS name.
+func zoneCacheKey(zone string) []byte {
+	name, variant, hasVariant := strings.Cut(zone, "..")
+	key := strings.ToLower(name)
+	if hasVariant {
+		key += ".." + variant
+	}
+	return []byte(key)
+}
+
 // GetZoneInfoFromCache return ZoneInfo struct
 func (client *PowerDNSClient) GetZoneInfoFromCache(ctx context.Context, zone string) (*ZoneInfo, error) {
 	if client.CacheEnable {
-		cacheZoneInfo, err := client.Cache.Get([]byte(zone))
+		cacheZoneInfo, err := client.Cache.Get(zoneCacheKey(zone))
 		if err != nil {
 			return nil, err
 		}
@@ -810,7 +825,7 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 				return nil, err
 			}
 
-			if err := client.Cache.Set([]byte(zone), cacheValue, client.CacheTTL); err != nil {
+			if err := client.Cache.Set(zoneCacheKey(zone), cacheValue, client.CacheTTL); err != nil {
 				return nil, fmt.Errorf("the cache for REST API requests is enabled but the size isn't enough: cacheSize: %db \n %s",
 					DefaultCacheSize, err)
 			}
