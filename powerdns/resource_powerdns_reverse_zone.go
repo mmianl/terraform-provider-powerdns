@@ -145,36 +145,20 @@ func resourcePDNSReverseZoneUpdate(ctx context.Context, d *schema.ResourceData, 
 	if d.HasChange("nameservers") {
 		tflog.Debug(ctx, "Updating nameservers for reverse zone")
 
-		zone, err := client.PDNS.GetZone(ctx, zoneName)
-		if err != nil {
-			return diag.FromErr(fmt.Errorf("couldn't fetch zone: %w", err))
-		}
+		// Only the NS records change here. Echoing the zone's unchanged Kind,
+		// Account and SoaEditAPI back through UpdateZone cost a fetch and a
+		// write without altering anything.
+		nameservers := expandStringList(d.Get("nameservers").([]interface{}))
 
-		// Update nameservers in zone object
-		zone.Nameservers = expandStringList(d.Get("nameservers").([]interface{}))
-
-		// Build update request
-		zoneInfo := ZoneInfoUpd{
-			Name:       zoneName,
-			Kind:       zone.Kind,
-			Account:    zone.Account,
-			SoaEditAPI: zone.SoaEditAPI,
-		}
-
-		if err := client.PDNS.UpdateZone(ctx, zoneName, zoneInfo); err != nil {
-			return diag.FromErr(fmt.Errorf("error updating zone: %w", err))
-		}
-
-		// Update NS records to reflect nameserver list
 		rrSet := ResourceRecordSet{
 			Name:       zoneName,
 			Type:       "NS",
 			TTL:        3600,
 			ChangeType: "REPLACE",
-			Records:    make([]Record, len(zone.Nameservers)),
+			Records:    make([]Record, len(nameservers)),
 		}
 
-		for i, ns := range zone.Nameservers {
+		for i, ns := range nameservers {
 			rrSet.Records[i] = Record{
 				Content: ns,
 				TTL:     3600,

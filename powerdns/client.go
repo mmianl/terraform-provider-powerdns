@@ -25,12 +25,6 @@ var DefaultSchema = "https"
 // <scheme>://<host>[:port]
 // with no trailing /
 func sanitizeURL(URL string) (string, error) {
-	cleanURL := ""
-	host := ""
-	schema := ""
-
-	var err error
-
 	if len(URL) == 0 {
 		return "", fmt.Errorf("no URL provided")
 	}
@@ -40,31 +34,27 @@ func sanitizeURL(URL string) (string, error) {
 		return "", fmt.Errorf("error while trying to parse URL: %s", err)
 	}
 
-	if len(parsedURL.Scheme) == 0 {
-		schema = DefaultSchema
-	} else {
-		if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
-			schema = parsedURL.Scheme
-		} else {
-			schema = DefaultSchema
-		}
+	// Anything that is not plain HTTP falls back to the default rather than
+	// being rejected, so a bare "host:8081" still reaches the server.
+	schema := DefaultSchema
+	switch parsedURL.Scheme {
+	case "http", "https":
+		schema = parsedURL.Scheme
 	}
 
-	if len(parsedURL.Host) == 0 {
-		tryout, _ := url.Parse(schema + "://" + URL)
-
-		if len(tryout.Host) == 0 {
+	host := parsedURL.Host
+	if len(host) == 0 {
+		// Without a scheme, url.Parse treats the whole value as a path, so
+		// reparse it with one attached to recover the host.
+		tryout, err := url.Parse(schema + "://" + URL)
+		if err != nil || len(tryout.Host) == 0 {
 			return "", fmt.Errorf("unable to find a hostname in '%s'", URL)
 		}
 
 		host = tryout.Host
-	} else {
-		host = parsedURL.Host
 	}
 
-	cleanURL = schema + "://" + host
-
-	return cleanURL, nil
+	return schema + "://" + host, nil
 }
 
 // BaseClient contains shared HTTP / auth / cache logic for PowerDNS-style APIs.
@@ -580,17 +570,35 @@ func (client *PowerDNSClient) ListRecordsByID(ctx context.Context, zone string, 
 }
 
 // GetRecordSetByID returns the full RRset (including comments) for the given ID.
+//
+// The lookup is pushed to the server with rrset_name/rrset_type so a zone with
+// thousands of RRsets does not have to be transferred and decoded to find one.
+// A server that predates those parameters ignores them and returns the whole
+// zone, which the same match below narrows down, so no version check is needed.
 func (client *PowerDNSClient) GetRecordSetByID(ctx context.Context, zone string, recID string) (*ResourceRecordSet, error) {
 	name, tpe, err := parseID(recID)
 	if err != nil {
 		return nil, err
 	}
 
-	zoneInfo, err := client.GetZoneWithRRsets(ctx, zone)
+	query := url.Values{}
+	query.Set("rrsets", "true")
+	query.Set("rrset_name", name)
+	query.Set("rrset_type", tpe)
+
+	var zoneInfo ZoneInfo
+	_, err = client.do(ctx, requestOptions{
+		endpoint:  client.zoneEndpoint(zone) + "?" + query.Encode(),
+		out:       &zoneInfo,
+		describe:  fmt.Sprintf("getting zone: %s", zone),
+		logFields: map[string]any{"zone": zone, "rrsetId": recID},
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	// The filter is matched case-insensitively by the server, but an older
+	// server ignores it outright, so the match still has to be made here.
 	for i := range zoneInfo.ResourceRecordSets {
 		rrSet := &zoneInfo.ResourceRecordSets[i]
 		if strings.EqualFold(rrSet.Name, name) && strings.EqualFold(rrSet.Type, tpe) {

@@ -177,7 +177,12 @@ func TestGetRecordSetByIDWithComments(t *testing.T) {
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "/api/v1/servers/localhost/zones/example.com.", r.URL.Path)
-		assert.Equal(t, "rrsets=true", r.URL.RawQuery)
+		// The RRset lookup is filtered server-side so a large zone is not
+		// transferred in full just to find one record set.
+		query := r.URL.Query()
+		assert.Equal(t, "true", query.Get("rrsets"))
+		assert.Equal(t, "www.example.com.", query.Get("rrset_name"))
+		assert.Equal(t, "A", query.Get("rrset_type"))
 		return jsonResponse(http.StatusOK, `{
 			"name":"example.com.",
 			"rrsets":[
