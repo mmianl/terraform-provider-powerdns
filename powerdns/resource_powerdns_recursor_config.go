@@ -65,7 +65,7 @@ func resourcePDNSRecursorConfigCreate(ctx context.Context, d *schema.ResourceDat
 		values[i] = v.(string)
 	}
 
-	tflog.SetField(ctx, "recursor_config_name", name)
+	ctx = tflog.SetField(ctx, "recursor_config_name", name)
 	tflog.Debug(ctx, "Creating recursor config")
 
 	if err := recursorClient.SetConfig(ctx, name, values); err != nil {
@@ -84,7 +84,7 @@ func resourcePDNSRecursorConfigRead(ctx context.Context, d *schema.ResourceData,
 	}
 
 	name := d.Id()
-	tflog.SetField(ctx, "recursor_config_name", name)
+	ctx = tflog.SetField(ctx, "recursor_config_name", name)
 	tflog.Debug(ctx, "Reading recursor config")
 
 	setting, err := recursorClient.GetConfig(ctx, name)
@@ -122,7 +122,7 @@ func resourcePDNSRecursorConfigUpdate(ctx context.Context, d *schema.ResourceDat
 		values[i] = v.(string)
 	}
 
-	tflog.SetField(ctx, "recursor_config_name", name)
+	ctx = tflog.SetField(ctx, "recursor_config_name", name)
 	tflog.Debug(ctx, "Updating recursor config")
 
 	if err := recursorClient.SetConfig(ctx, name, values); err != nil {
@@ -134,7 +134,7 @@ func resourcePDNSRecursorConfigUpdate(ctx context.Context, d *schema.ResourceDat
 
 func resourcePDNSRecursorConfigDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	name := d.Id()
-	tflog.SetField(ctx, "recursor_config_name", name)
+	ctx = tflog.SetField(ctx, "recursor_config_name", name)
 	tflog.Debug(ctx, "Deleting recursor config")
 
 	// The API only supports GET and PUT for config, so delete will do nothing

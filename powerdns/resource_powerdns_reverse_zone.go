@@ -66,7 +66,7 @@ func resourcePDNSReverseZoneCreate(ctx context.Context, d *schema.ResourceData, 
 	client := meta.(*ProviderClients)
 
 	cidr := d.Get("cidr").(string)
-	tflog.SetField(ctx, "cidr", cidr)
+	ctx = tflog.SetField(ctx, "cidr", cidr)
 	tflog.Debug(ctx, "Creating reverse zone")
 
 	zoneName, err := GetReverseZoneName(cidr)
@@ -95,7 +95,7 @@ func resourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, me
 	client := meta.(*ProviderClients)
 	zoneName := d.Id()
 
-	tflog.SetField(ctx, "zone", zoneName)
+	ctx = tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Reading reverse zone")
 
 	zone, err := client.PDNS.GetZone(ctx, zoneName)
@@ -141,7 +141,7 @@ func resourcePDNSReverseZoneUpdate(ctx context.Context, d *schema.ResourceData, 
 	client := meta.(*ProviderClients)
 	zoneName := d.Id()
 
-	tflog.SetField(ctx, "zone", zoneName)
+	ctx = tflog.SetField(ctx, "zone", zoneName)
 	if d.HasChange("nameservers") {
 		tflog.Debug(ctx, "Updating nameservers for reverse zone")
 
@@ -195,7 +195,7 @@ func resourcePDNSReverseZoneDelete(ctx context.Context, d *schema.ResourceData, 
 	client := meta.(*ProviderClients)
 	zoneName := d.Id()
 
-	tflog.SetField(ctx, "zone", zoneName)
+	ctx = tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Deleting reverse zone")
 
 	if err := client.PDNS.DeleteZone(ctx, zoneName); err != nil {

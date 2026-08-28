@@ -111,8 +111,8 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 		}
 	}
 
-	tflog.SetField(ctx, "zone_name", zoneInfo.Name)
-	tflog.SetField(ctx, "zone_kind", zoneInfo.Kind)
+	ctx = tflog.SetField(ctx, "zone_name", zoneInfo.Name)
+	ctx = tflog.SetField(ctx, "zone_kind", zoneInfo.Kind)
 	tflog.Debug(ctx, "Creating PowerDNS Zone")
 
 	createdZoneInfo, err := client.PDNS.CreateZone(ctx, zoneInfo)
@@ -128,7 +128,7 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*ProviderClients)
 
-	tflog.SetField(ctx, "zone_id", d.Id())
+	ctx = tflog.SetField(ctx, "zone_id", d.Id())
 	tflog.Debug(ctx, "Reading PowerDNS Zone")
 
 	zoneInfo, err := client.PDNS.GetZone(ctx, d.Id())
@@ -168,7 +168,7 @@ func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta inte
 }
 
 func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	tflog.SetField(ctx, "zone_id", d.Id())
+	ctx = tflog.SetField(ctx, "zone_id", d.Id())
 	tflog.Debug(ctx, "Updating PowerDNS Zone")
 
 	client := meta.(*ProviderClients)
@@ -199,7 +199,7 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 func resourcePDNSZoneDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*ProviderClients)
 
-	tflog.SetField(ctx, "zone_id", d.Id())
+	ctx = tflog.SetField(ctx, "zone_id", d.Id())
 	tflog.Debug(ctx, "Deleting PowerDNS Zone")
 
 	if err := client.PDNS.DeleteZone(ctx, d.Id()); err != nil {
