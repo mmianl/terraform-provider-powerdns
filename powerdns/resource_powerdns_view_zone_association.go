@@ -2,6 +2,7 @@ package powerdns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,8 +53,8 @@ func resourcePDNSViewZoneAssociationCreate(ctx context.Context, d *schema.Resour
 	view := d.Get("view").(string)
 	zone := d.Get("zone").(string)
 
-	tflog.SetField(ctx, "view", view)
-	tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "view", view)
+	ctx = tflog.SetField(ctx, "zone", zone)
 	tflog.Debug(ctx, "Creating PowerDNS view zone association")
 
 	if err := client.PDNS.AddZoneToView(ctx, view, zone); err != nil {
@@ -71,13 +72,13 @@ func resourcePDNSViewZoneAssociationRead(ctx context.Context, d *schema.Resource
 		return diag.FromErr(err)
 	}
 
-	tflog.SetField(ctx, "view", view)
-	tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "view", view)
+	ctx = tflog.SetField(ctx, "zone", zone)
 	tflog.Debug(ctx, "Reading PowerDNS view zone association")
 
 	pdnsView, err := client.PDNS.GetView(ctx, view)
 	if err != nil {
-		if err == ErrNotFound {
+		if errors.Is(err, ErrNotFound) {
 			d.SetId("")
 			return nil
 		}
@@ -107,11 +108,11 @@ func resourcePDNSViewZoneAssociationDelete(ctx context.Context, d *schema.Resour
 		return diag.FromErr(err)
 	}
 
-	tflog.SetField(ctx, "view", view)
-	tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "view", view)
+	ctx = tflog.SetField(ctx, "zone", zone)
 	tflog.Debug(ctx, "Deleting PowerDNS view zone association")
 
-	if err := client.PDNS.RemoveZoneFromView(ctx, view, zone); err != nil && err != ErrNotFound {
+	if err := client.PDNS.RemoveZoneFromView(ctx, view, zone); err != nil && !errors.Is(err, ErrNotFound) {
 		return diag.FromErr(fmt.Errorf("failed to remove zone %s from view %s: %w", zone, view, err))
 	}
 
