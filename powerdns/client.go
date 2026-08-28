@@ -454,6 +454,21 @@ func (client *PowerDNSClient) DeleteZoneMetadata(ctx context.Context, zone strin
 	return err
 }
 
+// zoneCacheKey is the cache key for a zone. DNS names are case-insensitive, so
+// "example.com." and "Example.COM." name one zone and must share one entry:
+// keying on the caller's spelling would let a write under one spelling leave a
+// stale entry under another. Only the zone part is lowered - a PowerDNS zone
+// variant ("example.com..internal") keeps its variant suffix verbatim, since
+// that is an API identifier rather than a DNS name.
+func zoneCacheKey(zone string) []byte {
+	name, variant, hasVariant := strings.Cut(zone, "..")
+	key := strings.ToLower(name)
+	if hasVariant {
+		key += ".." + variant
+	}
+	return []byte(key)
+}
+
 // getCachedZoneInfo returns the cached ZoneInfo for a zone. found is false when
 // caching is disabled or the zone is simply not cached yet; only a malformed
 // cache entry is reported as an error.
@@ -462,7 +477,8 @@ func (client *PowerDNSClient) getCachedZoneInfo(ctx context.Context, zone string
 		return nil, false, nil
 	}
 
-	cached, err := client.Cache.Get([]byte(zone))
+	key := zoneCacheKey(zone)
+	cached, err := client.Cache.Get(key)
 	if err != nil {
 		// freecache reports an ordinary miss as an error; that is not a failure.
 		return nil, false, nil
@@ -474,7 +490,7 @@ func (client *PowerDNSClient) getCachedZoneInfo(ctx context.Context, zone string
 			"zone":  zone,
 			"error": err.Error(),
 		})
-		client.Cache.Del([]byte(zone))
+		client.Cache.Del(key)
 		return nil, false, nil
 	}
 
@@ -489,7 +505,7 @@ func (client *PowerDNSClient) invalidateZoneCache(ctx context.Context, zone stri
 		return
 	}
 
-	if client.Cache.Del([]byte(zone)) {
+	if client.Cache.Del(zoneCacheKey(zone)) {
 		tflog.Debug(ctx, "Invalidated zone cache", map[string]any{"zone": zone})
 	}
 }
@@ -528,7 +544,7 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 				return nil, err
 			}
 
-			if err := client.Cache.Set([]byte(zone), cacheValue, client.CacheTTL); err != nil {
+			if err := client.Cache.Set(zoneCacheKey(zone), cacheValue, client.CacheTTL); err != nil {
 				return nil, fmt.Errorf("the cache for REST API requests is enabled but the size isn't enough: cacheSize: %db: %w", client.CacheSize, err)
 			}
 		}

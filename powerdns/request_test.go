@@ -166,6 +166,85 @@ func TestDeleteRecordSetInvalidatesZoneCache(t *testing.T) {
 	assert.Equal(t, int32(2), atomic.LoadInt32(&listCalls))
 }
 
+// DNS names are case-insensitive, so two config sites naming one zone with
+// different capitalisation must share a cache entry rather than each getting
+// their own.
+func TestZoneCacheKeyIsCaseInsensitive(t *testing.T) {
+	var listCalls int32
+
+	client := newCachingTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodGet {
+			atomic.AddInt32(&listCalls, 1)
+			return jsonResponse(http.StatusOK, oneRecordZone), nil
+		}
+		return jsonResponse(http.StatusNoContent, ``), nil
+	})
+
+	ctx := context.Background()
+
+	_, err := client.ListRecords(ctx, "example.com.")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	_, err = client.ListRecords(ctx, "Example.COM.")
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, int32(1), atomic.LoadInt32(&listCalls),
+		"a case variant of a cached zone should hit the same cache entry")
+}
+
+// A write must invalidate the zone whatever capitalisation it is spelled with,
+// or the stale entry under the other spelling is served as drift.
+func TestWriteInvalidatesZoneCacheAcrossCase(t *testing.T) {
+	var listCalls int32
+
+	client := newCachingTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodGet {
+			atomic.AddInt32(&listCalls, 1)
+			return jsonResponse(http.StatusOK, oneRecordZone), nil
+		}
+		return jsonResponse(http.StatusNoContent, ``), nil
+	})
+
+	ctx := context.Background()
+
+	_, err := client.ListRecords(ctx, "example.com.")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	_, err = client.ReplaceRecordSet(ctx, "EXAMPLE.com.", ResourceRecordSet{
+		Name:    "www.example.com.",
+		Type:    "A",
+		TTL:     300,
+		Records: []Record{{Content: "192.0.2.2"}},
+	})
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	_, err = client.ListRecords(ctx, "example.com.")
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, int32(2), atomic.LoadInt32(&listCalls),
+		"a write spelled with different case should still invalidate the zone")
+}
+
+// Zone variants are distinct zones in PowerDNS: the name is case-insensitive
+// but the variant suffix is an API identifier and must stay verbatim.
+func TestZoneCacheKeyPreservesVariant(t *testing.T) {
+	assert.Equal(t, "example.com.", string(zoneCacheKey("Example.COM.")))
+
+	// The base is lowered, the variant suffix is left exactly as given.
+	assert.Equal(t, "example.com..internal", string(zoneCacheKey("Example.COM..internal")))
+
+	// A variant is a different zone from the plain name and must not collide.
+	assert.NotEqual(t, string(zoneCacheKey("example.com.")), string(zoneCacheKey("example.com..internal")))
+}
+
 // Path segments reach the API as user input and must not be able to alter the
 // request path.
 func TestEndpointsEscapePathSegments(t *testing.T) {
