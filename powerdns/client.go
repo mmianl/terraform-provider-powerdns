@@ -1,17 +1,16 @@
 package powerdns
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	freecache "github.com/coocood/freecache"
 	cleanhttp "github.com/hashicorp/go-cleanhttp"
@@ -21,9 +20,6 @@ import (
 // DefaultSchema is the value used for the URL in case
 // no schema is explicitly defined
 var DefaultSchema = "https"
-
-// DefaultCacheSize is client default cache size
-var DefaultCacheSize int
 
 // sanitizeURL will output:
 // <scheme>://<host>[:port]
@@ -75,11 +71,17 @@ func sanitizeURL(URL string) (string, error) {
 type BaseClient struct {
 	ServerURL   string // Location of the server to use
 	APIKey      string // REST API Static authentication key
-	APIVersion  int    // API version to use
+	APIVersion  int    // API version to use; -1 until detected
 	HTTP        *http.Client
 	CacheEnable bool // Enable/Disable cache for REST API requests
 	Cache       *freecache.Cache
+	CacheSize   int
 	CacheTTL    int
+
+	// A single client is shared by every resource, and Terraform walks the
+	// graph in parallel, so version detection must happen exactly once.
+	apiVersionOnce sync.Once
+	apiVersionErr  error
 }
 
 // NewBaseClient constructs a BaseClient with HTTP, TLS and cache configuration.
@@ -92,106 +94,27 @@ func NewBaseClient(serverURL string, apiKey string, configTLS *tls.Config, cache
 	httpClient := cleanhttp.DefaultClient()
 	httpClient.Transport.(*http.Transport).TLSClientConfig = configTLS
 
+	base := &BaseClient{
+		ServerURL: cleanURL,
+		APIKey:    apiKey,
+		HTTP:      httpClient,
+		// -1 marks the version as not yet detected; see BaseClient.apiVersion.
+		APIVersion:  -1,
+		CacheEnable: cacheEnable,
+		CacheTTL:    cacheTTL,
+	}
+
+	// Only allocate the cache when it will actually be read.
 	if cacheEnable {
 		cacheSize, err := strconv.Atoi(cacheSizeMB)
 		if err != nil {
 			return nil, fmt.Errorf("error while creating client: %s", err)
 		}
-		DefaultCacheSize = cacheSize * 1024 * 1024
-	}
-
-	base := &BaseClient{
-		ServerURL:   cleanURL,
-		APIKey:      apiKey,
-		HTTP:        httpClient,
-		APIVersion:  -1,
-		CacheEnable: cacheEnable,
-		Cache:       freecache.NewCache(DefaultCacheSize),
-		CacheTTL:    cacheTTL,
+		base.CacheSize = cacheSize * 1024 * 1024
+		base.Cache = freecache.NewCache(base.CacheSize)
 	}
 
 	return base, nil
-}
-
-// newRequest creates a new request against the API with necessary headers.
-func (client *BaseClient) newRequest(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
-	var err error
-	if client.APIVersion < 0 {
-		client.APIVersion, err = client.detectAPIVersion(ctx)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	var urlStr string
-	if client.APIVersion > 0 {
-		urlStr = client.ServerURL + "/api/v" + strconv.Itoa(client.APIVersion) + endpoint
-	} else {
-		urlStr = client.ServerURL + endpoint
-	}
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		return nil, fmt.Errorf("error during parsing request URL: %s", err)
-	}
-
-	var bodyReader io.Reader
-	if body != nil {
-		bodyReader = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("error during creation of request: %s", err)
-	}
-
-	req.Header.Add("X-API-Key", client.APIKey)
-	req.Header.Add("Accept", "application/json")
-
-	if method != http.MethodGet {
-		req.Header.Add("Content-Type", "application/json")
-	}
-
-	return req, nil
-}
-
-// Detects the API version in use on the server
-// Uses int to represent the API version: 0 is the legacy AKA version 3.4 API
-// Any other integer correlates with the same API version
-func (client *BaseClient) detectAPIVersion(ctx context.Context) (int, error) {
-	httpClient := client.HTTP
-
-	u, err := url.Parse(client.ServerURL + "/api/v1/servers")
-	if err != nil {
-		return -1, fmt.Errorf("error while trying to detect the API version, request URL: %s", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return -1, fmt.Errorf("error during creation of request: %s", err)
-	}
-
-	req.Header.Add("X-API-Key", client.APIKey)
-	req.Header.Add("Accept", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return -1, err
-	}
-
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
-
-	if resp.StatusCode == http.StatusOK {
-		return 1, nil
-	}
-	return 0, nil
 }
 
 // PowerDNSClient is the concrete client used by the provider.
@@ -342,40 +265,38 @@ func NewPowerDNSClient(ctx context.Context, serverURL string, serverID string, a
 
 // serverEndpoint returns an API path scoped to the configured authoritative server.
 func (client *PowerDNSClient) serverEndpoint(path string) string {
-	return "/servers/" + url.PathEscape(client.serverID) + path
+	return "/servers/" + pathEscape(client.serverID) + path
+}
+
+// zoneEndpoint returns the API path for a single zone.
+func (client *PowerDNSClient) zoneEndpoint(zone string) string {
+	return client.serverEndpoint("/zones/" + pathEscape(zone))
+}
+
+// zoneMetadataEndpoint returns the API path for one metadata kind of a zone.
+func (client *PowerDNSClient) zoneMetadataEndpoint(zone, kind string) string {
+	return client.zoneEndpoint(zone) + "/metadata/" + pathEscape(kind)
+}
+
+// viewEndpoint returns the API path for a single view.
+func (client *PowerDNSClient) viewEndpoint(view string) string {
+	return client.serverEndpoint("/views/" + pathEscape(view))
+}
+
+// networkEndpoint returns the API path for a single network.
+func (client *PowerDNSClient) networkEndpoint(ip, prefixlen string) string {
+	return client.serverEndpoint("/networks/" + pathEscape(ip) + "/" + pathEscape(prefixlen))
 }
 
 // ListZones returns all Zones of server, without records
 func (client *PowerDNSClient) ListZones(ctx context.Context) ([]ZoneInfo, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint("/zones"), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return nil, fmt.Errorf("error listing zones")
-		}
-		return nil, fmt.Errorf("error listing zones, reason: %q", errorResp.ErrorMsg)
-	}
-
 	var zoneInfos []ZoneInfo
-	if err := json.NewDecoder(resp.Body).Decode(&zoneInfos); err != nil {
+	_, err := client.do(ctx, requestOptions{
+		endpoint: client.serverEndpoint("/zones"),
+		out:      &zoneInfos,
+		describe: "listing zones",
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -393,41 +314,19 @@ func (client *PowerDNSClient) GetZoneWithRRsets(ctx context.Context, name string
 }
 
 func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeRRsets bool) (ZoneInfo, error) {
-	endpoint := client.serverEndpoint(fmt.Sprintf("/zones/%s", name))
+	endpoint := client.zoneEndpoint(name)
 	if includeRRsets {
 		endpoint += "?rrsets=true"
 	}
 
-	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return ZoneInfo{}, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return ZoneInfo{}, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   name,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return ZoneInfo{}, fmt.Errorf("error getting zone: %s", name)
-		}
-		return ZoneInfo{}, fmt.Errorf("error getting zone: %s, reason: %q", name, errorResp.ErrorMsg)
-	}
-
 	var zoneInfo ZoneInfo
-	if err := json.NewDecoder(resp.Body).Decode(&zoneInfo); err != nil {
+	_, err := client.do(ctx, requestOptions{
+		endpoint:  endpoint,
+		out:       &zoneInfo,
+		describe:  fmt.Sprintf("getting zone: %s", name),
+		logFields: map[string]any{"zone": name},
+	})
+	if err != nil {
 		return ZoneInfo{}, err
 	}
 
@@ -436,74 +335,32 @@ func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeR
 
 // ZoneExists checks if requested zone exists
 func (client *PowerDNSClient) ZoneExists(ctx context.Context, name string) (bool, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/zones/%s", name)), nil)
+	statusCode, err := client.do(ctx, requestOptions{
+		endpoint:  client.zoneEndpoint(name),
+		okCodes:   []int{http.StatusOK, http.StatusNotFound},
+		describe:  fmt.Sprintf("getting zone: %s", name),
+		logFields: map[string]any{"zone": name},
+	})
 	if err != nil {
 		return false, err
 	}
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   name,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return false, fmt.Errorf("error getting zone: %s", name)
-		}
-		return false, fmt.Errorf("error getting zone: %s, reason: %q", name, errorResp.ErrorMsg)
-	}
-
-	return resp.StatusCode == http.StatusOK, nil
+	return statusCode == http.StatusOK, nil
 }
 
 // CreateZone creates a zone
 func (client *PowerDNSClient) CreateZone(ctx context.Context, zoneInfo ZoneInfo) (ZoneInfo, error) {
-	body, err := json.Marshal(zoneInfo)
-	if err != nil {
-		return ZoneInfo{}, err
-	}
-
-	req, err := client.newRequest(ctx, http.MethodPost, client.serverEndpoint("/zones"), body)
-	if err != nil {
-		return ZoneInfo{}, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return ZoneInfo{}, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   zoneInfo.Name,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusCreated {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return ZoneInfo{}, fmt.Errorf("error creating zone: %s", zoneInfo.Name)
-		}
-		return ZoneInfo{}, fmt.Errorf("error creating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
-	}
-
 	var createdZoneInfo ZoneInfo
-	if err := json.NewDecoder(resp.Body).Decode(&createdZoneInfo); err != nil {
+	_, err := client.do(ctx, requestOptions{
+		method:    http.MethodPost,
+		endpoint:  client.serverEndpoint("/zones"),
+		body:      zoneInfo,
+		out:       &createdZoneInfo,
+		okCodes:   []int{http.StatusCreated},
+		describe:  fmt.Sprintf("creating zone: %s", zoneInfo.Name),
+		logFields: map[string]any{"zone": zoneInfo.Name},
+	})
+	if err != nil {
 		return ZoneInfo{}, err
 	}
 
@@ -512,106 +369,49 @@ func (client *PowerDNSClient) CreateZone(ctx context.Context, zoneInfo ZoneInfo)
 
 // UpdateZone updates a zone
 func (client *PowerDNSClient) UpdateZone(ctx context.Context, name string, zoneInfo ZoneInfoUpd) error {
-	body, err := json.Marshal(zoneInfo)
+	_, err := client.do(ctx, requestOptions{
+		method:    http.MethodPut,
+		endpoint:  client.zoneEndpoint(name),
+		body:      zoneInfo,
+		okCodes:   []int{http.StatusNoContent},
+		describe:  fmt.Sprintf("updating zone: %s", name),
+		logFields: map[string]any{"zone": name},
+	})
 	if err != nil {
 		return err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPut, client.serverEndpoint(fmt.Sprintf("/zones/%s", name)), body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   name,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusNoContent {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error updating zone: %s", zoneInfo.Name)
-		}
-		return fmt.Errorf("error updating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
-	}
-
+	client.invalidateZoneCache(ctx, name)
 	return nil
 }
 
 // DeleteZone deletes a zone
 func (client *PowerDNSClient) DeleteZone(ctx context.Context, name string) error {
-	req, err := client.newRequest(ctx, http.MethodDelete, client.serverEndpoint(fmt.Sprintf("/zones/%s", name)), nil)
+	_, err := client.do(ctx, requestOptions{
+		method:    http.MethodDelete,
+		endpoint:  client.zoneEndpoint(name),
+		okCodes:   []int{http.StatusNoContent},
+		describe:  fmt.Sprintf("deleting zone: %s", name),
+		logFields: map[string]any{"zone": name},
+	})
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   name,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusNoContent {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error deleting zone: %s", name)
-		}
-		return fmt.Errorf("error deleting zone: %s, reason: %q", name, errorResp.ErrorMsg)
-	}
+	client.invalidateZoneCache(ctx, name)
 	return nil
 }
 
 // ListZoneMetadata returns all domain metadata entries for a zone.
 func (client *PowerDNSClient) ListZoneMetadata(ctx context.Context, zone string) ([]ZoneMetadata, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/zones/%s/metadata", zone)), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   zone,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return nil, fmt.Errorf("error reading zone metadata: %s", zone)
-		}
-		return nil, fmt.Errorf("error reading zone metadata: %s, reason: %q", zone, errorResp.ErrorMsg)
-	}
-
 	var metadata []ZoneMetadata
-	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+	_, err := client.do(ctx, requestOptions{
+		endpoint:  client.zoneEndpoint(zone) + "/metadata",
+		out:       &metadata,
+		describe:  fmt.Sprintf("reading zone metadata: %s", zone),
+		logFields: map[string]any{"zone": zone},
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -620,37 +420,14 @@ func (client *PowerDNSClient) ListZoneMetadata(ctx context.Context, zone string)
 
 // GetZoneMetadata returns one metadata kind for a zone.
 func (client *PowerDNSClient) GetZoneMetadata(ctx context.Context, zone string, kind string) (ZoneMetadata, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/zones/%s/metadata/%s", zone, kind)), nil)
-	if err != nil {
-		return ZoneMetadata{}, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return ZoneMetadata{}, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   zone,
-				"kind":   kind,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return ZoneMetadata{}, fmt.Errorf("error reading zone metadata: %s (%s)", zone, kind)
-		}
-		return ZoneMetadata{}, fmt.Errorf("error reading zone metadata: %s (%s), reason: %q", zone, kind, errorResp.ErrorMsg)
-	}
-
 	var metadata ZoneMetadata
-	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+	_, err := client.do(ctx, requestOptions{
+		endpoint:  client.zoneMetadataEndpoint(zone, kind),
+		out:       &metadata,
+		describe:  fmt.Sprintf("reading zone metadata: %s (%s)", zone, kind),
+		logFields: map[string]any{"zone": zone, "kind": kind},
+	})
+	if err != nil {
 		return ZoneMetadata{}, err
 	}
 
@@ -659,168 +436,118 @@ func (client *PowerDNSClient) GetZoneMetadata(ctx context.Context, zone string, 
 
 // ReplaceZoneMetadata replaces all values for a metadata kind in a zone.
 func (client *PowerDNSClient) ReplaceZoneMetadata(ctx context.Context, zone string, kind string, values []string) error {
-	body, err := json.Marshal(ZoneMetadata{
-		Kind:     kind,
-		Metadata: values,
+	_, err := client.do(ctx, requestOptions{
+		method:   http.MethodPut,
+		endpoint: client.zoneMetadataEndpoint(zone, kind),
+		body: ZoneMetadata{
+			Kind:     kind,
+			Metadata: values,
+		},
+		okCodes:   []int{http.StatusOK, http.StatusNoContent},
+		describe:  fmt.Sprintf("replacing zone metadata: %s (%s)", zone, kind),
+		logFields: map[string]any{"zone": zone, "kind": kind},
 	})
-	if err != nil {
-		return err
-	}
-	req, err := client.newRequest(ctx, http.MethodPut, client.serverEndpoint(fmt.Sprintf("/zones/%s/metadata/%s", zone, kind)), body)
-	if err != nil {
-		return err
-	}
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   zone,
-				"kind":   kind,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error replacing zone metadata: %s (%s)", zone, kind)
-		}
-		return fmt.Errorf("error replacing zone metadata: %s (%s), reason: %q", zone, kind, errorResp.ErrorMsg)
-	}
-
-	return nil
+	return err
 }
 
 // DeleteZoneMetadata deletes all values for a metadata kind in a zone.
 func (client *PowerDNSClient) DeleteZoneMetadata(ctx context.Context, zone string, kind string) error {
-	req, err := client.newRequest(ctx, http.MethodDelete, client.serverEndpoint(fmt.Sprintf("/zones/%s/metadata/%s", zone, kind)), nil)
-	if err != nil {
-		return err
-	}
+	_, err := client.do(ctx, requestOptions{
+		method:    http.MethodDelete,
+		endpoint:  client.zoneMetadataEndpoint(zone, kind),
+		okCodes:   []int{http.StatusNoContent},
+		describe:  fmt.Sprintf("deleting zone metadata: %s (%s)", zone, kind),
+		logFields: map[string]any{"zone": zone, "kind": kind},
+	})
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   zone,
-				"kind":   kind,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusNoContent {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error deleting zone metadata: %s (%s)", zone, kind)
-		}
-		return fmt.Errorf("error deleting zone metadata: %s (%s), reason: %q", zone, kind, errorResp.ErrorMsg)
-	}
-
-	return nil
+	return err
 }
 
-// GetZoneInfoFromCache return ZoneInfo struct
-func (client *PowerDNSClient) GetZoneInfoFromCache(ctx context.Context, zone string) (*ZoneInfo, error) {
-	if client.CacheEnable {
-		cacheZoneInfo, err := client.Cache.Get([]byte(zone))
-		if err != nil {
-			return nil, err
-		}
-
-		zoneInfo := new(ZoneInfo)
-		if err := json.Unmarshal(cacheZoneInfo, &zoneInfo); err != nil {
-			return nil, err
-		}
-
-		return zoneInfo, nil
+// getCachedZoneInfo returns the cached ZoneInfo for a zone. found is false when
+// caching is disabled or the zone is simply not cached yet; only a malformed
+// cache entry is reported as an error.
+func (client *PowerDNSClient) getCachedZoneInfo(ctx context.Context, zone string) (info *ZoneInfo, found bool, err error) {
+	if !client.CacheEnable || client.Cache == nil {
+		return nil, false, nil
 	}
 
-	return nil, nil
+	cached, err := client.Cache.Get([]byte(zone))
+	if err != nil {
+		// freecache reports an ordinary miss as an error; that is not a failure.
+		return nil, false, nil
+	}
+
+	zoneInfo := new(ZoneInfo)
+	if err := json.Unmarshal(cached, zoneInfo); err != nil {
+		tflog.Warn(ctx, "Discarding malformed zone cache entry", map[string]any{
+			"zone":  zone,
+			"error": err.Error(),
+		})
+		client.Cache.Del([]byte(zone))
+		return nil, false, nil
+	}
+
+	return zoneInfo, true, nil
+}
+
+// invalidateZoneCache drops a zone's cached records. Every write path calls
+// this: without it a read issued later in the same apply can still be served
+// the pre-write zone and be recorded as drift.
+func (client *PowerDNSClient) invalidateZoneCache(ctx context.Context, zone string) {
+	if !client.CacheEnable || client.Cache == nil {
+		return
+	}
+
+	if client.Cache.Del([]byte(zone)) {
+		tflog.Debug(ctx, "Invalidated zone cache", map[string]any{"zone": zone})
+	}
 }
 
 // ListRecords returns all records in Zone
 func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]Record, error) {
-	zoneInfo, err := client.GetZoneInfoFromCache(ctx, zone)
+	zoneInfo, found, err := client.getCachedZoneInfo(ctx, zone)
 	if err != nil {
-		tflog.Warn(ctx, "Cache get failed", map[string]interface{}{
-			"zone":  zone,
-			"error": err.Error(),
-		})
 		return nil, err
 	}
 
-	if zoneInfo == nil {
-		req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/zones/%s?rrsets=true", zone)), nil)
-		if err != nil {
-			return nil, err
-		}
-
-		resp, err := client.HTTP.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-					"error":  err.Error(),
-					"method": req.Method,
-					"url":    req.URL.String(),
-					"zone":   zone,
-				})
-			}
-		}()
-
+	if !found {
+		zoneInfo = new(ZoneInfo)
 		// A missing zone has no records, and callers rely on that: the
 		// CheckDestroy helpers ask for the records of a zone Terraform has
 		// just deleted. Anything other than 404 is a real failure and must not
-		// be decoded into an empty result — a 401 would otherwise read as "the
+		// be decoded into an empty result - a 401 would otherwise read as "the
 		// zone is empty".
-		switch {
-		case resp.StatusCode == http.StatusNotFound:
-			return []Record{}, nil
-		case resp.StatusCode != http.StatusOK:
-			errorResp := new(errorResponse)
-			if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-				return nil, fmt.Errorf("error listing records for zone: %s", zone)
-			}
-			return nil, fmt.Errorf("error listing records for zone: %s, reason: %q", zone, errorResp.ErrorMsg)
-		}
-
-		zoneInfo = new(ZoneInfo)
-		if err := json.NewDecoder(resp.Body).Decode(zoneInfo); err != nil {
+		statusCode, err := client.do(ctx, requestOptions{
+			endpoint:  client.zoneEndpoint(zone) + "?rrsets=true",
+			out:       zoneInfo,
+			okCodes:   []int{http.StatusOK, http.StatusNotFound},
+			describe:  fmt.Sprintf("listing records for zone: %s", zone),
+			logFields: map[string]any{"zone": zone},
+		})
+		if err != nil {
 			return nil, err
 		}
+		if statusCode == http.StatusNotFound {
+			return []Record{}, nil
+		}
 
-		if client.CacheEnable {
+		if client.CacheEnable && client.Cache != nil {
 			cacheValue, err := json.Marshal(zoneInfo)
 			if err != nil {
 				return nil, err
 			}
 
 			if err := client.Cache.Set([]byte(zone), cacheValue, client.CacheTTL); err != nil {
-				return nil, fmt.Errorf("the cache for REST API requests is enabled but the size isn't enough: cacheSize: %db \n %s",
-					DefaultCacheSize, err)
+				return nil, fmt.Errorf("the cache for REST API requests is enabled but the size isn't enough: cacheSize: %db: %w", client.CacheSize, err)
 			}
 		}
 	}
 
 	records := zoneInfo.Records
 	// Convert the API v1 response to v0 record structure
-	for _, rrs := range zoneInfo.ResourceRecordSets {
-		records = append(records, recordsFromRRSet(&rrs)...)
+	for i := range zoneInfo.ResourceRecordSets {
+		records = append(records, recordsFromRRSet(&zoneInfo.ResourceRecordSets[i])...)
 	}
 
 	return records, nil
@@ -833,7 +560,7 @@ func (client *PowerDNSClient) ListRecordsInRRSet(ctx context.Context, zone strin
 		return nil, err
 	}
 
-	records := make([]Record, 0, 10)
+	records := make([]Record, 0, len(allRecords))
 	for _, r := range allRecords {
 		if strings.EqualFold(r.Name, name) && strings.EqualFold(r.Type, tpe) {
 			records = append(records, r)
@@ -864,10 +591,10 @@ func (client *PowerDNSClient) GetRecordSetByID(ctx context.Context, zone string,
 		return nil, err
 	}
 
-	for _, rrSet := range zoneInfo.ResourceRecordSets {
+	for i := range zoneInfo.ResourceRecordSets {
+		rrSet := &zoneInfo.ResourceRecordSets[i]
 		if strings.EqualFold(rrSet.Name, name) && strings.EqualFold(rrSet.Type, tpe) {
-			found := rrSet
-			return &found, nil
+			return rrSet, nil
 		}
 	}
 
@@ -902,88 +629,47 @@ func (client *PowerDNSClient) RecordExistsByID(ctx context.Context, zone string,
 func (client *PowerDNSClient) ReplaceRecordSet(ctx context.Context, zone string, rrSet ResourceRecordSet) (string, error) {
 	rrSet.ChangeType = "REPLACE"
 
-	reqBody, err := json.Marshal(zonePatchRequest{
-		RecordSets: []ResourceRecordSet{rrSet},
+	_, err := client.do(ctx, requestOptions{
+		method:   http.MethodPatch,
+		endpoint: client.zoneEndpoint(zone),
+		body: zonePatchRequest{
+			RecordSets: []ResourceRecordSet{rrSet},
+		},
+		okCodes:   []int{http.StatusOK, http.StatusNoContent},
+		describe:  fmt.Sprintf("creating record set: %s", rrSet.ID()),
+		logFields: map[string]any{"zone": zone, "rrsetId": rrSet.ID()},
 	})
 	if err != nil {
 		return "", err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPatch, client.serverEndpoint(fmt.Sprintf("/zones/%s", zone)), reqBody)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":   err.Error(),
-				"method":  req.Method,
-				"url":     req.URL.String(),
-				"zone":    zone,
-				"rrsetId": rrSet.ID(),
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return "", fmt.Errorf("error creating record set: %s", rrSet.ID())
-		}
-		return "", fmt.Errorf("error creating record set: %s, reason: %q", rrSet.ID(), errorResp.ErrorMsg)
-	}
+	client.invalidateZoneCache(ctx, zone)
 	return rrSet.ID(), nil
 }
 
 // DeleteRecordSet deletes record set from Zone
 func (client *PowerDNSClient) DeleteRecordSet(ctx context.Context, zone string, name string, tpe string) error {
-	reqBody, err := json.Marshal(zonePatchRequest{
-		RecordSets: []ResourceRecordSet{
-			{
-				Name:       name,
-				Type:       tpe,
-				ChangeType: "DELETE",
+	_, err := client.do(ctx, requestOptions{
+		method:   http.MethodPatch,
+		endpoint: client.zoneEndpoint(zone),
+		body: zonePatchRequest{
+			RecordSets: []ResourceRecordSet{
+				{
+					Name:       name,
+					Type:       tpe,
+					ChangeType: "DELETE",
+				},
 			},
 		},
+		okCodes:   []int{http.StatusOK, http.StatusNoContent},
+		describe:  fmt.Sprintf("deleting record: %s %s", name, tpe),
+		logFields: map[string]any{"zone": zone, "name": name, "type": tpe},
 	})
 	if err != nil {
 		return err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPatch, client.serverEndpoint(fmt.Sprintf("/zones/%s", zone)), reqBody)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   zone,
-				"name":   name,
-				"type":   tpe,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error deleting record: %s %s", name, tpe)
-		}
-		return fmt.Errorf("error deleting record: %s %s, reason: %q", name, tpe, errorResp.ErrorMsg)
-	}
+	client.invalidateZoneCache(ctx, zone)
 	return nil
 }
 
@@ -998,37 +684,16 @@ func (client *PowerDNSClient) DeleteRecordSetByID(ctx context.Context, zone stri
 
 // ListViews returns all configured views.
 func (client *PowerDNSClient) ListViews(ctx context.Context) ([]string, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint("/views"), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return nil, fmt.Errorf("error listing views: failed to decode error response: %w", err)
-		}
-		return nil, fmt.Errorf("error listing views: %q", errorResp.ErrorMsg)
-	}
-
+	// GET /views answers with {"views": [...]}, not a bare array.
 	var wrapper struct {
 		Views []string `json:"views"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	_, err := client.do(ctx, requestOptions{
+		endpoint: client.serverEndpoint("/views"),
+		out:      &wrapper,
+		describe: "listing views",
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -1037,295 +702,131 @@ func (client *PowerDNSClient) ListViews(ctx context.Context) ([]string, error) {
 
 // GetView retrieves a specific view.
 func (client *PowerDNSClient) GetView(ctx context.Context, viewName string) (*View, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/views/%s", viewName)), nil)
+	var view View
+	_, err := client.do(ctx, requestOptions{
+		endpoint:    client.viewEndpoint(viewName),
+		out:         &view,
+		notFoundErr: ErrNotFound,
+		describe:    fmt.Sprintf("getting view %s", viewName),
+		logFields:   map[string]any{"view": viewName},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
+	if view.Name == "" {
+		view.Name = viewName
 	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"view":   viewName,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var view View
-		if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
-			return nil, err
-		}
-		if view.Name == "" {
-			view.Name = viewName
-		}
-		return &view, nil
-	case http.StatusNotFound:
-		return nil, ErrNotFound
-	default:
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return nil, fmt.Errorf("error getting view %s: failed to decode error response: %w", viewName, err)
-		}
-		return nil, fmt.Errorf("error getting view %s: %q", viewName, errorResp.ErrorMsg)
-	}
+	return &view, nil
 }
 
 // AddZoneToView associates a zone with a view.
 func (client *PowerDNSClient) AddZoneToView(ctx context.Context, viewName, zoneName string) error {
-	body, err := json.Marshal(struct {
-		Name string `json:"name"`
-	}{Name: zoneName})
-	if err != nil {
-		return err
-	}
+	_, err := client.do(ctx, requestOptions{
+		method:   http.MethodPost,
+		endpoint: client.viewEndpoint(viewName),
+		body: struct {
+			Name string `json:"name"`
+		}{Name: zoneName},
+		okCodes:   []int{http.StatusOK, http.StatusCreated, http.StatusNoContent},
+		describe:  fmt.Sprintf("adding zone %s to view %s", zoneName, viewName),
+		hint:      viewsHint,
+		logFields: map[string]any{"view": viewName, "zone": zoneName},
+	})
 
-	req, err := client.newRequest(ctx, http.MethodPost, client.serverEndpoint(fmt.Sprintf("/views/%s", viewName)), body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"view":   viewName,
-				"zone":   zoneName,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return fmt.Errorf("error adding zone %s to view %s: failed to decode error response: %w", zoneName, viewName, err)
-		}
-		return fmt.Errorf("error adding zone %s to view %s: %q%s", zoneName, viewName,
-			errorResp.ErrorMsg, viewsHint(resp.StatusCode, errorResp.ErrorMsg))
-	}
-
-	return nil
+	return err
 }
 
 // RemoveZoneFromView removes a zone from a view.
 func (client *PowerDNSClient) RemoveZoneFromView(ctx context.Context, viewName, zoneName string) error {
-	req, err := client.newRequest(ctx, http.MethodDelete, client.serverEndpoint(fmt.Sprintf("/views/%s/%s", viewName, zoneName)), nil)
-	if err != nil {
-		return err
-	}
+	_, err := client.do(ctx, requestOptions{
+		method:      http.MethodDelete,
+		endpoint:    client.viewEndpoint(viewName) + "/" + pathEscape(zoneName),
+		okCodes:     []int{http.StatusOK, http.StatusNoContent},
+		notFoundErr: ErrNotFound,
+		describe:    fmt.Sprintf("removing zone %s from view %s", zoneName, viewName),
+		hint:        viewsHint,
+		logFields:   map[string]any{"view": viewName, "zone": zoneName},
+	})
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"view":   viewName,
-				"zone":   zoneName,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK, http.StatusNoContent:
-		return nil
-	case http.StatusNotFound:
-		return ErrNotFound
-	default:
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return fmt.Errorf("error removing zone %s from view %s: failed to decode error response: %w", zoneName, viewName, err)
-		}
-		return fmt.Errorf("error removing zone %s from view %s: %q%s", zoneName, viewName,
-			errorResp.ErrorMsg, viewsHint(resp.StatusCode, errorResp.ErrorMsg))
-	}
+	return err
 }
 
 // ListNetworks returns all configured networks.
 func (client *PowerDNSClient) ListNetworks(ctx context.Context) ([]Network, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint("/networks"), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return nil, fmt.Errorf("error listing networks: failed to decode error response: %w", err)
-		}
-		return nil, fmt.Errorf("error listing networks: %q", errorResp.ErrorMsg)
-	}
-
+	// GET /networks answers with {"networks": [...]}, not a bare array.
 	var wrapper struct {
 		Networks []Network `json:"networks"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	_, err := client.do(ctx, requestOptions{
+		endpoint: client.serverEndpoint("/networks"),
+		out:      &wrapper,
+		describe: "listing networks",
+	})
+	if err != nil {
 		return nil, err
 	}
-	networks := wrapper.Networks
 
-	return networks, nil
+	return wrapper.Networks, nil
 }
 
 // GetNetwork retrieves a specific network definition.
 func (client *PowerDNSClient) GetNetwork(ctx context.Context, ip, prefixlen string) (*Network, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint(fmt.Sprintf("/networks/%s/%s", ip, prefixlen)), nil)
+	var network Network
+	_, err := client.do(ctx, requestOptions{
+		endpoint:    client.networkEndpoint(ip, prefixlen),
+		out:         &network,
+		notFoundErr: ErrNotFound,
+		describe:    fmt.Sprintf("getting network %s/%s", ip, prefixlen),
+		logFields:   map[string]any{"ip": ip, "prefix_len": prefixlen},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":      err.Error(),
-				"method":     req.Method,
-				"url":        req.URL.String(),
-				"ip":         ip,
-				"prefix_len": prefixlen,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var network Network
-		if err := json.NewDecoder(resp.Body).Decode(&network); err != nil {
-			return nil, err
-		}
-		return &network, nil
-	case http.StatusNotFound:
-		return nil, ErrNotFound
-	default:
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return nil, fmt.Errorf("error getting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
-		}
-		return nil, fmt.Errorf("error getting network %s/%s: %q", ip, prefixlen, errorResp.ErrorMsg)
-	}
+	return &network, nil
 }
 
 // SetNetwork creates or updates a network definition.
 func (client *PowerDNSClient) SetNetwork(ctx context.Context, ip, prefixlen, view string) error {
-	body, err := json.Marshal(Network{View: view})
-	if err != nil {
-		return err
-	}
+	_, err := client.do(ctx, requestOptions{
+		method:    http.MethodPut,
+		endpoint:  client.networkEndpoint(ip, prefixlen),
+		body:      Network{View: view},
+		okCodes:   []int{http.StatusOK, http.StatusCreated, http.StatusNoContent},
+		describe:  fmt.Sprintf("setting network %s/%s", ip, prefixlen),
+		hint:      viewsHint,
+		logFields: map[string]any{"ip": ip, "prefix_len": prefixlen, "view": view},
+	})
 
-	req, err := client.newRequest(ctx, http.MethodPut, client.serverEndpoint(fmt.Sprintf("/networks/%s/%s", ip, prefixlen)), body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":      err.Error(),
-				"method":     req.Method,
-				"url":        req.URL.String(),
-				"ip":         ip,
-				"prefix_len": prefixlen,
-				"view":       view,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return fmt.Errorf("error setting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
-		}
-		return fmt.Errorf("error setting network %s/%s: %q%s", ip, prefixlen,
-			errorResp.ErrorMsg, viewsHint(resp.StatusCode, errorResp.ErrorMsg))
-	}
-
-	return nil
+	return err
 }
 
-// DeleteNetwork deletes a network definition.
+// DeleteNetwork deletes a network definition by clearing its view.
 func (client *PowerDNSClient) DeleteNetwork(ctx context.Context, ip, prefixlen string) error {
-	body, err := json.Marshal(Network{View: ""})
-	if err != nil {
-		return err
-	}
+	_, err := client.do(ctx, requestOptions{
+		method:      http.MethodPut,
+		endpoint:    client.networkEndpoint(ip, prefixlen),
+		body:        Network{View: ""},
+		okCodes:     []int{http.StatusOK, http.StatusCreated, http.StatusNoContent},
+		notFoundErr: ErrNotFound,
+		describe:    fmt.Sprintf("deleting network %s/%s", ip, prefixlen),
+		hint:        viewsHint,
+		logFields:   map[string]any{"ip": ip, "prefix_len": prefixlen},
+	})
 
-	req, err := client.newRequest(ctx, http.MethodPut, client.serverEndpoint(fmt.Sprintf("/networks/%s/%s", ip, prefixlen)), body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":      err.Error(),
-				"method":     req.Method,
-				"url":        req.URL.String(),
-				"ip":         ip,
-				"prefix_len": prefixlen,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK, http.StatusCreated, http.StatusNoContent:
-		return nil
-	case http.StatusNotFound:
-		return ErrNotFound
-	default:
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return fmt.Errorf("error deleting network %s/%s: failed to decode error response: %w", ip, prefixlen, err)
-		}
-		return fmt.Errorf("error deleting network %s/%s: %q%s", ip, prefixlen,
-			errorResp.ErrorMsg, viewsHint(resp.StatusCode, errorResp.ErrorMsg))
-	}
+	return err
 }
 
 // RecursorClient talks to the PowerDNS Recursor API.
 type RecursorClient struct {
 	*BaseClient
+}
+
+// serverEndpoint returns an API path scoped to the recursor server. The
+// recursor exposes only "localhost", unlike the authoritative server.
+func (client *RecursorClient) serverEndpoint(path string) string {
+	return "/servers/localhost" + path
 }
 
 // RecursorForwardZone represents a PowerDNS Recursor forward zone.
@@ -1364,217 +865,87 @@ func NewRecursorClient(
 
 // GetForwardZone retrieves a specific recursor forward zone definition.
 func (client *RecursorClient) GetForwardZone(ctx context.Context, name string) (*RecursorForwardZone, error) {
-	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
-
-	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
+	var zone RecursorForwardZone
+	_, err := client.do(ctx, requestOptions{
+		endpoint:    client.serverEndpoint("/zones/" + pathEscape(name)),
+		out:         &zone,
+		notFoundErr: ErrNotFound,
+		describe:    fmt.Sprintf("getting forward zone %s", name),
+		logFields:   map[string]any{"zone": name},
+	})
 	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   name,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var zone RecursorForwardZone
-		if err := json.NewDecoder(resp.Body).Decode(&zone); err != nil {
-			return nil, err
-		}
-		return &zone, nil
-
-	case http.StatusNotFound:
-		return nil, ErrNotFound
-
-	default:
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return nil, fmt.Errorf("error getting forward zone %s", name)
-		}
-		if strings.Contains(errorResp.ErrorMsg, "Could not find domain") {
+		// The recursor answers an unknown zone with a 422 rather than a 404,
+		// so the absence has to be recognised from the message itself.
+		if strings.Contains(err.Error(), "Could not find domain") {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("error getting forward zone %s: %q", name, errorResp.ErrorMsg)
+		return nil, err
 	}
+
+	return &zone, nil
 }
 
 // CreateForwardZone creates a recursor forward zone.
 func (client *RecursorClient) CreateForwardZone(ctx context.Context, zone *RecursorForwardZone) error {
-	body, err := json.Marshal(zone)
-	if err != nil {
-		return err
-	}
+	_, err := client.do(ctx, requestOptions{
+		method:    http.MethodPost,
+		endpoint:  client.serverEndpoint("/zones"),
+		body:      zone,
+		out:       nil,
+		okCodes:   []int{http.StatusCreated},
+		describe:  fmt.Sprintf("creating forward zone %s", zone.Name),
+		hint:      recursorMessageHint,
+		logFields: map[string]any{"zone": zone.Name},
+	})
 
-	req, err := client.newRequest(ctx, http.MethodPost, "/servers/localhost/zones", body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   zone.Name,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusCreated {
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return fmt.Errorf("error creating forward zone %s", zone.Name)
-		}
-		return fmt.Errorf("error creating forward zone %s: %q%s", zone.Name,
-			errorResp.ErrorMsg, recursorHint(errorResp.ErrorMsg))
-	}
-
-	return nil
+	return err
 }
 
 // DeleteForwardZone deletes a recursor forward zone.
 func (client *RecursorClient) DeleteForwardZone(ctx context.Context, name string) error {
-	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
+	_, err := client.do(ctx, requestOptions{
+		method:      http.MethodDelete,
+		endpoint:    client.serverEndpoint("/zones/" + pathEscape(name)),
+		okCodes:     []int{http.StatusNoContent, http.StatusOK},
+		notFoundErr: ErrNotFound,
+		describe:    fmt.Sprintf("deleting forward zone %s", name),
+		hint:        recursorMessageHint,
+		logFields:   map[string]any{"zone": name},
+	})
 
-	req, err := client.newRequest(ctx, http.MethodDelete, endpoint, nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   name,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusNoContent, http.StatusOK:
-		return nil
-
-	case http.StatusNotFound:
-		return ErrNotFound
-
-	default:
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return fmt.Errorf("error deleting forward zone %s", name)
-		}
-		return fmt.Errorf("error deleting forward zone %s: %q%s", name,
-			errorResp.ErrorMsg, recursorHint(errorResp.ErrorMsg))
-	}
+	return err
 }
 
-// GetConfig retrieves a single recursor config setting using
+// GetConfig retrieves a single recursor config setting.
 func (client *RecursorClient) GetConfig(ctx context.Context, name string) (*RecursorConfigSetting, error) {
-	endpoint := fmt.Sprintf("/servers/localhost/config/%s", name)
-
-	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
+	var setting RecursorConfigSetting
+	_, err := client.do(ctx, requestOptions{
+		endpoint:    client.serverEndpoint("/config/" + pathEscape(name)),
+		out:         &setting,
+		notFoundErr: ErrNotFound,
+		describe:    fmt.Sprintf("getting recursor config %s", name),
+		logFields:   map[string]any{"name": name},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"name":   name,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var setting RecursorConfigSetting
-		if err := json.NewDecoder(resp.Body).Decode(&setting); err != nil {
-			return nil, err
-		}
-		return &setting, nil
-
-	case http.StatusNotFound:
-		return nil, ErrNotFound
-
-	default:
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return nil, fmt.Errorf("error getting recursor config %s", name)
-		}
-		return nil, fmt.Errorf("error getting recursor config %s: %q", name, errorResp.ErrorMsg)
-	}
+	return &setting, nil
 }
 
-// SetConfig changes a single recursor config setting using
+// SetConfig changes a single recursor config setting.
 func (client *RecursorClient) SetConfig(ctx context.Context, name string, values []string) error {
-	setting := RecursorConfigSetting{
-		Name:  name,
-		Value: values,
-	}
+	_, err := client.do(ctx, requestOptions{
+		method:   http.MethodPut,
+		endpoint: client.serverEndpoint("/config/" + pathEscape(name)),
+		body: RecursorConfigSetting{
+			Name:  name,
+			Value: values,
+		},
+		describe:  fmt.Sprintf("setting recursor config %s", name),
+		hint:      recursorMessageHint,
+		logFields: map[string]any{"name": name},
+	})
 
-	body, err := json.Marshal(&setting)
-	if err != nil {
-		return err
-	}
-
-	endpoint := fmt.Sprintf("/servers/localhost/config/%s", name)
-
-	req, err := client.newRequest(ctx, http.MethodPut, endpoint, body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]any{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"name":   name,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return fmt.Errorf("error setting recursor config %s", name)
-		}
-		return fmt.Errorf("error setting recursor config %s: %q%s", name,
-			errorResp.ErrorMsg, recursorHint(errorResp.ErrorMsg))
-	}
-
-	return nil
+	return err
 }

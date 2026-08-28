@@ -47,3 +47,9 @@ func recursorHint(serverMessage string) string {
 	}
 	return ""
 }
+
+// recursorMessageHint adapts recursorHint to the hint signature used by
+// requestOptions; the recursor names the missing setting regardless of status.
+func recursorMessageHint(_ int, serverMessage string) string {
+	return recursorHint(serverMessage)
+}
