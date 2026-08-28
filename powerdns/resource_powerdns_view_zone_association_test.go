@@ -2,6 +2,7 @@ package powerdns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"testing"
@@ -96,7 +97,7 @@ func testAccCheckPDNSViewZoneAssociationDestroy(s *terraform.State) error {
 		client := testAccProvider.Meta().(*ProviderClients).PDNS
 		view, err := client.GetView(context.Background(), viewName)
 		if err != nil {
-			if err == ErrNotFound {
+			if errors.Is(err, ErrNotFound) {
 				continue
 			}
 			return fmt.Errorf("error getting view %s: %w", viewName, err)

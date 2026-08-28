@@ -147,7 +147,7 @@ func (client *BaseClient) newRequest(ctx context.Context, method string, endpoin
 		bodyReader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, u.String(), bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("error during creation of request: %s", err)
 	}
@@ -173,7 +173,7 @@ func (client *BaseClient) detectAPIVersion(ctx context.Context) (int, error) {
 		return -1, fmt.Errorf("error while trying to detect the API version, request URL: %s", err)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return -1, fmt.Errorf("error during creation of request: %s", err)
 	}
@@ -942,9 +942,12 @@ func (client *PowerDNSClient) RecordExistsByID(ctx context.Context, zone string,
 func (client *PowerDNSClient) ReplaceRecordSet(ctx context.Context, zone string, rrSet ResourceRecordSet) (string, error) {
 	rrSet.ChangeType = "REPLACE"
 
-	reqBody, _ := json.Marshal(zonePatchRequest{
+	reqBody, err := json.Marshal(zonePatchRequest{
 		RecordSets: []ResourceRecordSet{rrSet},
 	})
+	if err != nil {
+		return "", err
+	}
 
 	req, err := client.newRequest(ctx, http.MethodPatch, client.serverEndpoint(fmt.Sprintf("/zones/%s", zone)), reqBody)
 	if err != nil {
@@ -979,7 +982,7 @@ func (client *PowerDNSClient) ReplaceRecordSet(ctx context.Context, zone string,
 
 // DeleteRecordSet deletes record set from Zone
 func (client *PowerDNSClient) DeleteRecordSet(ctx context.Context, zone string, name string, tpe string) error {
-	reqBody, _ := json.Marshal(zonePatchRequest{
+	reqBody, err := json.Marshal(zonePatchRequest{
 		RecordSets: []ResourceRecordSet{
 			{
 				Name:       name,
@@ -988,6 +991,9 @@ func (client *PowerDNSClient) DeleteRecordSet(ctx context.Context, zone string, 
 			},
 		},
 	})
+	if err != nil {
+		return err
+	}
 
 	req, err := client.newRequest(ctx, http.MethodPatch, client.serverEndpoint(fmt.Sprintf("/zones/%s", zone)), reqBody)
 	if err != nil {
