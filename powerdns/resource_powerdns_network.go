@@ -2,6 +2,7 @@ package powerdns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -64,8 +65,8 @@ func resourcePDNSNetworkUpsert(ctx context.Context, d *schema.ResourceData, meta
 		return diag.FromErr(err)
 	}
 
-	tflog.SetField(ctx, "network", network)
-	tflog.SetField(ctx, "view", view)
+	ctx = tflog.SetField(ctx, "network", network)
+	ctx = tflog.SetField(ctx, "view", view)
 	tflog.Debug(ctx, "Creating or updating PowerDNS network")
 
 	if err := client.PDNS.SetNetwork(ctx, ip, prefixlen, view); err != nil {
@@ -85,12 +86,12 @@ func resourcePDNSNetworkRead(ctx context.Context, d *schema.ResourceData, meta i
 		return diag.FromErr(err)
 	}
 
-	tflog.SetField(ctx, "network", networkCIDR)
+	ctx = tflog.SetField(ctx, "network", networkCIDR)
 	tflog.Debug(ctx, "Reading PowerDNS network")
 
 	network, err := client.PDNS.GetNetwork(ctx, ip, prefixlen)
 	if err != nil {
-		if err == ErrNotFound {
+		if errors.Is(err, ErrNotFound) {
 			d.SetId("")
 			return nil
 		}
@@ -116,10 +117,10 @@ func resourcePDNSNetworkDelete(ctx context.Context, d *schema.ResourceData, meta
 		return diag.FromErr(err)
 	}
 
-	tflog.SetField(ctx, "network", networkCIDR)
+	ctx = tflog.SetField(ctx, "network", networkCIDR)
 	tflog.Debug(ctx, "Deleting PowerDNS network")
 
-	if err := client.PDNS.DeleteNetwork(ctx, ip, prefixlen); err != nil && err != ErrNotFound {
+	if err := client.PDNS.DeleteNetwork(ctx, ip, prefixlen); err != nil && !errors.Is(err, ErrNotFound) {
 		return diag.FromErr(fmt.Errorf("failed to delete network %s: %w", networkCIDR, err))
 	}
 

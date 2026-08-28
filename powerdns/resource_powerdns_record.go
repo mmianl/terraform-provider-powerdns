@@ -148,9 +148,9 @@ func resourcePDNSRecordUpsert(ctx context.Context, d *schema.ResourceData, meta 
 	rrSet.Records = records
 	rrSet.Comments = configuredRRSetComments(d)
 
-	tflog.SetField(ctx, "zone", zone)
-	tflog.SetField(ctx, "name", name)
-	tflog.SetField(ctx, "type", typ)
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "name", name)
+	ctx = tflog.SetField(ctx, "type", typ)
 	tflog.Debug(ctx, "Creating PowerDNS record set")
 
 	recID, err := client.PDNS.ReplaceRecordSet(ctx, zone, rrSet)
@@ -168,8 +168,8 @@ func resourcePDNSRecordRead(ctx context.Context, d *schema.ResourceData, meta in
 	client := meta.(*ProviderClients)
 
 	zone := d.Get("zone").(string)
-	tflog.SetField(ctx, "zone", zone)
-	tflog.SetField(ctx, "record_id", d.Id())
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "record_id", d.Id())
 	tflog.Debug(ctx, "Reading PowerDNS Record")
 
 	rrSet, err := client.PDNS.GetRecordSetByID(ctx, zone, d.Id())
@@ -221,8 +221,8 @@ func resourcePDNSRecordDelete(ctx context.Context, d *schema.ResourceData, meta 
 	client := meta.(*ProviderClients)
 
 	zone := d.Get("zone").(string)
-	tflog.SetField(ctx, "zone", zone)
-	tflog.SetField(ctx, "record_id", d.Id())
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "record_id", d.Id())
 	tflog.Debug(ctx, "Deleting PowerDNS Record")
 
 	if err := client.PDNS.DeleteRecordSetByID(ctx, zone, d.Id()); err != nil {

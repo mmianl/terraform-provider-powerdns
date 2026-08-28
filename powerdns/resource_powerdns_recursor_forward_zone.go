@@ -59,7 +59,7 @@ func resourcePDNSRecursorForwardZoneCreate(ctx context.Context, d *schema.Resour
 	zoneName := d.Get("zone").(string)
 	rawServers := d.Get("servers").([]interface{})
 
-	tflog.SetField(ctx, "zone", zoneName)
+	ctx = tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Creating recursor forward zone")
 
 	servers := make([]string, len(rawServers))
@@ -92,7 +92,7 @@ func resourcePDNSRecursorForwardZoneRead(ctx context.Context, d *schema.Resource
 
 	zoneName := d.Id()
 
-	tflog.SetField(ctx, "zone", zoneName)
+	ctx = tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Reading recursor forward zone")
 
 	zone, err := recursorClient.GetForwardZone(ctx, zoneName)
@@ -131,7 +131,7 @@ func resourcePDNSRecursorForwardZoneUpdate(ctx context.Context, d *schema.Resour
 	zoneName := d.Id()
 	rawServers := d.Get("servers").([]interface{})
 
-	tflog.SetField(ctx, "zone", zoneName)
+	ctx = tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Updating recursor forward zone")
 
 	servers := make([]string, len(rawServers))
@@ -167,7 +167,7 @@ func resourcePDNSRecursorForwardZoneDelete(ctx context.Context, d *schema.Resour
 
 	zoneName := d.Id()
 
-	tflog.SetField(ctx, "zone", zoneName)
+	ctx = tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Deleting recursor forward zone")
 
 	err := recursorClient.DeleteForwardZone(ctx, zoneName)

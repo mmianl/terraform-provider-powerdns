@@ -140,10 +140,10 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 		}
 	}
 
-	tflog.SetField(ctx, "server_url", config.ServerURL)
-	tflog.SetField(ctx, "server_id", config.ServerID)
+	ctx = tflog.SetField(ctx, "server_url", config.ServerURL)
+	ctx = tflog.SetField(ctx, "server_id", config.ServerID)
 	if config.RecursorServerURL != "" {
-		tflog.SetField(ctx, "recursor_server_url", config.RecursorServerURL)
+		ctx = tflog.SetField(ctx, "recursor_server_url", config.RecursorServerURL)
 	}
 	tflog.Debug(ctx, "Initializing PowerDNS client")
 

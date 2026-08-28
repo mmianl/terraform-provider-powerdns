@@ -64,8 +64,8 @@ func resourcePDNSPTRRecordCreate(ctx context.Context, d *schema.ResourceData, me
 	ttl := d.Get("ttl").(int)
 	reverseZone := d.Get("reverse_zone").(string)
 
-	tflog.SetField(ctx, "ip_address", ipAddress)
-	tflog.SetField(ctx, "reverse_zone", reverseZone)
+	ctx = tflog.SetField(ctx, "ip_address", ipAddress)
+	ctx = tflog.SetField(ctx, "reverse_zone", reverseZone)
 	tflog.Debug(ctx, "Creating PTR record")
 
 	// Get the PTR record name
@@ -114,8 +114,8 @@ func resourcePDNSPTRRecordRead(ctx context.Context, d *schema.ResourceData, meta
 	ipAddress := d.Get("ip_address").(string)
 	reverseZone := d.Get("reverse_zone").(string)
 
-	tflog.SetField(ctx, "ip_address", ipAddress)
-	tflog.SetField(ctx, "reverse_zone", reverseZone)
+	ctx = tflog.SetField(ctx, "ip_address", ipAddress)
+	ctx = tflog.SetField(ctx, "reverse_zone", reverseZone)
 	tflog.Debug(ctx, "Reading PTR record")
 
 	// Get the PTR record name
@@ -170,8 +170,8 @@ func resourcePDNSPTRRecordDelete(ctx context.Context, d *schema.ResourceData, me
 	ipAddress := d.Get("ip_address").(string)
 	reverseZone := d.Get("reverse_zone").(string)
 
-	tflog.SetField(ctx, "ip_address", ipAddress)
-	tflog.SetField(ctx, "reverse_zone", reverseZone)
+	ctx = tflog.SetField(ctx, "ip_address", ipAddress)
+	ctx = tflog.SetField(ctx, "reverse_zone", reverseZone)
 	tflog.Debug(ctx, "Deleting PTR record")
 
 	// Get the PTR record name
