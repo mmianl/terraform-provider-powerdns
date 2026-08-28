@@ -53,8 +53,8 @@ func resourcePDNSZoneMetadataCreate(ctx context.Context, d *schema.ResourceData,
 	kind := d.Get("kind").(string)
 	values := expandStringSet(d.Get("metadata").(*schema.Set))
 
-	tflog.SetField(ctx, "zone", zone)
-	tflog.SetField(ctx, "kind", kind)
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "kind", kind)
 	tflog.Debug(ctx, "Creating PowerDNS zone metadata")
 
 	if err := client.PDNS.ReplaceZoneMetadata(ctx, zone, kind, values); err != nil {
@@ -71,8 +71,8 @@ func resourcePDNSZoneMetadataRead(ctx context.Context, d *schema.ResourceData, m
 	zone := d.Get("zone").(string)
 	kind := d.Get("kind").(string)
 
-	tflog.SetField(ctx, "zone", zone)
-	tflog.SetField(ctx, "kind", kind)
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "kind", kind)
 	tflog.Debug(ctx, "Reading PowerDNS zone metadata")
 
 	allMetadata, err := client.PDNS.ListZoneMetadata(ctx, zone)
@@ -122,8 +122,8 @@ func resourcePDNSZoneMetadataDelete(ctx context.Context, d *schema.ResourceData,
 	zone := d.Get("zone").(string)
 	kind := d.Get("kind").(string)
 
-	tflog.SetField(ctx, "zone", zone)
-	tflog.SetField(ctx, "kind", kind)
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "kind", kind)
 	tflog.Debug(ctx, "Deleting PowerDNS zone metadata")
 
 	if err := client.PDNS.DeleteZoneMetadata(ctx, zone, kind); err != nil {
