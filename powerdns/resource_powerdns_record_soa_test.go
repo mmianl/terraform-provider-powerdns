@@ -14,9 +14,9 @@ func TestAccPDNSRecordSOA_Basic(t *testing.T) {
 	resourceName := "powerdns_record_soa.test-soa"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSRecordSOADestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSRecordSOADestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordSOAConfigBasic,
@@ -44,9 +44,9 @@ func TestAccPDNSRecordSOA_Update(t *testing.T) {
 	resourceName := "powerdns_record_soa.test-soa-upd"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSRecordSOADestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSRecordSOADestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordSOAConfigUpdate1,
@@ -75,9 +75,9 @@ func TestAccPDNSRecordSOA_Import(t *testing.T) {
 	resourceID := `{"zone":"test-soa-imp-sysa.xyz.","id":"test-soa-imp-sysa.xyz.:::SOA"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSRecordSOADestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSRecordSOADestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordSOAConfigImport,
@@ -119,8 +119,8 @@ func TestAccPDNSRecordSOA_Import(t *testing.T) {
 
 func TestAccPDNSRecordSOA_BlockedInRecord(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSRecordSOABlockedConfig,
