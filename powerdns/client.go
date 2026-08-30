@@ -213,12 +213,17 @@ type ZoneInfo struct {
 	Catalog            string              `json:"catalog,omitempty"`
 	DNSSec             bool                `json:"dnssec"`
 	Serial             int64               `json:"serial"`
+	NotifiedSerial     int64               `json:"notified_serial,omitempty"`
+	EditedSerial       int64               `json:"edited_serial,omitempty"`
+	LastCheck          int64               `json:"last_check,omitempty"`
 	Records            []Record            `json:"records,omitempty"`
 	ResourceRecordSets []ResourceRecordSet `json:"rrsets,omitempty"`
 	Account            string              `json:"account"`
 	Nameservers        []string            `json:"nameservers,omitempty"`
 	Masters            []string            `json:"masters,omitempty"`
+	SoaEdit            string              `json:"soa_edit,omitempty"`
 	SoaEditAPI         string              `json:"soa_edit_api,omitempty"`
+	APIRectify         *bool               `json:"api_rectify,omitempty"`
 	MasterTsigKeyIDs   []string            `json:"master_tsig_key_ids,omitempty"`
 	SlaveTsigKeyIDs    []string            `json:"slave_tsig_key_ids,omitempty"`
 }
@@ -228,7 +233,10 @@ type ZoneInfoUpd struct {
 	Name             string    `json:"name"`
 	Kind             string    `json:"kind"`
 	Catalog          string    `json:"catalog,omitempty"`
+	SoaEdit          *string   `json:"soa_edit,omitempty"`
 	SoaEditAPI       string    `json:"soa_edit_api,omitempty"`
+	APIRectify       *bool     `json:"api_rectify,omitempty"`
+	DNSSec           *bool     `json:"dnssec,omitempty"`
 	Account          string    `json:"account"`
 	Masters          []string  `json:"masters,omitempty"`
 	MasterTsigKeyIDs *[]string `json:"master_tsig_key_ids,omitempty"`

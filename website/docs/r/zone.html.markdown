@@ -124,11 +124,23 @@ This resource supports the following arguments:
 - `catalog` - (Optional) Catalog zone FQDN, ending with a trailing dot, to assign this zone to. This can be used to create or update PowerDNS catalog zone membership.
 - `masters` - (Optional) List of IP addresses configured as a master for this zone. This argument must be provided when `kind` is set to `Slave`.
 - `soa_edit_api` - (Optional) This should map to one of the [supported API values](https://doc.powerdns.com/authoritative/dnsupdate.html#soa-edit-dnsupdate-settings) *or* in [case you wish to remove the setting](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit-api), set this argument as `""` (that will translate to the API value `""`).
+- `soa_edit` - (Optional, Computed) The SOA serial rewrite rule applied when the zone is served. See the [supported values](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit).
+- `dnssec` - (Optional, Computed) Whether DNSSEC is enabled for this zone. Can be toggled on an existing zone without recreating it.
+- `api_rectify` - (Optional, Computed) Whether the zone is rectified automatically after changes made through the API.
 - `master_tsig_key_ids` - (Optional, Computed) Set of TSIG key IDs allowed to authenticate AXFR requests for this zone (`TSIG-ALLOW-AXFR` metadata). Accepts bare names or dotted IDs. Omission retains existing server values; set `[]` to clear them.
 - `slave_tsig_key_ids` - (Optional, Computed) Set containing at most one TSIG key ID used to sign requests to the primary server (`AXFR-MASTER-TSIG` metadata). Accepts bare names or dotted IDs. Omission retains existing server values; set `[]` to clear them.
 
 Manage each TSIG metadata kind through either these zone attributes or a
 `powerdns_zone_metadata` resource so that only one resource owns its value.
+
+## Attribute Reference
+
+In addition to the arguments above, the following attributes are exported:
+
+- `serial` - The current serial of the zone.
+- `notified_serial` - The last serial this zone was notified for.
+- `edited_serial` - The SOA serial after applying the SOA edit rule.
+- `last_check` - Timestamp of the last freshness check. Only meaningful for `Slave` zones.
 
 ## Importing
 
