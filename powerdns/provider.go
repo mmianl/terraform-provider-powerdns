@@ -114,6 +114,7 @@ func Provider() *schema.Provider {
 			"powerdns_zone_cryptokey":        resourcePDNSZoneCryptokey(),
 			"powerdns_zone_notify":           resourcePDNSZoneNotify(),
 			"powerdns_zone_rectify":          resourcePDNSZoneRectify(),
+			"powerdns_tsigkey":               resourcePDNSTSIGKey(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -124,6 +125,7 @@ func Provider() *schema.Provider {
 			"powerdns_zone_metadata":      dataSourcePDNSZoneMetadata(),
 			"powerdns_zone_metadata_list": dataSourcePDNSZoneMetadataList(),
 			"powerdns_zone_cryptokeys":    dataSourcePDNSZoneCryptokeys(),
+			"powerdns_tsigkey":            dataSourcePDNSTSIGKey(),
 		},
 
 		ConfigureContextFunc: providerConfigure,
