@@ -8,9 +8,9 @@ import (
 
 func TestAccPowerDNSReverseZoneDataSource_CIDR(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSReverseZoneDataSourceConfig_CIDR,

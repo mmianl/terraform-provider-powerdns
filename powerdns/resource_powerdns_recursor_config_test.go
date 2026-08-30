@@ -12,8 +12,8 @@ import (
 
 func TestAccPowerDNSRecursorConfig_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheckRecursor(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheckRecursor(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSRecursorConfigConfig,
