@@ -1128,3 +1128,42 @@ resource "powerdns_record" "test-soa" {
 	ttl = 3600
 	records = [ "something.something. hostmaster.sysa.xyz. 2019090301 10800 3600 604800 3600" ]
 }`
+
+// Two resources naming the same record set would otherwise both report success
+// while the server keeps only one of them, leaving a plan that never converges.
+func TestAccPDNSRecordDuplicateRRSetIsRejected(t *testing.T) {
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSRecordDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config:      testPDNSRecordConfigDuplicateRRSet,
+				ExpectError: regexp.MustCompile(`already exists in zone`),
+			},
+		},
+	})
+}
+
+const testPDNSRecordConfigDuplicateRRSet = `
+resource "powerdns_zone" "dup-guard" {
+	name = "dup-guard.sysa.xyz."
+	kind = "Native"
+}
+
+resource "powerdns_record" "dup-a" {
+	zone    = powerdns_zone.dup-guard.name
+	name    = "dup.dup-guard.sysa.xyz."
+	type    = "A"
+	ttl     = 300
+	records = ["192.0.2.1"]
+}
+
+resource "powerdns_record" "dup-b" {
+	zone       = powerdns_zone.dup-guard.name
+	name       = "dup.dup-guard.sysa.xyz."
+	type       = "A"
+	ttl        = 300
+	records    = ["192.0.2.2"]
+	depends_on = [powerdns_record.dup-a]
+}`

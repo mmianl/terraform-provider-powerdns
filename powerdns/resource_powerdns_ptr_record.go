@@ -80,6 +80,10 @@ func resourcePDNSPTRRecordCreate(ctx context.Context, d *schema.ResourceData, me
 		suffix = ".ip6.arpa."
 	}
 
+	if err := guardRecordOverwrite(ctx, client.PDNS, "powerdns_ptr_record", reverseZone, ptrName+suffix, "PTR"); err != nil {
+		return diag.FromErr(err)
+	}
+
 	// Create the PTR record with full FQDN
 	rrSet := ResourceRecordSet{
 		Name:       ptrName + suffix,
