@@ -1335,6 +1335,7 @@ func (client *PowerDNSClient) DeleteNetwork(ctx context.Context, ip, prefixlen s
 // RecursorClient talks to the PowerDNS Recursor API.
 type RecursorClient struct {
 	*BaseClient
+	serverID string
 }
 
 // RecursorForwardZone represents a PowerDNS Recursor forward zone.
@@ -1361,6 +1362,7 @@ type RecursorConfigSetting struct {
 func NewRecursorClient(
 	ctx context.Context,
 	recursorURL string,
+	serverID string,
 	apiKey string,
 	configTLS *tls.Config,
 ) (*RecursorClient, error) {
@@ -1368,12 +1370,20 @@ func NewRecursorClient(
 	if err != nil {
 		return nil, err
 	}
-	return &RecursorClient{BaseClient: base}, nil
+	if serverID == "" {
+		serverID = "localhost"
+	}
+	return &RecursorClient{BaseClient: base, serverID: serverID}, nil
+}
+
+// serverEndpoint returns an API path scoped to the configured recursor server.
+func (client *RecursorClient) serverEndpoint(path string) string {
+	return "/servers/" + url.PathEscape(client.serverID) + path
 }
 
 // GetForwardZone retrieves a specific recursor forward zone definition.
 func (client *RecursorClient) GetForwardZone(ctx context.Context, name string) (*RecursorForwardZone, error) {
-	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
+	endpoint := client.serverEndpoint("/zones/" + url.PathEscape(name))
 
 	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -1425,7 +1435,7 @@ func (client *RecursorClient) CreateForwardZone(ctx context.Context, zone *Recur
 		return err
 	}
 
-	req, err := client.newRequest(ctx, http.MethodPost, "/servers/localhost/zones", body)
+	req, err := client.newRequest(ctx, http.MethodPost, client.serverEndpoint("/zones"), body)
 	if err != nil {
 		return err
 	}
@@ -1459,7 +1469,7 @@ func (client *RecursorClient) CreateForwardZone(ctx context.Context, zone *Recur
 
 // DeleteForwardZone deletes a recursor forward zone.
 func (client *RecursorClient) DeleteForwardZone(ctx context.Context, name string) error {
-	endpoint := fmt.Sprintf("/servers/localhost/zones/%s", name)
+	endpoint := client.serverEndpoint("/zones/" + url.PathEscape(name))
 
 	req, err := client.newRequest(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
@@ -1500,7 +1510,7 @@ func (client *RecursorClient) DeleteForwardZone(ctx context.Context, name string
 
 // GetConfig retrieves a single recursor config setting using
 func (client *RecursorClient) GetConfig(ctx context.Context, name string) (*RecursorConfigSetting, error) {
-	endpoint := fmt.Sprintf("/servers/localhost/config/%s", name)
+	endpoint := client.serverEndpoint("/config/" + url.PathEscape(name))
 
 	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -1554,7 +1564,7 @@ func (client *RecursorClient) SetConfig(ctx context.Context, name string, values
 		return err
 	}
 
-	endpoint := fmt.Sprintf("/servers/localhost/config/%s", name)
+	endpoint := client.serverEndpoint("/config/" + url.PathEscape(name))
 
 	req, err := client.newRequest(ctx, http.MethodPut, endpoint, body)
 	if err != nil {

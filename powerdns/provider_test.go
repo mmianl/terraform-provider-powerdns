@@ -49,6 +49,28 @@ func TestProviderServerIDEnvironmentOverride(t *testing.T) {
 	}
 }
 
+func TestProviderRecursorServerIDDefault(t *testing.T) {
+	value, err := Provider().Schema["recursor_server_id"].DefaultValue()
+	if err != nil {
+		t.Fatalf("getting recursor_server_id default: %v", err)
+	}
+	if value != "localhost" {
+		t.Errorf("recursor_server_id default = %q, want %q", value, "localhost")
+	}
+}
+
+func TestProviderRecursorServerIDEnvironmentOverride(t *testing.T) {
+	t.Setenv("PDNS_RECURSOR_SERVER_ID", "edge-recursor")
+
+	value, err := Provider().Schema["recursor_server_id"].DefaultValue()
+	if err != nil {
+		t.Fatalf("getting recursor_server_id default: %v", err)
+	}
+	if value != "edge-recursor" {
+		t.Errorf("recursor_server_id from environment = %q, want %q", value, "edge-recursor")
+	}
+}
+
 func testAccPreCheck(t *testing.T) {
 	if v := os.Getenv("PDNS_API_KEY"); v == "" {
 		t.Fatal("PDNS_API_KEY must be set for acceptance tests")

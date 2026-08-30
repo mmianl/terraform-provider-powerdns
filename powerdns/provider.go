@@ -84,6 +84,12 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_RECURSOR_SERVER_URL", nil),
 				Description: "Base URL of the PowerDNS recursor server. Also via PDNS_RECURSOR_SERVER_URL.",
 			},
+			"recursor_server_id": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PDNS_RECURSOR_SERVER_ID", "localhost"),
+				Description: "ID of the PowerDNS Recursor to manage. Can also be set via PDNS_RECURSOR_SERVER_ID.",
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -122,6 +128,7 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 		ServerURL:         data.Get("server_url").(string),
 		ServerID:          data.Get("server_id").(string),
 		RecursorServerURL: data.Get("recursor_server_url").(string),
+		RecursorServerID:  data.Get("recursor_server_id").(string),
 		InsecureHTTPS:     data.Get("insecure_https").(bool),
 		CACertificate:     data.Get("ca_certificate").(string),
 		CacheEnable:       data.Get("cache_requests").(bool),
@@ -144,6 +151,7 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 	tflog.SetField(ctx, "server_id", config.ServerID)
 	if config.RecursorServerURL != "" {
 		tflog.SetField(ctx, "recursor_server_url", config.RecursorServerURL)
+		tflog.SetField(ctx, "recursor_server_id", config.RecursorServerID)
 	}
 	tflog.Debug(ctx, "Initializing PowerDNS client")
 
