@@ -71,6 +71,16 @@ This resource exports the following attributes in addition to the arguments abov
 - `account` - The account associated with the zone (defaults to "admin").
 - `masters` - Set of master servers for this zone (Slave zones only).
 - `soa_edit_api` - SOA edit API setting.
+- `catalog` - The catalog zone this zone belongs to.
+- `soa_edit` - SOA edit setting applied when serving the zone.
+- `dnssec` - Whether DNSSEC is enabled for this zone.
+- `api_rectify` - Whether the zone is rectified automatically after API changes.
+- `master_tsig_key_ids` - Set of TSIG key IDs used to sign outgoing AXFR and NOTIFY messages.
+- `slave_tsig_key_ids` - Set of TSIG key IDs used when retrieving this zone from a master.
+- `serial` - The current serial of the zone.
+- `notified_serial` - The last serial this zone was notified for.
+- `edited_serial` - The serial of the zone as last edited.
+- `last_check` - Timestamp of the last freshness check (Slave zones only).
 - `records` - List of all DNS records in the zone. Each record has the following attributes:
   - `name` - The name of the record.
   - `type` - The type of the record (A, AAAA, CNAME, MX, etc.).

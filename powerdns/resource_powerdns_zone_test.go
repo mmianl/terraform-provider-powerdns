@@ -238,6 +238,64 @@ func TestAccPDNSZoneCatalog(t *testing.T) {
 	})
 }
 
+func TestAccPDNSZoneDNSSec(t *testing.T) {
+	resourceName := "powerdns_zone.test-dnssec"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigDNSSec,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "name", "dnssec.sysa.abc."),
+					resource.TestCheckResourceAttr(resourceName, "dnssec", "true"),
+					resource.TestCheckResourceAttr(resourceName, "soa_edit", "INCEPTION-INCREMENT"),
+					resource.TestCheckResourceAttr(resourceName, "api_rectify", "true"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				// DNSSEC is togglable in place, so this must update rather than
+				// force a replacement.
+				Config: testPDNSZoneConfigDNSSecDisabled,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "dnssec", "false"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneComputedSerials(t *testing.T) {
+	resourceName := "powerdns_zone.test-serials"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigComputedSerials,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttrSet(resourceName, "serial"),
+					resource.TestCheckResourceAttrSet(resourceName, "edited_serial"),
+					resource.TestCheckResourceAttr(resourceName, "notified_serial", "0"),
+					resource.TestCheckResourceAttr(resourceName, "last_check", "0"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccPDNSZoneAccountEmpty(t *testing.T) {
 	resourceName := "powerdns_zone.test-account-empty"
 	resourceAccount := ``
@@ -672,4 +730,28 @@ resource "powerdns_zone" "test-slave-with-ipv6-masters" {
 		"fd92:81e1:e314:ea7b:0000:1234:5678:60ab",
 		"192.168.123.45",
 	]
+}`
+
+const testPDNSZoneConfigDNSSec = `
+resource "powerdns_zone" "test-dnssec" {
+	name        = "dnssec.sysa.abc."
+	kind        = "Native"
+	dnssec      = true
+	soa_edit    = "INCEPTION-INCREMENT"
+	api_rectify = true
+}`
+
+const testPDNSZoneConfigDNSSecDisabled = `
+resource "powerdns_zone" "test-dnssec" {
+	name        = "dnssec.sysa.abc."
+	kind        = "Native"
+	dnssec      = false
+	soa_edit    = "INCEPTION-INCREMENT"
+	api_rectify = true
+}`
+
+const testPDNSZoneConfigComputedSerials = `
+resource "powerdns_zone" "test-serials" {
+	name = "serials.sysa.abc."
+	kind = "Native"
 }`
