@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: 1.26.1
 
@@ -27,7 +27,7 @@ jobs:
   mod-tidy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Ensure go.mod tidy and vendor are clean
         run: |
@@ -43,10 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: 1.26.1
 
@@ -56,12 +56,35 @@ jobs:
 
   acc-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Newest pairing, and the only one where every feature is available.
+          - pdns-auth: "51"
+            pdns-recursor: "54"
+            pdns-conf-dir: "pdns.d-views"
+          # Views and networks exist here but record comments do not.
+          - pdns-auth: "50"
+            pdns-recursor: "53"
+            pdns-conf-dir: "pdns.d-views"
+          # Oldest release the provider is tested against. Views, networks and
+          # comments are all absent, so those tests skip themselves.
+          - pdns-auth: "49"
+            pdns-recursor: "51"
+            # 4.9 does not know the "views" setting and refuses to start on it.
+            pdns-conf-dir: "pdns.d-empty"
+          # The gpgsql backend rather than LMDB. The two do not support the same
+          # features, so a suite that only runs on one cannot see the difference.
+          - pdns-auth: "51"
+            pdns-recursor: "54"
+            compose-file: "docker-compose.gpgsql.yml"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: 1.26.1
 
@@ -72,9 +95,16 @@ jobs:
 
       - name: Start PowerDNS
         working-directory: acc-tests
-        run: docker compose up -d
+        env:
+          PDNS_AUTH_VERSION: ${{ matrix.pdns-auth }}
+          PDNS_RECURSOR_VERSION: ${{ matrix.pdns-recursor }}
+          PDNS_CONF_DIR: ${{ matrix.pdns-conf-dir }}
+          PDNS_COMPOSE_FILE: ${{ matrix.compose-file }}
+        run: docker compose -f "${PDNS_COMPOSE_FILE:-docker-compose.yml}" up -d
 
       - name: Wait for PowerDNS to be healthy
+        env:
+          PDNS_COMPOSE_FILE: ${{ matrix.compose-file }}
         run: |
           while true; do
             STATUS="$(docker inspect --format='{{.State.Health.Status}}' pdns-health 2>/dev/null || echo "starting")"
@@ -84,7 +114,7 @@ jobs:
             fi
             if [ "$STATUS" = "unhealthy" ]; then
               echo "PowerDNS is UNHEALTHY!"
-              docker compose -f acc-tests/docker-compose.yml logs
+              docker compose -f "acc-tests/${PDNS_COMPOSE_FILE:-docker-compose.yml}" logs
               exit 1
             fi
             sleep 5
@@ -104,10 +134,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: 1.26.1
 

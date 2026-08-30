@@ -721,7 +721,10 @@ func (client *PowerDNSClient) DeleteZoneMetadata(ctx context.Context, zone strin
 		}
 	}()
 
-	if resp.StatusCode != http.StatusNoContent {
+	// PowerDNS before 4.9 answers a metadata delete with 200 rather than 204,
+	// so both have to count as success or the resource cannot be destroyed on
+	// those releases.
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
 			return fmt.Errorf("error deleting zone metadata: %s (%s)", zone, kind)

@@ -8,6 +8,33 @@ The Terraform PowerDNS provider allows you to manage PowerDNS zones, records, vi
 - [Go](https://golang.org/doc/install) >=1.24.x (to build the provider plugin)
 - [Goreleaser](https://goreleaser.com) >=v6.3.x (for releasing provider plugin)
 
+### PowerDNS versions
+
+The provider is tested against PowerDNS Authoritative 4.9, 5.0 and 5.1, paired
+with PowerDNS Recursor 5.1, 5.3 and 5.4. Older releases mostly work, but some
+resources depend on features that arrived in a particular version:
+
+| Feature | Resources | Requires |
+| --- | --- | --- |
+| Views and networks | `powerdns_view_zone_association`, `powerdns_network` | Authoritative 5.0+, LMDB backend with `views=yes` and a non-zero `zone-cache-refresh-interval` |
+| Record comments | `comments` on `powerdns_record` | A backend that stores comments. LMDB gained this in Authoritative 5.1 |
+| Catalog zones | `catalog` on `powerdns_zone` | Authoritative 4.7+ |
+| Recursor resources | `powerdns_recursor_config`, `powerdns_recursor_forward_zone` | A recursor with `api-config-dir` set, which makes its API writable |
+
+Everything else works on Authoritative 4.5 and newer.
+
+Some of this depends on the storage backend rather than the version. The
+acceptance tests run against both LMDB and gpgsql for that reason:
+
+| Feature | LMDB | gpgsql |
+| --- | --- | --- |
+| Views and networks | Yes, from 5.0 | No |
+| Record comments | From 5.1 | Yes |
+| Autoprimaries | No | Yes |
+
+The tests ask the server what it supports and skip what it cannot do, so the
+same suite is meaningful against either backend.
+
 The Go ang Goreleaser minimum versions were set to be able to build plugin for Darwin/ARM64 architecture [see goreleaser notes.](https://goreleaser.com/deprecations/#builds-for-darwinarm64)
 
 ## Using the Provider

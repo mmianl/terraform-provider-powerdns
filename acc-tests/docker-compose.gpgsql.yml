@@ -1,35 +1,59 @@
 version: "3.9"
 
-# The version variables exist so this stack can be pointed at another release
-# when reproducing a problem. The default pair is deliberately the newest one:
-# the Terraform config here uses record comments, which the LMDB backend only
-# supports from Authoritative 5.1, so older versions cannot run it unchanged.
-# Cross-version coverage lives in the acceptance test matrix instead.
+# An alternative stack that runs the authoritative server on the gpgsql backend
+# instead of LMDB. The two backends do not support the same feature set, so a
+# suite that only ever runs on one of them cannot see the difference. Use it
+# with:
+#
+#   docker compose -f docker-compose.gpgsql.yml up -d
+#
+# The acceptance tests detect what the server supports and skip accordingly, so
+# the same suite runs against either stack unchanged.
+
 services:
-  dbinit:
+  postgres:
+    image: "postgres:17-alpine"
+    container_name: "pdns-postgres"
+    environment:
+      POSTGRES_DB: "pdns"
+      POSTGRES_USER: "pdns"
+      POSTGRES_PASSWORD: "pdnstest"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdns -d pdns"]
+      interval: "3s"
+      timeout: "3s"
+      retries: 20
+
+  # The schema ships inside the PowerDNS image, so it is loaded from there
+  # rather than being copied into this repository and kept in step by hand.
+  schema:
     image: "powerdns/pdns-auth-${PDNS_AUTH_VERSION:-51}:latest"
-    container_name: "pdns-dbinit"
+    container_name: "pdns-schema"
+    depends_on:
+      postgres:
+        condition: "service_healthy"
     entrypoint: "/bin/sh"
     user: "root"
+    environment:
+      PGPASSWORD: "pdnstest"
     command: >
       -lc '
         set -eu;
-        chown -R pdns:pdns /data;
+        apt-get update >/dev/null 2>&1 || true;
+        (command -v psql >/dev/null 2>&1 || apt-get install -y --no-install-recommends postgresql-client >/dev/null 2>&1);
+        psql -h postgres -U pdns -d pdns -v ON_ERROR_STOP=1 -f /usr/local/share/doc/pdns/schema.pgsql.sql;
+        echo "schema loaded"
       '
-    volumes:
-      - "pdns_data:/data"
     restart: "no"
 
   pdns:
     image: "powerdns/pdns-auth-${PDNS_AUTH_VERSION:-51}:latest"
     container_name: "pdns"
     depends_on:
-      dbinit:
+      schema:
         condition: "service_completed_successfully"
     volumes:
-      - "pdns_data:/data"
-      - "./pdns.conf:/etc/powerdns/pdns.conf:ro"
-      - "./${PDNS_CONF_DIR:-pdns.d-views}:/etc/powerdns/pdns.d:ro"
+      - "./pdns-gpgsql.conf:/etc/powerdns/pdns.conf:ro"
     ports:
       - "5300:5300/udp"
       - "5300:5300/tcp"
@@ -63,8 +87,6 @@ services:
     build:
       context: "."
       dockerfile: "Dockerfile.recursor"
-      args:
-        RECURSOR_VERSION: "${PDNS_RECURSOR_VERSION:-54}"
     container_name: "recursor"
     depends_on:
       pdns-health:
@@ -99,38 +121,3 @@ services:
       interval: "5s"
       timeout: "3s"
       retries: 5
-
-  terraform:
-    build:
-      context: "."
-      dockerfile: "Dockerfile.tf"
-      args:
-        TF_PLUGIN_PLATFORM: ${TF_PLUGIN_PLATFORM:-linux_amd64}
-    container_name: "terraform"
-    stop_grace_period: 1s
-    depends_on:
-      recursor-health:
-        condition: "service_healthy"
-    working_dir: "/tf"
-    # Create, assert and delete all resources
-    entrypoint:
-      - "/bin/sh"
-      - "-lc"
-      - |
-        set -eu
-
-        echo "Current dir: $(pwd)"
-        terraform version
-
-        terraform init
-        terraform apply -auto-approve
-
-        ./assert.test -test.v
-
-        echo "" > main.tf && echo "" > outputs.tf
-        terraform apply -auto-approve
-    restart: "no"
-
-volumes:
-  pdns_data:
-  schema:
