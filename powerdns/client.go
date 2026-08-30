@@ -204,22 +204,34 @@ type ZoneInfo struct {
 	Catalog            string              `json:"catalog,omitempty"`
 	DNSSec             bool                `json:"dnssec"`
 	Serial             int64               `json:"serial"`
+	NotifiedSerial     int64               `json:"notified_serial"`
+	EditedSerial       int64               `json:"edited_serial"`
+	LastCheck          int64               `json:"last_check"`
 	Records            []Record            `json:"records,omitempty"`
 	ResourceRecordSets []ResourceRecordSet `json:"rrsets,omitempty"`
 	Account            string              `json:"account"`
 	Nameservers        []string            `json:"nameservers,omitempty"`
 	Masters            []string            `json:"masters,omitempty"`
+	SoaEdit            string              `json:"soa_edit,omitempty"`
 	SoaEditAPI         string              `json:"soa_edit_api,omitempty"`
+	APIRectify         bool                `json:"api_rectify"`
+	MasterTsigKeyIDs   []string            `json:"master_tsig_key_ids,omitempty"`
+	SlaveTsigKeyIDs    []string            `json:"slave_tsig_key_ids,omitempty"`
 }
 
 // ZoneInfoUpd is a limited subset for supported updates
 type ZoneInfoUpd struct {
-	Name       string   `json:"name"`
-	Kind       string   `json:"kind"`
-	Catalog    string   `json:"catalog,omitempty"`
-	SoaEditAPI string   `json:"soa_edit_api,omitempty"`
-	Account    string   `json:"account"`
-	Masters    []string `json:"masters,omitempty"`
+	Name             string   `json:"name"`
+	Kind             string   `json:"kind"`
+	Catalog          string   `json:"catalog,omitempty"`
+	SoaEdit          string   `json:"soa_edit,omitempty"`
+	SoaEditAPI       string   `json:"soa_edit_api,omitempty"`
+	APIRectify       bool     `json:"api_rectify"`
+	DNSSec           bool     `json:"dnssec"`
+	Account          string   `json:"account"`
+	Masters          []string `json:"masters,omitempty"`
+	MasterTsigKeyIDs []string `json:"master_tsig_key_ids,omitempty"`
+	SlaveTsigKeyIDs  []string `json:"slave_tsig_key_ids,omitempty"`
 }
 
 // View represents a PowerDNS view object.
