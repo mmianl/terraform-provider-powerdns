@@ -23,6 +23,18 @@ resources depend on features that arrived in a particular version:
 
 Everything else works on Authoritative 4.5 and newer.
 
+Some of this depends on the storage backend rather than the version. The
+acceptance tests run against both LMDB and gpgsql for that reason:
+
+| Feature | LMDB | gpgsql |
+| --- | --- | --- |
+| Views and networks | Yes, from 5.0 | No |
+| Record comments | From 5.1 | Yes |
+| Autoprimaries | No | Yes |
+
+The tests ask the server what it supports and skip what it cannot do, so the
+same suite is meaningful against either backend.
+
 The Go ang Goreleaser minimum versions were set to be able to build plugin for Darwin/ARM64 architecture [see goreleaser notes.](https://goreleaser.com/deprecations/#builds-for-darwinarm64)
 
 ## Using the Provider

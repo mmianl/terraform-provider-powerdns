@@ -75,6 +75,11 @@ jobs:
             pdns-recursor: "51"
             # 4.9 does not know the "views" setting and refuses to start on it.
             pdns-conf-dir: "pdns.d-empty"
+          # The gpgsql backend rather than LMDB. The two do not support the same
+          # features, so a suite that only runs on one cannot see the difference.
+          - pdns-auth: "51"
+            pdns-recursor: "54"
+            compose-file: "docker-compose.gpgsql.yml"
     steps:
       - uses: actions/checkout@v7
 
@@ -94,9 +99,12 @@ jobs:
           PDNS_AUTH_VERSION: ${{ matrix.pdns-auth }}
           PDNS_RECURSOR_VERSION: ${{ matrix.pdns-recursor }}
           PDNS_CONF_DIR: ${{ matrix.pdns-conf-dir }}
-        run: docker compose up -d
+          PDNS_COMPOSE_FILE: ${{ matrix.compose-file }}
+        run: docker compose -f "${PDNS_COMPOSE_FILE:-docker-compose.yml}" up -d
 
       - name: Wait for PowerDNS to be healthy
+        env:
+          PDNS_COMPOSE_FILE: ${{ matrix.compose-file }}
         run: |
           while true; do
             STATUS="$(docker inspect --format='{{.State.Health.Status}}' pdns-health 2>/dev/null || echo "starting")"
@@ -106,7 +114,7 @@ jobs:
             fi
             if [ "$STATUS" = "unhealthy" ]; then
               echo "PowerDNS is UNHEALTHY!"
-              docker compose -f acc-tests/docker-compose.yml logs
+              docker compose -f "acc-tests/${PDNS_COMPOSE_FILE:-docker-compose.yml}" logs
               exit 1
             fi
             sleep 5
