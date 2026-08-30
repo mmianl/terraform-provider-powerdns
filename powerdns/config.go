@@ -23,6 +23,7 @@ type Config struct {
 	CacheEnable       bool
 	CacheMemorySize   string
 	CacheTTL          int
+	RequestTimeout    int
 }
 
 // Client returns a new client for accessing PowerDNS
@@ -75,6 +76,7 @@ func (c *Config) Clients(ctx context.Context) (*PowerDNSClient, *RecursorClient,
 		c.CacheEnable,
 		c.CacheMemorySize,
 		c.CacheTTL,
+		c.RequestTimeout,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error setting up PowerDNS client: %s", err)
@@ -94,6 +96,7 @@ func (c *Config) Clients(ctx context.Context) (*PowerDNSClient, *RecursorClient,
 			c.RecursorServerURL,
 			c.APIKey,
 			tlsConfig,
+			c.RequestTimeout,
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error setting up Recursor client: %s", err)
