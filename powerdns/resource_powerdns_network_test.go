@@ -19,7 +19,7 @@ func TestParseNetworkCIDR(t *testing.T) {
 
 func TestAccPDNSNetworkBasic(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
+		PreCheck:  func() { testAccPreCheckViews(t) },
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
@@ -40,7 +40,7 @@ func TestAccPDNSNetworkBasic(t *testing.T) {
 
 func TestAccPDNSNetworkInvalidNetwork(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
+		PreCheck:  func() { testAccPreCheckViews(t) },
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
@@ -53,7 +53,7 @@ func TestAccPDNSNetworkInvalidNetwork(t *testing.T) {
 
 func TestAccPDNSNetworkInvalidView(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
+		PreCheck:  func() { testAccPreCheckViews(t) },
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
