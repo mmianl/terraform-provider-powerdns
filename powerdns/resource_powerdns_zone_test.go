@@ -10,6 +10,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
+// volatileZoneSerials are maintained by PowerDNS rather than by configuration.
+// A zone that notifies its slaves between the apply and the import step comes
+// back with a different notified_serial, so verifying them on import is racy.
+var volatileZoneSerials = []string{"serial", "notified_serial", "edited_serial", "last_check"}
+
 func TestAccPDNSZoneNative(t *testing.T) {
 	resourceName := "powerdns_zone.test-native"
 
@@ -30,6 +35,9 @@ func TestAccPDNSZoneNative(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -101,6 +109,9 @@ func TestAccPDNSZoneMaster(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -128,6 +139,9 @@ func TestAccPDNSZoneMasterSOAAPIEDIT(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -155,6 +169,9 @@ func TestAccPDNSZoneMasterSOAAPIEDITEmpty(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -180,6 +197,9 @@ func TestAccPDNSZoneMasterSOAAPIEDITUndefined(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -207,6 +227,9 @@ func TestAccPDNSZoneAccount(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -233,6 +256,9 @@ func TestAccPDNSZoneCatalog(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -260,6 +286,9 @@ func TestAccPDNSZoneDNSSec(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 			{
 				// DNSSEC is togglable in place, so this must update rather than
@@ -318,6 +347,9 @@ func TestAccPDNSZoneAccountEmpty(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -345,6 +377,9 @@ func TestAccPDNSZoneAccountUndefined(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -370,6 +405,9 @@ func TestAccPDNSZoneSlave(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -397,6 +435,9 @@ func TestAccPDNSZoneSlaveWithMasters(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -424,6 +465,9 @@ func TestAccPDNSZoneSlaveWithMastersWithPort(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
