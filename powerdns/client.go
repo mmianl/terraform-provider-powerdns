@@ -418,6 +418,12 @@ func (client *PowerDNSClient) getZone(ctx context.Context, name string, includeR
 		}
 	}()
 
+	// A deleted zone has to be distinguishable from a broken API, so that
+	// callers can drop the resource from state instead of failing every plan.
+	if resp.StatusCode == http.StatusNotFound {
+		return ZoneInfo{}, ErrNotFound
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
@@ -602,6 +608,10 @@ func (client *PowerDNSClient) ListZoneMetadata(ctx context.Context, zone string)
 		}
 	}()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		errorResp := new(errorResponse)
 		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
@@ -640,6 +650,10 @@ func (client *PowerDNSClient) GetZoneMetadata(ctx context.Context, zone string, 
 			})
 		}
 	}()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ZoneMetadata{}, ErrNotFound
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		errorResp := new(errorResponse)

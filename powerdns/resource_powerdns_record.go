@@ -3,6 +3,7 @@ package powerdns
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -174,6 +175,13 @@ func resourcePDNSRecordRead(ctx context.Context, d *schema.ResourceData, meta in
 
 	rrSet, err := client.PDNS.GetRecordSetByID(ctx, zone, d.Id())
 	if err != nil {
+		// The whole zone can disappear out of band, which leaves the record
+		// gone as well rather than in an error state.
+		if errors.Is(err, ErrNotFound) {
+			tflog.Warn(ctx, "Zone no longer exists; removing record from state")
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS RRset details: %w", err))
 	}
 	records := recordsFromRRSet(rrSet)
