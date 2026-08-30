@@ -42,3 +42,13 @@ This resource supports the following arguments:
 - Configuration changes are applied immediately to the running recursor.
 - Some configuration settings may require a recursor restart to take effect.
 - Deleting configuration parameters from the PowerDNS Recursor server is not supported. Destruction will only remove the state entries.
+
+## Importing
+
+An existing configuration setting can be imported using its name:
+
+```bash
+terraform import powerdns_recursor_config.allow_from allow-from
+```
+
+For more information on how to use terraform's `import` command, please refer to terraform's [core documentation](https://www.terraform.io/docs/import/index.html#currently-state-only).
