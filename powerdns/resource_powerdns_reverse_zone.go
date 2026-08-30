@@ -2,6 +2,7 @@ package powerdns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -100,6 +101,11 @@ func resourcePDNSReverseZoneRead(ctx context.Context, d *schema.ResourceData, me
 
 	zone, err := client.PDNS.GetZone(ctx, zoneName)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			tflog.Warn(ctx, "Zone no longer exists; removing from state")
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("couldn't fetch zone: %w", err))
 	}
 

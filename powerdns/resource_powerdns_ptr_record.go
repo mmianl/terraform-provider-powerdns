@@ -3,6 +3,7 @@ package powerdns
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -132,6 +133,11 @@ func resourcePDNSPTRRecordRead(ctx context.Context, d *schema.ResourceData, meta
 
 	records, err := client.PDNS.ListRecordsInRRSet(ctx, reverseZone, ptrName+suffix, "PTR")
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			tflog.Warn(ctx, "Zone no longer exists; removing PTR record from state")
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("couldn't fetch PTR record: %w", err))
 	}
 
