@@ -14,7 +14,7 @@ func TestAccPDNSViewZoneAssociationBasic(t *testing.T) {
 	resourceName := "powerdns_view_zone_association.test"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
+		PreCheck:  func() { testAccPreCheckViews(t) },
 		Providers: testAccProviders,
 		CheckDestroy: func(s *terraform.State) error {
 			return testAccCheckPDNSViewZoneAssociationDestroy(s)
@@ -39,7 +39,7 @@ func TestAccPDNSViewZoneAssociationBasic(t *testing.T) {
 
 func TestAccPDNSViewZoneAssociationInvalidView(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
+		PreCheck:  func() { testAccPreCheckViews(t) },
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
@@ -52,7 +52,7 @@ func TestAccPDNSViewZoneAssociationInvalidView(t *testing.T) {
 
 func TestAccPDNSViewZoneAssociationInvalidZone(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
+		PreCheck:  func() { testAccPreCheckViews(t) },
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{

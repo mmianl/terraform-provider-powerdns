@@ -10,7 +10,7 @@ func TestAccDataSourcePDNSRecord_basic(t *testing.T) {
 	dataSourceName := "data.powerdns_record.test"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
+		PreCheck:  func() { testAccPreCheckComments(t) },
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
