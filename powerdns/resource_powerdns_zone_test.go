@@ -325,6 +325,61 @@ func TestAccPDNSZoneComputedSerials(t *testing.T) {
 	})
 }
 
+func TestAccPDNSZoneTSIGKeyRefs(t *testing.T) {
+	resourceName := "powerdns_zone.test-tsig-refs"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigTSIGKeyRefs,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "master_tsig_key_ids.#", "1"),
+					// The reference is stored in the ID form PowerDNS reports back.
+					resource.TestCheckTypeSetElemAttr(resourceName, "master_tsig_key_ids.*", "tf-zone-ref."),
+					resource.TestCheckResourceAttr(resourceName, "slave_tsig_key_ids.#", "1"),
+					resource.TestCheckTypeSetElemAttr(resourceName, "slave_tsig_key_ids.*", "tf-zone-ref."),
+				),
+			},
+			{
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: volatileZoneSerials,
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneTSIGKeyRefsBareName(t *testing.T) {
+	resourceName := "powerdns_zone.test-tsig-bare"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigTSIGKeyBareName,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					// A bare name is normalized to the dotted ID form.
+					resource.TestCheckTypeSetElemAttr(resourceName, "master_tsig_key_ids.*", "tf-zone-bare."),
+				),
+			},
+			{
+				// PowerDNS rewrites a bare name to its ID, so without normalization
+				// this configuration would never converge.
+				Config:   testPDNSZoneConfigTSIGKeyBareName,
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
 func TestAccPDNSZoneAccountEmpty(t *testing.T) {
 	resourceName := "powerdns_zone.test-account-empty"
 	resourceAccount := ``
@@ -798,4 +853,29 @@ const testPDNSZoneConfigComputedSerials = `
 resource "powerdns_zone" "test-serials" {
 	name = "serials.sysa.abc."
 	kind = "Native"
+}`
+
+const testPDNSZoneConfigTSIGKeyRefs = `
+resource "powerdns_tsigkey" "zone-ref" {
+	name      = "tf-zone-ref"
+	algorithm = "hmac-sha256"
+}
+
+resource "powerdns_zone" "test-tsig-refs" {
+	name                = "tsig-refs.sysa.abc."
+	kind                = "Master"
+	master_tsig_key_ids = [powerdns_tsigkey.zone-ref.id]
+	slave_tsig_key_ids  = [powerdns_tsigkey.zone-ref.id]
+}`
+
+const testPDNSZoneConfigTSIGKeyBareName = `
+resource "powerdns_tsigkey" "zone-bare" {
+	name      = "tf-zone-bare"
+	algorithm = "hmac-sha256"
+}
+
+resource "powerdns_zone" "test-tsig-bare" {
+	name                = "tsig-bare.sysa.abc."
+	kind                = "Master"
+	master_tsig_key_ids = [powerdns_tsigkey.zone-bare.name]
 }`

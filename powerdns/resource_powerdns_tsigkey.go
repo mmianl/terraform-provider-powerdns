@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -19,6 +20,16 @@ var tsigAlgorithms = []string{
 	"hmac-sha256",
 	"hmac-sha384",
 	"hmac-sha512",
+}
+
+// NormalizeTSIGKeyID returns the ID form of a TSIG key reference. PowerDNS
+// identifies a key by its name followed by a trailing dot and rewrites a bare
+// name to that form, so both spellings have to compare equal.
+func NormalizeTSIGKeyID(keyID string) string {
+	if keyID == "" || strings.HasSuffix(keyID, ".") {
+		return keyID
+	}
+	return keyID + "."
 }
 
 func resourcePDNSTSIGKey() *schema.Resource {
