@@ -10,8 +10,8 @@ func TestAccPDNSZoneMetadata_basic(t *testing.T) {
 	resourceName := "powerdns_zone_metadata.test-also-notify"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneMetadataConfigBasic,

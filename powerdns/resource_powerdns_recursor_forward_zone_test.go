@@ -12,9 +12,9 @@ import (
 
 func TestAccPowerDNSRecursorForwardZone_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheckRecursor(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPowerDNSRecursorForwardZoneDestroy,
+		PreCheck:          func() { testAccPreCheckRecursor(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPowerDNSRecursorForwardZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSRecursorForwardZoneConfig,

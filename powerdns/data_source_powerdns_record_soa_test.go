@@ -10,8 +10,8 @@ func TestAccDataSourcePDNSRecordSOA_basic(t *testing.T) {
 	dataSourceName := "data.powerdns_record_soa.test"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourcePDNSRecordSOAConfig,
@@ -37,8 +37,8 @@ func TestAccDataSourcePDNSRecordSOA_Disabled(t *testing.T) {
 	dataSourceName := "data.powerdns_record_soa.test"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourcePDNSRecordSOADisabledConfig,
