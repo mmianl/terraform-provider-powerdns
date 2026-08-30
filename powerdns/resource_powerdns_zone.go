@@ -81,6 +81,46 @@ func resourcePDNSZone() *schema.Resource {
 				Computed: true,
 				ForceNew: false,
 			},
+			"soa_edit": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				ForceNew: false,
+			},
+
+			"dnssec": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Computed: true,
+				ForceNew: false,
+			},
+
+			"api_rectify": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Computed: true,
+				ForceNew: false,
+			},
+
+			"serial": {
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
+
+			"notified_serial": {
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
+
+			"edited_serial": {
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
+
+			"last_check": {
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
 			"master_tsig_key_ids": zoneTSIGReferencesSchema("TSIG key IDs allowed to authenticate AXFR requests for this zone.", 0),
 			"slave_tsig_key_ids":  zoneTSIGReferencesSchema("TSIG key IDs used to sign requests to this zone's primary server.", 1),
 		},
@@ -140,9 +180,21 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 		Catalog:          d.Get("catalog").(string),
 		Account:          d.Get("account").(string),
 		Nameservers:      []string{},
+		SoaEdit:          d.Get("soa_edit").(string),
 		SoaEditAPI:       d.Get("soa_edit_api").(string),
+		DNSSec:           d.Get("dnssec").(bool),
 		MasterTsigKeyIDs: zoneTSIGReferences(d, "master_tsig_key_ids"),
 		SlaveTsigKeyIDs:  zoneTSIGReferences(d, "slave_tsig_key_ids"),
+	}
+
+	// Inspect configuration because an explicit false must be sent, while an
+	// omitted Optional+Computed boolean must preserve the server default.
+	if config := d.GetRawConfig(); !config.IsNull() {
+		value := config.GetAttr("api_rectify")
+		if value.IsKnown() && !value.IsNull() {
+			apiRectify := d.Get("api_rectify").(bool)
+			zoneInfo.APIRectify = &apiRectify
+		}
 	}
 
 	if len(masters) != 0 {
@@ -204,6 +256,29 @@ func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta inte
 	if err := d.Set("soa_edit_api", zoneInfo.SoaEditAPI); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit API: %w", err))
 	}
+	if err := d.Set("soa_edit", zoneInfo.SoaEdit); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit: %w", err))
+	}
+	if err := d.Set("dnssec", zoneInfo.DNSSec); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS DNSSEC: %w", err))
+	}
+	if zoneInfo.APIRectify != nil {
+		if err := d.Set("api_rectify", *zoneInfo.APIRectify); err != nil {
+			return diag.FromErr(fmt.Errorf("error setting PowerDNS API Rectify: %w", err))
+		}
+	}
+	if err := d.Set("serial", zoneInfo.Serial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Serial: %w", err))
+	}
+	if err := d.Set("notified_serial", zoneInfo.NotifiedSerial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Notified Serial: %w", err))
+	}
+	if err := d.Set("edited_serial", zoneInfo.EditedSerial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Edited Serial: %w", err))
+	}
+	if err := d.Set("last_check", zoneInfo.LastCheck); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Last Check: %w", err))
+	}
 	for name, values := range map[string][]string{
 		"master_tsig_key_ids": zoneInfo.MasterTsigKeyIDs,
 		"slave_tsig_key_ids":  zoneInfo.SlaveTsigKeyIDs,
@@ -228,7 +303,7 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 
 	client := meta.(*ProviderClients)
 
-	if d.HasChanges("kind", "account", "catalog", "soa_edit_api", "masters", "master_tsig_key_ids", "slave_tsig_key_ids") {
+	if d.HasChanges("kind", "account", "catalog", "soa_edit_api", "soa_edit", "dnssec", "api_rectify", "masters", "master_tsig_key_ids", "slave_tsig_key_ids") {
 		var masters []string
 		for _, m := range d.Get("masters").(*schema.Set).List() {
 			masters = append(masters, m.(string))
@@ -241,6 +316,20 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 			Account:    d.Get("account").(string),
 			SoaEditAPI: d.Get("soa_edit_api").(string),
 			Masters:    masters,
+		}
+		// Only send these optional settings when changed, including false and
+		// empty values, so unrelated updates preserve server-managed settings.
+		if d.HasChange("soa_edit") {
+			value := d.Get("soa_edit").(string)
+			zoneInfo.SoaEdit = &value
+		}
+		if d.HasChange("dnssec") {
+			value := d.Get("dnssec").(bool)
+			zoneInfo.DNSSec = &value
+		}
+		if d.HasChange("api_rectify") {
+			value := d.Get("api_rectify").(bool)
+			zoneInfo.APIRectify = &value
 		}
 		// Pointer fields distinguish clearing an explicitly managed set from
 		// omitting it during an unrelated zone update.
