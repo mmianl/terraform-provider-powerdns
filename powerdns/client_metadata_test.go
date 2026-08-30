@@ -256,3 +256,24 @@ func TestListRecordsInRRSetPreservesDisabledFlag(t *testing.T) {
 		assert.Equal(t, 300, records[0].TTL)
 	}
 }
+
+// PowerDNS answers a metadata delete with 204 from 4.9 onwards and with 200 on
+// the releases before it, so both have to be accepted.
+func TestDeleteZoneMetadataAcceptsOK(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		return jsonResponse(http.StatusOK, ``), nil
+	})
+
+	err := client.DeleteZoneMetadata(context.Background(), "example.com.", "ALSO-NOTIFY")
+	assert.NoError(t, err)
+}
+
+func TestDeleteZoneMetadataStillReportsFailure(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusUnprocessableEntity, `{"error":"nope"}`), nil
+	})
+
+	err := client.DeleteZoneMetadata(context.Background(), "example.com.", "ALSO-NOTIFY")
+	assert.Error(t, err)
+}
