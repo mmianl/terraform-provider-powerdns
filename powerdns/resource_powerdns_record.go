@@ -79,6 +79,16 @@ func resourcePDNSRecord() *schema.Resource {
 }
 
 func resourcePDNSRecordCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	client := meta.(*ProviderClients)
+
+	zone := d.Get("zone").(string)
+	name := d.Get("name").(string)
+	typ := d.Get("type").(string)
+
+	if err := guardRecordOverwrite(ctx, client.PDNS, "powerdns_record", zone, name, typ); err != nil {
+		return diag.FromErr(err)
+	}
+
 	return resourcePDNSRecordUpsert(ctx, d, meta)
 }
 
