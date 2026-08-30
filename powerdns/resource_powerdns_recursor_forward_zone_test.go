@@ -26,6 +26,11 @@ func TestAccPowerDNSRecursorForwardZone_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.test", "servers.1", "192.0.2.2"),
 				),
 			},
+			{
+				ResourceName:      "powerdns_recursor_forward_zone.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
