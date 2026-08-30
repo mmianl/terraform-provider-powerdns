@@ -43,6 +43,7 @@ The following arguments are supported:
 - `server_url` - (Required) The address of PowerDNS server. This can also be specified with `PDNS_SERVER_URL` environment variable. When no schema is provided, the default is `https`.
 - `server_id` - (Optional) The PowerDNS Authoritative Server ID. This can also be specified with `PDNS_SERVER_ID` environment variable. Defaults to `localhost`.
 - `recursor_server_url` - (Optional) The address of PowerDNS Recursor server. This can also be specified with `PDNS_RECURSOR_SERVER_URL` environment variable. When no schema is provided, the default is `https`.
+- `recursor_server_id` - (Optional) The PowerDNS Recursor Server ID. This can also be specified with `PDNS_RECURSOR_SERVER_ID` environment variable. Defaults to `localhost`.
 - `ca_certificate` - (Optional) A valid path of a Root CA Certificate in PEM format _or_ the content of a Root CA certificate in PEM format. This can also be specified with `PDNS_CACERT` environment variable.
 - `insecure_https` - (Optional) Set this to `true` to disable verification of the PowerDNS server's TLS certificate. This can also be specified with the `PDNS_INSECURE_HTTPS` environment variable.
 - `cache_requests` - (Optional) Set this to `true` to enable cache of the PowerDNS REST API requests. This can also be specified with the `PDNS_CACHE_REQUESTS` environment variable. `WARNING! Enabling this option can lead to the use of stale records when you use other automation to populate the DNS zone records at the same time.`

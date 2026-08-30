@@ -83,19 +83,74 @@ func TestServerEndpointEscapesServerID(t *testing.T) {
 	assert.Equal(t, "/servers/zonecontrol%2Fprimary/zones", client.serverEndpoint("/zones"))
 }
 
-func TestRecursorRoutesRemainLocalhost(t *testing.T) {
-	client := &RecursorClient{BaseClient: &BaseClient{
-		ServerURL:  "https://pdns.example.test",
-		APIKey:     "test-key",
-		APIVersion: 1,
-		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			assert.Equal(t, "/api/v1/servers/localhost/config/incoming.allow_from", r.URL.Path)
-			return jsonResponse(http.StatusOK, `{"name":"incoming.allow_from","value":["192.0.2.1"]}`), nil
-		})},
-	}}
+func newTestRecursorClient(serverID string, fn roundTripFunc) *RecursorClient {
+	return &RecursorClient{
+		serverID: serverID,
+		BaseClient: &BaseClient{
+			ServerURL:  "https://pdns.example.test",
+			APIKey:     "test-key",
+			APIVersion: 1,
+			HTTP:       &http.Client{Transport: fn},
+		},
+	}
+}
+
+func TestRecursorRoutesDefaultToLocalhost(t *testing.T) {
+	client := newTestRecursorClient("localhost", func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, "/api/v1/servers/localhost/config/incoming.allow_from", r.URL.Path)
+		return jsonResponse(http.StatusOK, `{"name":"incoming.allow_from","value":["192.0.2.1"]}`), nil
+	})
 
 	_, err := client.GetConfig(context.Background(), "incoming.allow_from")
 	assert.NoError(t, err)
+}
+
+func TestRecursorServerIDRoutes(t *testing.T) {
+	expectedPaths := []string{
+		"/api/v1/servers/edge-recursor/config/incoming.allow_from",
+		"/api/v1/servers/edge-recursor/zones/example.com.",
+		"/api/v1/servers/edge-recursor/zones",
+	}
+	responses := []*http.Response{
+		jsonResponse(http.StatusOK, `{"name":"incoming.allow_from","value":["192.0.2.1"]}`),
+		jsonResponse(http.StatusOK, `{"name":"example.com.","kind":"Forwarded","servers":["192.0.2.1"]}`),
+		jsonResponse(http.StatusCreated, `{"name":"example.com.","kind":"Forwarded","servers":["192.0.2.1"]}`),
+	}
+	requestIndex := 0
+	client := newTestRecursorClient("edge-recursor", func(r *http.Request) (*http.Response, error) {
+		if requestIndex >= len(expectedPaths) {
+			t.Fatalf("unexpected request %s", r.URL.Path)
+		}
+		assert.Equal(t, expectedPaths[requestIndex], r.URL.Path)
+		response := responses[requestIndex]
+		requestIndex++
+		return response, nil
+	})
+
+	_, err := client.GetConfig(context.Background(), "incoming.allow_from")
+	assert.NoError(t, err)
+	_, err = client.GetForwardZone(context.Background(), "example.com.")
+	assert.NoError(t, err)
+	err = client.CreateForwardZone(context.Background(), &RecursorForwardZone{
+		Name:    "example.com.",
+		Kind:    "Forwarded",
+		Servers: []string{"192.0.2.1"},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, len(expectedPaths), requestIndex)
+}
+
+func TestRecursorClientDefaultsEmptyServerID(t *testing.T) {
+	client, err := NewRecursorClient(context.Background(), "https://recursor.example.test", "", "test-key", nil)
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, "/servers/localhost/zones", client.serverEndpoint("/zones"))
+}
+
+func TestRecursorServerEndpointEscapesServerID(t *testing.T) {
+	client := &RecursorClient{serverID: "edge/recursor"}
+	assert.Equal(t, "/servers/edge%2Frecursor/zones", client.serverEndpoint("/zones"))
 }
 
 func TestListZoneMetadata(t *testing.T) {
