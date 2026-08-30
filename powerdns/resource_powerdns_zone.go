@@ -2,6 +2,7 @@ package powerdns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -133,6 +134,11 @@ func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta inte
 
 	zoneInfo, err := client.PDNS.GetZone(ctx, d.Id())
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			tflog.Warn(ctx, "Zone no longer exists; removing from state")
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS Zone: %w", err))
 	}
 

@@ -3,6 +3,7 @@ package powerdns
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -182,6 +183,11 @@ func resourcePDNSRecordSOARead(ctx context.Context, d *schema.ResourceData, meta
 
 	records, err := client.PDNS.ListRecordsByID(ctx, zone, d.Id())
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			tflog.Warn(ctx, "Zone no longer exists; removing SOA record from state")
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS SOA record: %w", err))
 	}
 
