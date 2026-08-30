@@ -42,3 +42,13 @@ This resource supports the following arguments:
 - Forward zone configuration is managed through the `forward-zones` recursor setting.
 - Multiple forward zones can be configured independently.
 - Changes take effect immediately in the running recursor.
+
+## Importing
+
+An existing forward zone can be imported using the zone name, ending with a trailing dot:
+
+```bash
+terraform import powerdns_recursor_forward_zone.example example.com.
+```
+
+For more information on how to use terraform's `import` command, please refer to terraform's [core documentation](https://www.terraform.io/docs/import/index.html#currently-state-only).
