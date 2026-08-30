@@ -216,7 +216,7 @@ func TestAccPDNSZoneCatalog(t *testing.T) {
 	resourceName := "powerdns_zone.test-catalog"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck:     func() { testAccPreCheckCatalog(t) },
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{

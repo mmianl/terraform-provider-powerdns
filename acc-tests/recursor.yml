@@ -5,9 +5,11 @@ incoming:
 webservice:
   webserver: true
   api_dir: "/etc/powerdns/api.d/"
-  listen:
-    - addresses:
-      - "0.0.0.0:8082"
+  # address/port rather than the newer "listen" block: the older recursors in
+  # the test matrix do not know that field, and current releases still accept
+  # these.
+  address: "0.0.0.0"
+  port: 8082
   allow_from:
     - "0.0.0.0/0"
   api_key: "testapikey"

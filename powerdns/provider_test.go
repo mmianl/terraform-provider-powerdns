@@ -61,7 +61,9 @@ func testAccPreCheck(t *testing.T) {
 
 func testAccPreCheckRecursor(t *testing.T) {
 	testAccPreCheck(t)
+	// A recursor is optional: the suite has to stay runnable against an
+	// authoritative-only server, so this skips rather than fails.
 	if v := os.Getenv("PDNS_RECURSOR_SERVER_URL"); v == "" {
-		t.Fatal("PDNS_RECURSOR_SERVER_URL must be set for recursor acceptance tests")
+		t.Skip("PDNS_RECURSOR_SERVER_URL not set; skipping recursor acceptance tests")
 	}
 }
