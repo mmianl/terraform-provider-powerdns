@@ -1,4 +1,5 @@
-FROM powerdns/pdns-recursor-54:latest
+ARG RECURSOR_VERSION=54
+FROM powerdns/pdns-recursor-${RECURSOR_VERSION}:latest
 
 USER root
 
