@@ -1,6 +1,7 @@
 package powerdns
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -63,5 +64,29 @@ func testAccPreCheckRecursor(t *testing.T) {
 	testAccPreCheck(t)
 	if v := os.Getenv("PDNS_RECURSOR_SERVER_URL"); v == "" {
 		t.Fatal("PDNS_RECURSOR_SERVER_URL must be set for recursor acceptance tests")
+	}
+}
+
+func TestProviderRequestTimeoutDefault(t *testing.T) {
+	value, err := Provider().Schema["request_timeout"].DefaultValue()
+	if err != nil {
+		t.Fatalf("getting request_timeout default: %v", err)
+	}
+	if value != 60 {
+		t.Errorf("request_timeout default = %v, want 60", value)
+	}
+}
+
+func TestProviderRequestTimeoutEnvironmentOverride(t *testing.T) {
+	t.Setenv("PDNS_REQUEST_TIMEOUT", "5")
+
+	value, err := Provider().Schema["request_timeout"].DefaultValue()
+	if err != nil {
+		t.Fatalf("getting request_timeout default: %v", err)
+	}
+	// EnvDefaultFunc hands back the raw string; the SDK converts it to the
+	// schema type when the value is read, so compare on the string here.
+	if fmt.Sprintf("%v", value) != "5" {
+		t.Errorf("request_timeout from environment = %v, want 5", value)
 	}
 }
