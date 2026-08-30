@@ -144,7 +144,7 @@ func testAccPreCheckViews(t *testing.T) {
 	testAccPreCheck(t)
 	detectServerCapabilities(t)
 	if !serverCaps.views {
-		t.Skip("server does not support views and networks (PowerDNS 5.0+ with the LMDB backend)")
+		t.Skip("server does not support views and networks (needs PowerDNS 5.0+ on a backend that provides them, such as LMDB)")
 	}
 }
 
@@ -154,6 +154,6 @@ func testAccPreCheckComments(t *testing.T) {
 	testAccPreCheck(t)
 	detectServerCapabilities(t)
 	if !serverCaps.comments {
-		t.Skip("backend does not support record comments (LMDB gained these in PowerDNS 5.1)")
+		t.Skip("backend does not store record comments (LMDB gained these in PowerDNS 5.1; gpgsql supports them)")
 	}
 }
