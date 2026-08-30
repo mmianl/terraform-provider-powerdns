@@ -78,6 +78,12 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("PDNS_CACHE_TTL", 30),
 				Description: "Cache TTL in seconds. Also via PDNS_CACHE_TTL.",
 			},
+			"request_timeout": {
+				Type:        schema.TypeInt,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("PDNS_REQUEST_TIMEOUT", 60),
+				Description: "Timeout in seconds for a single API request. 0 disables the timeout. Also via PDNS_REQUEST_TIMEOUT.",
+			},
 			"recursor_server_url": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -127,6 +133,7 @@ func providerConfigure(ctx context.Context, data *schema.ResourceData) (interfac
 		CacheEnable:       data.Get("cache_requests").(bool),
 		CacheMemorySize:   data.Get("cache_mem_size").(string),
 		CacheTTL:          data.Get("cache_ttl").(int),
+		RequestTimeout:    data.Get("request_timeout").(int),
 	}
 
 	// Runtime validation of required arguments with env var fallback

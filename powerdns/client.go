@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	freecache "github.com/coocood/freecache"
 	cleanhttp "github.com/hashicorp/go-cleanhttp"
@@ -83,7 +84,7 @@ type BaseClient struct {
 }
 
 // NewBaseClient constructs a BaseClient with HTTP, TLS and cache configuration.
-func NewBaseClient(serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*BaseClient, error) {
+func NewBaseClient(serverURL string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int, requestTimeout int) (*BaseClient, error) {
 	cleanURL, err := sanitizeURL(serverURL)
 	if err != nil {
 		return nil, fmt.Errorf("error while creating client: %s", err)
@@ -91,6 +92,13 @@ func NewBaseClient(serverURL string, apiKey string, configTLS *tls.Config, cache
 
 	httpClient := cleanhttp.DefaultClient()
 	httpClient.Transport.(*http.Transport).TLSClientConfig = configTLS
+
+	// Without this a server that accepts the connection and then stalls holds
+	// the apply open indefinitely, since there is no deadline anywhere else in
+	// the path. A non-positive value leaves the client unbounded on purpose.
+	if requestTimeout > 0 {
+		httpClient.Timeout = time.Duration(requestTimeout) * time.Second
+	}
 
 	if cacheEnable {
 		cacheSize, err := strconv.Atoi(cacheSizeMB)
@@ -329,8 +337,8 @@ type PowerDNSClient struct {
 }
 
 // NewPowerDNSClient constructs the derived PowerDNS client used by the provider.
-func NewPowerDNSClient(ctx context.Context, serverURL string, serverID string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int) (*PowerDNSClient, error) {
-	base, err := NewBaseClient(serverURL, apiKey, configTLS, cacheEnable, cacheSizeMB, cacheTTL)
+func NewPowerDNSClient(ctx context.Context, serverURL string, serverID string, apiKey string, configTLS *tls.Config, cacheEnable bool, cacheSizeMB string, cacheTTL int, requestTimeout int) (*PowerDNSClient, error) {
+	base, err := NewBaseClient(serverURL, apiKey, configTLS, cacheEnable, cacheSizeMB, cacheTTL, requestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -1363,8 +1371,9 @@ func NewRecursorClient(
 	recursorURL string,
 	apiKey string,
 	configTLS *tls.Config,
+	requestTimeout int,
 ) (*RecursorClient, error) {
-	base, err := NewBaseClient(recursorURL, apiKey, configTLS, false, "0", 0)
+	base, err := NewBaseClient(recursorURL, apiKey, configTLS, false, "0", 0, requestTimeout)
 	if err != nil {
 		return nil, err
 	}
