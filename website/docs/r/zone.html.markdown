@@ -96,6 +96,21 @@ resource "powerdns_zone" "catalog_member" {
 }
 ```
 
+### Referencing TSIG keys
+
+```hcl
+resource "powerdns_tsigkey" "transfer" {
+  name      = "transfer-key"
+  algorithm = "hmac-sha256"
+}
+
+resource "powerdns_zone" "example" {
+  name                = "example.com."
+  kind                = "Master"
+  master_tsig_key_ids = [powerdns_tsigkey.transfer.id]
+}
+```
+
 ## Argument Reference
 
 This resource supports the following arguments:
@@ -109,8 +124,8 @@ This resource supports the following arguments:
 - `soa_edit` - (Optional) The SOA serial rewrite rule applied when the zone is served. See the [supported values](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit).
 - `dnssec` - (Optional) Whether DNSSEC is enabled for this zone. Can be toggled on an existing zone without recreating it.
 - `api_rectify` - (Optional) Whether the zone is rectified automatically after changes made through the API.
-- `master_tsig_key_ids` - (Optional) IDs of the TSIG keys used to sign outgoing AXFR and NOTIFY messages for this zone.
-- `slave_tsig_key_ids` - (Optional) IDs of the TSIG keys used when retrieving this zone from a master.
+- `master_tsig_key_ids` - (Optional) IDs of the TSIG keys used to sign outgoing AXFR and NOTIFY messages for this zone. Best referenced from a `powerdns_tsigkey` resource, e.g. `[powerdns_tsigkey.transfer.id]`. A bare key name is also accepted and is normalized to the ID form PowerDNS stores.
+- `slave_tsig_key_ids` - (Optional) IDs of the TSIG keys used when retrieving this zone from a master. Accepts the same forms as `master_tsig_key_ids`.
 
 ## Attribute Reference
 

@@ -188,3 +188,18 @@ resource "powerdns_tsigkey" "test-invalid" {
 	name      = "tf-invalid"
 	algorithm = "hmac-nonsense"
 }`
+
+func TestNormalizeTSIGKeyID(t *testing.T) {
+	cases := map[string]string{
+		"mykey":  "mykey.",
+		"mykey.": "mykey.",
+		// An empty reference stays empty rather than becoming a bare dot.
+		"": "",
+	}
+
+	for input, want := range cases {
+		if got := NormalizeTSIGKeyID(input); got != want {
+			t.Errorf("NormalizeTSIGKeyID(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

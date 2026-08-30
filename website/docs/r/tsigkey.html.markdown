@@ -35,11 +35,14 @@ The key can then be referenced from a zone:
 
 ```hcl
 resource "powerdns_zone" "example" {
-  name                 = "example.com."
-  kind                 = "Master"
-  master_tsig_key_ids  = [powerdns_tsigkey.transfer.id]
+  name                = "example.com."
+  kind                = "Master"
+  master_tsig_key_ids = [powerdns_tsigkey.transfer.id]
 }
 ```
+
+Use the `id` attribute rather than `name`: PowerDNS identifies a key by its name
+with a trailing dot, and that is the form it stores on the zone.
 
 ## Argument Reference
 

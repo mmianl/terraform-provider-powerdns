@@ -103,15 +103,37 @@ func resourcePDNSZone() *schema.Resource {
 			},
 
 			"master_tsig_key_ids": {
-				Type:     schema.TypeSet,
+				Type: schema.TypeSet,
+				// Set identities are computed before an element StateFunc runs, so
+				// the canonical form has to be hashed for a bare key name and its
+				// dotted ID to land on the same element.
+				Set: func(value interface{}) int {
+					return schema.HashString(NormalizeTSIGKeyID(value.(string)))
+				},
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+					// PowerDNS stores a TSIG key reference by its ID, which is the
+					// key name with a trailing dot. Normalizing here stops a bare
+					// name in the configuration from showing a permanent diff.
+					StateFunc: func(value interface{}) string {
+						return NormalizeTSIGKeyID(value.(string))
+					},
+				},
 				Optional: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 
 			"slave_tsig_key_ids": {
-				Type:     schema.TypeSet,
+				Type: schema.TypeSet,
+				Set: func(value interface{}) int {
+					return schema.HashString(NormalizeTSIGKeyID(value.(string)))
+				},
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+					StateFunc: func(value interface{}) string {
+						return NormalizeTSIGKeyID(value.(string))
+					},
+				},
 				Optional: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 
 			"serial": {
