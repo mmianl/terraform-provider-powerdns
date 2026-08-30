@@ -1587,3 +1587,232 @@ func (client *RecursorClient) SetConfig(ctx context.Context, name string, values
 
 	return nil
 }
+
+// Cryptokey represents a PowerDNS DNSSEC key for a zone.
+type Cryptokey struct {
+	ID         int      `json:"id,omitempty"`
+	Type       string   `json:"type,omitempty"`
+	KeyType    string   `json:"keytype,omitempty"`
+	Active     bool     `json:"active"`
+	Published  bool     `json:"published"`
+	DNSKey     string   `json:"dnskey,omitempty"`
+	DS         []string `json:"ds,omitempty"`
+	CDS        []string `json:"cds,omitempty"`
+	PrivateKey string   `json:"privatekey,omitempty"`
+	Algorithm  string   `json:"algorithm,omitempty"`
+	Bits       int      `json:"bits,omitempty"`
+}
+
+// cryptokeyUpd carries the fields accepted when changing an existing key.
+// PowerDNS rejects a payload that omits "active", so both flags are always sent.
+type cryptokeyUpd struct {
+	Active    bool `json:"active"`
+	Published bool `json:"published"`
+}
+
+// zoneCryptokeysEndpoint builds the cryptokeys path for a zone.
+func (client *PowerDNSClient) zoneCryptokeysEndpoint(zone string, suffix string) string {
+	return client.serverEndpoint("/zones/" + url.PathEscape(zone) + "/cryptokeys" + suffix)
+}
+
+// ListCryptokeys returns all DNSSEC keys configured for a zone.
+func (client *PowerDNSClient) ListCryptokeys(ctx context.Context, zone string) ([]Cryptokey, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, client.zoneCryptokeysEndpoint(zone, ""), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var cryptokeys []Cryptokey
+		if err := json.NewDecoder(resp.Body).Decode(&cryptokeys); err != nil {
+			return nil, err
+		}
+		return cryptokeys, nil
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error listing cryptokeys for zone %s: failed to decode error response: %w", zone, err)
+		}
+		return nil, fmt.Errorf("error listing cryptokeys for zone %s: %q", zone, errorResp.ErrorMsg)
+	}
+}
+
+// GetCryptokey retrieves a single DNSSEC key of a zone.
+func (client *PowerDNSClient) GetCryptokey(ctx context.Context, zone string, id int) (*Cryptokey, error) {
+	endpoint := client.zoneCryptokeysEndpoint(zone, "/"+strconv.Itoa(id))
+
+	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var cryptokey Cryptokey
+		if err := json.NewDecoder(resp.Body).Decode(&cryptokey); err != nil {
+			return nil, err
+		}
+		return &cryptokey, nil
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error getting cryptokey %d for zone %s: failed to decode error response: %w", id, zone, err)
+		}
+		return nil, fmt.Errorf("error getting cryptokey %d for zone %s: %q", id, zone, errorResp.ErrorMsg)
+	}
+}
+
+// CreateCryptokey adds a DNSSEC key to a zone. Leaving PrivateKey empty asks
+// PowerDNS to generate the key material.
+func (client *PowerDNSClient) CreateCryptokey(ctx context.Context, zone string, cryptokey Cryptokey) (*Cryptokey, error) {
+	body, err := json.Marshal(cryptokey)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := client.newRequest(ctx, http.MethodPost, client.zoneCryptokeysEndpoint(zone, ""), body)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error creating cryptokey for zone %s: failed to decode error response: %w", zone, err)
+		}
+		return nil, fmt.Errorf("error creating cryptokey for zone %s: %q", zone, errorResp.ErrorMsg)
+	}
+
+	var created Cryptokey
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, err
+	}
+
+	return &created, nil
+}
+
+// UpdateCryptokey changes the active and published flags of an existing key.
+func (client *PowerDNSClient) UpdateCryptokey(ctx context.Context, zone string, id int, active bool, published bool) error {
+	body, err := json.Marshal(cryptokeyUpd{Active: active, Published: published})
+	if err != nil {
+		return err
+	}
+
+	endpoint := client.zoneCryptokeysEndpoint(zone, "/"+strconv.Itoa(id))
+
+	req, err := client.newRequest(ctx, http.MethodPut, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error updating cryptokey %d for zone %s: failed to decode error response: %w", id, zone, err)
+		}
+		return fmt.Errorf("error updating cryptokey %d for zone %s: %q", id, zone, errorResp.ErrorMsg)
+	}
+}
+
+// DeleteCryptokey removes a DNSSEC key from a zone.
+func (client *PowerDNSClient) DeleteCryptokey(ctx context.Context, zone string, id int) error {
+	endpoint := client.zoneCryptokeysEndpoint(zone, "/"+strconv.Itoa(id))
+
+	req, err := client.newRequest(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error deleting cryptokey %d for zone %s: failed to decode error response: %w", id, zone, err)
+		}
+		return fmt.Errorf("error deleting cryptokey %d for zone %s: %q", id, zone, errorResp.ErrorMsg)
+	}
+}
