@@ -28,9 +28,13 @@ vet:
 		exit 1; \
 	fi
 
+# The linter version is pinned in .golangci-lint-version, which CI reads as well.
+# Override for a one-off run: make lint GOLANGCI_LINT_VERSION=vX.Y.Z
+GOLANGCI_LINT_VERSION?=$(shell cat .golangci-lint-version)
+
 lint:
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell go env GOPATH)/bin v2.1.6
-	./bin/golangci-lint run
+	@test -n "$(GOLANGCI_LINT_VERSION)" || { echo "cannot read the golangci-lint version from .golangci-lint-version"; exit 1; }
+	GOFLAGS= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run
 
 fmt:
 	gofmt -w $(GOFMT_FILES)

@@ -19,10 +19,14 @@ jobs:
       - name: Format
         run: make fmtcheck
 
+      - name: Read the golangci-lint version
+        id: lint-version
+        run: echo "version=$(cat .golangci-lint-version)" >> "$GITHUB_OUTPUT"
+
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11.3
+          version: ${{ steps.lint-version.outputs.version }}
   
   mod-tidy:
     runs-on: ubuntu-latest
