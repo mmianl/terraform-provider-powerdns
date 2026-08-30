@@ -428,6 +428,8 @@ Different DNS record types require specific formatting for their content. Here a
 3. **TXT records not validating**: Ensure proper quoting and escaping of special characters
 4. **SRV records not found**: Verify the service name format (`_service._protocol.domain`)
 
+~> **Note:** PowerDNS stores a single record set per name and type, and its API replaces one wholesale. Creating a resource for a record set that already exists on the server is therefore refused, so that an apply cannot destroy a record it does not manage. Import the existing record instead. The same applies to two resources that name the same record set, which would otherwise overwrite each other on every apply.
+
 ## Argument Reference
 
 The following arguments are supported:
