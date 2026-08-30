@@ -318,7 +318,7 @@ func TestAccPDNSRecord_WithComments(t *testing.T) {
 	resourceID := `{"zone":"rec-acomments.sysa.xyz.","id":"test.rec-acomments.sysa.xyz.:::A"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
+		PreCheck:     func() { testAccPreCheckComments(t) },
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
