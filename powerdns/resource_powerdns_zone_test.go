@@ -10,6 +10,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
+// volatileZoneSerials are maintained by PowerDNS rather than by configuration.
+// A zone that notifies its slaves between the apply and the import step comes
+// back with a different notified_serial, so verifying them on import is racy.
+var volatileZoneSerials = []string{"serial", "notified_serial", "edited_serial", "last_check"}
+
 func TestAccPDNSZoneNative(t *testing.T) {
 	resourceName := "powerdns_zone.test-native"
 
@@ -30,6 +35,9 @@ func TestAccPDNSZoneNative(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -101,6 +109,9 @@ func TestAccPDNSZoneMaster(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -128,6 +139,9 @@ func TestAccPDNSZoneMasterSOAAPIEDIT(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -155,6 +169,9 @@ func TestAccPDNSZoneMasterSOAAPIEDITEmpty(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -180,6 +197,9 @@ func TestAccPDNSZoneMasterSOAAPIEDITUndefined(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -207,6 +227,9 @@ func TestAccPDNSZoneAccount(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -233,6 +256,125 @@ func TestAccPDNSZoneCatalog(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneDNSSec(t *testing.T) {
+	resourceName := "powerdns_zone.test-dnssec"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigDNSSec,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "name", "dnssec.sysa.abc."),
+					resource.TestCheckResourceAttr(resourceName, "dnssec", "true"),
+					resource.TestCheckResourceAttr(resourceName, "soa_edit", "INCEPTION-INCREMENT"),
+					resource.TestCheckResourceAttr(resourceName, "api_rectify", "true"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
+			},
+			{
+				// DNSSEC is togglable in place, so this must update rather than
+				// force a replacement.
+				Config: testPDNSZoneConfigDNSSecDisabled,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "dnssec", "false"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneComputedSerials(t *testing.T) {
+	resourceName := "powerdns_zone.test-serials"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigComputedSerials,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttrSet(resourceName, "serial"),
+					resource.TestCheckResourceAttrSet(resourceName, "edited_serial"),
+					resource.TestCheckResourceAttr(resourceName, "notified_serial", "0"),
+					resource.TestCheckResourceAttr(resourceName, "last_check", "0"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneTSIGKeyRefs(t *testing.T) {
+	resourceName := "powerdns_zone.test-tsig-refs"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigTSIGKeyRefs,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "master_tsig_key_ids.#", "1"),
+					// The reference is stored in the ID form PowerDNS reports back.
+					resource.TestCheckTypeSetElemAttr(resourceName, "master_tsig_key_ids.*", "tf-zone-ref."),
+					resource.TestCheckResourceAttr(resourceName, "slave_tsig_key_ids.#", "1"),
+					resource.TestCheckTypeSetElemAttr(resourceName, "slave_tsig_key_ids.*", "tf-zone-ref."),
+				),
+			},
+			{
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: volatileZoneSerials,
+			},
+		},
+	})
+}
+
+func TestAccPDNSZoneTSIGKeyRefsBareName(t *testing.T) {
+	resourceName := "powerdns_zone.test-tsig-bare"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testPDNSZoneConfigTSIGKeyBareName,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneExists(resourceName),
+					// A bare name is normalized to the dotted ID form.
+					resource.TestCheckTypeSetElemAttr(resourceName, "master_tsig_key_ids.*", "tf-zone-bare."),
+				),
+			},
+			{
+				// PowerDNS rewrites a bare name to its ID, so without normalization
+				// this configuration would never converge.
+				Config:   testPDNSZoneConfigTSIGKeyBareName,
+				PlanOnly: true,
 			},
 		},
 	})
@@ -260,6 +402,9 @@ func TestAccPDNSZoneAccountEmpty(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -287,6 +432,9 @@ func TestAccPDNSZoneAccountUndefined(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -312,6 +460,9 @@ func TestAccPDNSZoneSlave(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -339,6 +490,9 @@ func TestAccPDNSZoneSlaveWithMasters(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -366,6 +520,9 @@ func TestAccPDNSZoneSlaveWithMastersWithPort(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// PowerDNS maintains these itself and can bump them between the
+				// apply and the import, so they are not stable enough to verify.
+				ImportStateVerifyIgnore: volatileZoneSerials,
 			},
 		},
 	})
@@ -672,4 +829,53 @@ resource "powerdns_zone" "test-slave-with-ipv6-masters" {
 		"fd92:81e1:e314:ea7b:0000:1234:5678:60ab",
 		"192.168.123.45",
 	]
+}`
+
+const testPDNSZoneConfigDNSSec = `
+resource "powerdns_zone" "test-dnssec" {
+	name        = "dnssec.sysa.abc."
+	kind        = "Native"
+	dnssec      = true
+	soa_edit    = "INCEPTION-INCREMENT"
+	api_rectify = true
+}`
+
+const testPDNSZoneConfigDNSSecDisabled = `
+resource "powerdns_zone" "test-dnssec" {
+	name        = "dnssec.sysa.abc."
+	kind        = "Native"
+	dnssec      = false
+	soa_edit    = "INCEPTION-INCREMENT"
+	api_rectify = true
+}`
+
+const testPDNSZoneConfigComputedSerials = `
+resource "powerdns_zone" "test-serials" {
+	name = "serials.sysa.abc."
+	kind = "Native"
+}`
+
+const testPDNSZoneConfigTSIGKeyRefs = `
+resource "powerdns_tsigkey" "zone-ref" {
+	name      = "tf-zone-ref"
+	algorithm = "hmac-sha256"
+}
+
+resource "powerdns_zone" "test-tsig-refs" {
+	name                = "tsig-refs.sysa.abc."
+	kind                = "Master"
+	master_tsig_key_ids = [powerdns_tsigkey.zone-ref.id]
+	slave_tsig_key_ids  = [powerdns_tsigkey.zone-ref.id]
+}`
+
+const testPDNSZoneConfigTSIGKeyBareName = `
+resource "powerdns_tsigkey" "zone-bare" {
+	name      = "tf-zone-bare"
+	algorithm = "hmac-sha256"
+}
+
+resource "powerdns_zone" "test-tsig-bare" {
+	name                = "tsig-bare.sysa.abc."
+	kind                = "Master"
+	master_tsig_key_ids = [powerdns_tsigkey.zone-bare.name]
 }`
