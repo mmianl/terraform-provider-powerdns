@@ -1587,3 +1587,54 @@ func (client *RecursorClient) SetConfig(ctx context.Context, name string, values
 
 	return nil
 }
+
+// zoneActionEndpoint builds the path for a one-shot zone operation.
+func (client *PowerDNSClient) zoneActionEndpoint(zone string, action string) string {
+	return client.serverEndpoint("/zones/" + url.PathEscape(zone) + "/" + action)
+}
+
+// runZoneAction performs one of the zone operations that PowerDNS exposes as a
+// PUT with no body, such as notify and rectify.
+func (client *PowerDNSClient) runZoneAction(ctx context.Context, zone string, action string) error {
+	req, err := client.newRequest(ctx, http.MethodPut, client.zoneActionEndpoint(zone, action), nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusNoContent:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error running %s on zone %s: failed to decode error response: %w", action, zone, err)
+		}
+		return fmt.Errorf("error running %s on zone %s: %q", action, zone, errorResp.ErrorMsg)
+	}
+}
+
+// NotifyZone asks the server to send NOTIFY to the zone's slaves.
+func (client *PowerDNSClient) NotifyZone(ctx context.Context, zone string) error {
+	return client.runZoneAction(ctx, zone, "notify")
+}
+
+// RectifyZone rebuilds the DNSSEC ordering and auth records of a zone.
+func (client *PowerDNSClient) RectifyZone(ctx context.Context, zone string) error {
+	return client.runZoneAction(ctx, zone, "rectify")
+}
