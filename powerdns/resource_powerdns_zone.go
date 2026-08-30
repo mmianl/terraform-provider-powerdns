@@ -80,6 +80,59 @@ func resourcePDNSZone() *schema.Resource {
 				Computed: true,
 				ForceNew: false,
 			},
+
+			"soa_edit": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				ForceNew: false,
+			},
+
+			"dnssec": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Computed: true,
+				ForceNew: false,
+			},
+
+			"api_rectify": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Computed: true,
+				ForceNew: false,
+			},
+
+			"master_tsig_key_ids": {
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem:     &schema.Schema{Type: schema.TypeString},
+			},
+
+			"slave_tsig_key_ids": {
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem:     &schema.Schema{Type: schema.TypeString},
+			},
+
+			"serial": {
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
+
+			"notified_serial": {
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
+
+			"edited_serial": {
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
+
+			"last_check": {
+				Type:     schema.TypeInt,
+				Computed: true,
+			},
 		},
 	}
 }
@@ -95,12 +148,17 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 	}
 
 	zoneInfo := ZoneInfo{
-		Name:        d.Get("name").(string),
-		Kind:        d.Get("kind").(string),
-		Catalog:     d.Get("catalog").(string),
-		Account:     d.Get("account").(string),
-		Nameservers: []string{},
-		SoaEditAPI:  d.Get("soa_edit_api").(string),
+		Name:             d.Get("name").(string),
+		Kind:             d.Get("kind").(string),
+		Catalog:          d.Get("catalog").(string),
+		Account:          d.Get("account").(string),
+		Nameservers:      []string{},
+		SoaEdit:          d.Get("soa_edit").(string),
+		SoaEditAPI:       d.Get("soa_edit_api").(string),
+		DNSSec:           d.Get("dnssec").(bool),
+		APIRectify:       d.Get("api_rectify").(bool),
+		MasterTsigKeyIDs: expandStringSet(d.Get("master_tsig_key_ids").(*schema.Set)),
+		SlaveTsigKeyIDs:  expandStringSet(d.Get("slave_tsig_key_ids").(*schema.Set)),
 	}
 
 	if len(masters) != 0 {
@@ -157,6 +215,33 @@ func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta inte
 	if err := d.Set("soa_edit_api", zoneInfo.SoaEditAPI); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit API: %w", err))
 	}
+	if err := d.Set("soa_edit", zoneInfo.SoaEdit); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit: %w", err))
+	}
+	if err := d.Set("dnssec", zoneInfo.DNSSec); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS DNSSEC: %w", err))
+	}
+	if err := d.Set("api_rectify", zoneInfo.APIRectify); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS API Rectify: %w", err))
+	}
+	if err := d.Set("master_tsig_key_ids", zoneInfo.MasterTsigKeyIDs); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Master TSIG Key IDs: %w", err))
+	}
+	if err := d.Set("slave_tsig_key_ids", zoneInfo.SlaveTsigKeyIDs); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Slave TSIG Key IDs: %w", err))
+	}
+	if err := d.Set("serial", zoneInfo.Serial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Serial: %w", err))
+	}
+	if err := d.Set("notified_serial", zoneInfo.NotifiedSerial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Notified Serial: %w", err))
+	}
+	if err := d.Set("edited_serial", zoneInfo.EditedSerial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Edited Serial: %w", err))
+	}
+	if err := d.Set("last_check", zoneInfo.LastCheck); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting PowerDNS Last Check: %w", err))
+	}
 
 	if strings.EqualFold(zoneInfo.Kind, "Slave") {
 		if err := d.Set("masters", zoneInfo.Masters); err != nil {
@@ -173,19 +258,25 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 
 	client := meta.(*ProviderClients)
 
-	if d.HasChange("kind") || d.HasChange("account") || d.HasChange("catalog") || d.HasChange("soa_edit_api") || d.HasChange("masters") {
+	if d.HasChanges("kind", "account", "catalog", "soa_edit_api", "soa_edit", "dnssec",
+		"api_rectify", "masters", "master_tsig_key_ids", "slave_tsig_key_ids") {
 		var masters []string
 		for _, m := range d.Get("masters").(*schema.Set).List() {
 			masters = append(masters, m.(string))
 		}
 
 		zoneInfo := ZoneInfoUpd{
-			Name:       d.Get("name").(string),
-			Kind:       d.Get("kind").(string),
-			Catalog:    d.Get("catalog").(string),
-			Account:    d.Get("account").(string),
-			SoaEditAPI: d.Get("soa_edit_api").(string),
-			Masters:    masters,
+			Name:             d.Get("name").(string),
+			Kind:             d.Get("kind").(string),
+			Catalog:          d.Get("catalog").(string),
+			Account:          d.Get("account").(string),
+			SoaEdit:          d.Get("soa_edit").(string),
+			SoaEditAPI:       d.Get("soa_edit_api").(string),
+			DNSSec:           d.Get("dnssec").(bool),
+			APIRectify:       d.Get("api_rectify").(bool),
+			Masters:          masters,
+			MasterTsigKeyIDs: expandStringSet(d.Get("master_tsig_key_ids").(*schema.Set)),
+			SlaveTsigKeyIDs:  expandStringSet(d.Get("slave_tsig_key_ids").(*schema.Set)),
 		}
 
 		if err := client.PDNS.UpdateZone(ctx, d.Id(), zoneInfo); err != nil {

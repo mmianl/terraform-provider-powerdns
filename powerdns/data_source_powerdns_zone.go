@@ -44,6 +44,62 @@ func dataSourcePDNSZone() *schema.Resource {
 				Computed:    true,
 				Description: "SOA edit API setting",
 			},
+			"catalog": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The catalog zone this zone belongs to",
+			},
+			"soa_edit": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "SOA edit setting applied when serving the zone",
+			},
+			"dnssec": {
+				Type:        schema.TypeBool,
+				Computed:    true,
+				Description: "Whether DNSSEC is enabled for this zone",
+			},
+			"api_rectify": {
+				Type:        schema.TypeBool,
+				Computed:    true,
+				Description: "Whether the zone is rectified automatically after API changes",
+			},
+			"master_tsig_key_ids": {
+				Type:     schema.TypeSet,
+				Computed: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+				Description: "TSIG keys used to sign outgoing AXFR/NOTIFY for this zone",
+			},
+			"slave_tsig_key_ids": {
+				Type:     schema.TypeSet,
+				Computed: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+				Description: "TSIG keys used when retrieving this zone from a master",
+			},
+			"serial": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "The current serial of the zone",
+			},
+			"notified_serial": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "The last serial this zone was notified for",
+			},
+			"edited_serial": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "The serial of the zone as last edited",
+			},
+			"last_check": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "Timestamp of the last freshness check (Slave zones only)",
+			},
 			"records": {
 				Type:     schema.TypeList,
 				Computed: true,
@@ -117,6 +173,36 @@ func dataSourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta in
 	}
 	if err := d.Set("soa_edit_api", zone.SoaEditAPI); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting zone SOA edit API: %w", err))
+	}
+	if err := d.Set("catalog", zone.Catalog); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone catalog: %w", err))
+	}
+	if err := d.Set("soa_edit", zone.SoaEdit); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone SOA edit: %w", err))
+	}
+	if err := d.Set("dnssec", zone.DNSSec); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone DNSSEC: %w", err))
+	}
+	if err := d.Set("api_rectify", zone.APIRectify); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone API rectify: %w", err))
+	}
+	if err := d.Set("master_tsig_key_ids", zone.MasterTsigKeyIDs); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone master TSIG key IDs: %w", err))
+	}
+	if err := d.Set("slave_tsig_key_ids", zone.SlaveTsigKeyIDs); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone slave TSIG key IDs: %w", err))
+	}
+	if err := d.Set("serial", zone.Serial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone serial: %w", err))
+	}
+	if err := d.Set("notified_serial", zone.NotifiedSerial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone notified serial: %w", err))
+	}
+	if err := d.Set("edited_serial", zone.EditedSerial); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone edited serial: %w", err))
+	}
+	if err := d.Set("last_check", zone.LastCheck); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting zone last check: %w", err))
 	}
 
 	// Set masters for Slave zones
