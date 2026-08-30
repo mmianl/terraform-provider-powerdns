@@ -27,6 +27,11 @@ func resourcePDNSRecursorConfig() *schema.Resource {
 		UpdateContext: resourcePDNSRecursorConfigUpdate,
 		DeleteContext: resourcePDNSRecursorConfigDelete,
 
+		// The read path works from the setting name alone, which is the ID.
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
+
 		Schema: map[string]*schema.Schema{
 			"name": {
 				Type:     schema.TypeString,

@@ -18,6 +18,11 @@ func resourcePDNSRecursorForwardZone() *schema.Resource {
 		UpdateContext: resourcePDNSRecursorForwardZoneUpdate,
 		DeleteContext: resourcePDNSRecursorForwardZoneDelete,
 
+		// The read path works from the zone name alone, which is the ID.
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
+
 		Schema: map[string]*schema.Schema{
 			"zone": {
 				Type:         schema.TypeString,
