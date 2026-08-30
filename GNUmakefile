@@ -28,9 +28,16 @@ vet:
 		exit 1; \
 	fi
 
+# Keep in step with the version pinned in .github/workflows/check.yml.
+GOLANGCI_LINT_VERSION?=v2.11.3
+
 lint:
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell go env GOPATH)/bin v2.1.6
-	./bin/golangci-lint run
+	@command -v golangci-lint >/dev/null 2>&1 || { \
+		echo "golangci-lint not found. Install it with:"; \
+		echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"; \
+		exit 1; \
+	}
+	golangci-lint run
 
 fmt:
 	gofmt -w $(GOFMT_FILES)
