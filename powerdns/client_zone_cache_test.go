@@ -25,8 +25,7 @@ func newCachingTestClient(fn roundTripFunc) *PowerDNSClient {
 // DNS names are case-insensitive, so two config sites naming one zone with
 // different capitalisation must share a cache entry rather than each getting
 // their own. Seeding the cache under one spelling and reading it back under
-// another asserts that directly, without depending on ListRecords' cache-miss
-// path (which on this code treats an ordinary miss as a hard error).
+// another asserts that directly.
 func TestZoneCacheKeyIsCaseInsensitive(t *testing.T) {
 	var listCalls int32
 
