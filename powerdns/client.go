@@ -507,6 +507,10 @@ func (client *PowerDNSClient) CreateZone(ctx context.Context, zoneInfo ZoneInfo)
 		return ZoneInfo{}, err
 	}
 
+	// A zone recreated under a name that was cached earlier must not be served
+	// from the stale entry.
+	client.invalidateZoneCache(zoneInfo.Name)
+
 	return createdZoneInfo, nil
 }
 
@@ -545,6 +549,8 @@ func (client *PowerDNSClient) UpdateZone(ctx context.Context, name string, zoneI
 		return fmt.Errorf("error updating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
 	}
 
+	client.invalidateZoneCache(name)
+
 	return nil
 }
 
@@ -577,6 +583,8 @@ func (client *PowerDNSClient) DeleteZone(ctx context.Context, name string) error
 		}
 		return fmt.Errorf("error deleting zone: %s, reason: %q", name, errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(name)
+
 	return nil
 }
 
@@ -747,10 +755,24 @@ func zoneCacheKey(zone string) []byte {
 	return []byte(key)
 }
 
+// invalidateZoneCache drops any cached copy of a zone. Every write has to call
+// this, otherwise a later read in the same run is served a pre-write snapshot
+// for up to the configured TTL.
+func (client *PowerDNSClient) invalidateZoneCache(zone string) {
+	if client.CacheEnable {
+		client.Cache.Del(zoneCacheKey(zone))
+	}
+}
+
 // GetZoneInfoFromCache return ZoneInfo struct
 func (client *PowerDNSClient) GetZoneInfoFromCache(ctx context.Context, zone string) (*ZoneInfo, error) {
 	if client.CacheEnable {
 		cacheZoneInfo, err := client.Cache.Get(zoneCacheKey(zone))
+		// A miss is the normal case for the first read of a zone, so it has to
+		// fall through to the API rather than failing the whole request.
+		if errors.Is(err, freecache.ErrNotFound) {
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -949,6 +971,8 @@ func (client *PowerDNSClient) ReplaceRecordSet(ctx context.Context, zone string,
 		}
 		return "", fmt.Errorf("error creating record set: %s, reason: %q", rrSet.ID(), errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(zone)
+
 	return rrSet.ID(), nil
 }
 
@@ -993,6 +1017,8 @@ func (client *PowerDNSClient) DeleteRecordSet(ctx context.Context, zone string, 
 		}
 		return fmt.Errorf("error deleting record: %s %s, reason: %q", name, tpe, errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(zone)
+
 	return nil
 }
 
