@@ -14,9 +14,9 @@ func TestAccPDNSZoneNative(t *testing.T) {
 	resourceName := "powerdns_zone.test-native"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigNative,
@@ -39,9 +39,9 @@ func TestAccPDNSZoneNativeMixedCaps(t *testing.T) {
 	resourceName := "powerdns_zone.test-native"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				// using mixed caps config to create resource with test-native name
@@ -62,9 +62,9 @@ func TestAccPDNSZoneNativeSmallCaps(t *testing.T) {
 	resourceName := "powerdns_zone.test-native"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				// using small caps config to create resource with test-native name
@@ -85,9 +85,9 @@ func TestAccPDNSZoneMaster(t *testing.T) {
 	resourceName := "powerdns_zone.test-master"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigMaster,
@@ -111,9 +111,9 @@ func TestAccPDNSZoneMasterSOAAPIEDIT(t *testing.T) {
 	resourceSOAEDITAPI := `DEFAULT`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigMasterSOAEDITAPI,
@@ -138,9 +138,9 @@ func TestAccPDNSZoneMasterSOAAPIEDITEmpty(t *testing.T) {
 	resourceSOAEDITAPI := `""`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigMasterSOAEDITAPIEmpty,
@@ -164,9 +164,9 @@ func TestAccPDNSZoneMasterSOAAPIEDITUndefined(t *testing.T) {
 	resourceName := "powerdns_zone.test-master-soa-edit-api-undefined"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigMasterSOAEDITAPIUndefined,
@@ -190,9 +190,9 @@ func TestAccPDNSZoneAccount(t *testing.T) {
 	resourceAccount := `test`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigAccount,
@@ -216,9 +216,9 @@ func TestAccPDNSZoneCatalog(t *testing.T) {
 	resourceName := "powerdns_zone.test-catalog"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigCatalog,
@@ -243,9 +243,9 @@ func TestAccPDNSZoneAccountEmpty(t *testing.T) {
 	resourceAccount := ``
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigAccountEmpty,
@@ -270,9 +270,9 @@ func TestAccPDNSZoneAccountUndefined(t *testing.T) {
 	resourceAccount := `admin`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigAccountUndefined,
@@ -296,9 +296,9 @@ func TestAccPDNSZoneSlave(t *testing.T) {
 	resourceName := "powerdns_zone.test-slave"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigSlave,
@@ -321,8 +321,8 @@ func TestAccPDNSZoneSlaveWithMasters(t *testing.T) {
 	resourceName := "powerdns_zone.test-slave-with-masters"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		//CheckDestroy: testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
@@ -348,8 +348,8 @@ func TestAccPDNSZoneSlaveWithMastersWithPort(t *testing.T) {
 	resourceName := "powerdns_zone.test-slave-with-masters-with-port"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		//CheckDestroy: testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
@@ -375,9 +375,9 @@ func TestAccPDNSZoneSlaveWithIPv6Masters(t *testing.T) {
 	resourceName := "powerdns_zone.test-slave-with-ipv6-masters"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigSlaveWithIPv6Masters,
@@ -398,8 +398,8 @@ func TestAccPDNSZoneSlaveWithIPv6Masters(t *testing.T) {
 func TestAccPDNSZoneSlaveWithMastersWithInvalidPort(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigSlaveWithMastersWithInvalidPort,
@@ -411,8 +411,8 @@ func TestAccPDNSZoneSlaveWithMastersWithInvalidPort(t *testing.T) {
 func TestAccPDNSZoneSlaveWithInvalidMasters(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigSlaveWithInvalidMasters,
@@ -425,8 +425,8 @@ func TestAccPDNSZoneSlaveWithInvalidMasters(t *testing.T) {
 func TestAccPDNSZoneMasterWithMasters(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigMasterWithMasters,
@@ -438,8 +438,8 @@ func TestAccPDNSZoneMasterWithMasters(t *testing.T) {
 
 func TestAccPDNSZoneInvalidDomain(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigInvalidDomain,
@@ -451,8 +451,8 @@ func TestAccPDNSZoneInvalidDomain(t *testing.T) {
 
 func TestAccPDNSZoneInvalidVariant(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigInvalidVariant,
@@ -464,8 +464,8 @@ func TestAccPDNSZoneInvalidVariant(t *testing.T) {
 
 func TestAccPDNSZoneInvalidVariantTrailingDot(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigInvalidVariantTrailingDot,
@@ -477,8 +477,8 @@ func TestAccPDNSZoneInvalidVariantTrailingDot(t *testing.T) {
 
 func TestAccPDNSZoneInvalidVariantMultipleSeparators(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigInvalidVariantMultipleSeparators,

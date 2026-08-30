@@ -7,13 +7,19 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-var testAccProviders map[string]*schema.Provider
 var testAccProvider *schema.Provider
+
+// testAccProviderFactories is the replacement for the deprecated Providers
+// field on resource.TestCase. The factory is called per test, so each one gets
+// its own configured provider.
+var testAccProviderFactories map[string]func() (*schema.Provider, error)
 
 func init() {
 	testAccProvider = Provider()
-	testAccProviders = map[string]*schema.Provider{
-		"powerdns": testAccProvider,
+	testAccProviderFactories = map[string]func() (*schema.Provider, error){
+		"powerdns": func() (*schema.Provider, error) {
+			return testAccProvider, nil
+		},
 	}
 }
 
