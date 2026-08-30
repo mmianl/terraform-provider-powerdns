@@ -68,7 +68,7 @@ func TestRequestTimeoutZeroLeavesClientUnbounded(t *testing.T) {
 }
 
 func TestRecursorRequestTimeoutIsApplied(t *testing.T) {
-	client, err := NewRecursorClient(context.Background(), "http://127.0.0.1:1", "key", nil, 5)
+	client, err := NewRecursorClient(context.Background(), "http://127.0.0.1:1", "", "key", nil, 5)
 	if !assert.NoError(t, err) {
 		return
 	}
