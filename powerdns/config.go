@@ -15,6 +15,7 @@ type Config struct {
 	ServerURL         string
 	ServerID          string
 	RecursorServerURL string
+	RecursorServerID  string
 	APIKey            string
 	ClientCertFile    string
 	ClientCertKeyFile string
@@ -94,6 +95,7 @@ func (c *Config) Clients(ctx context.Context) (*PowerDNSClient, *RecursorClient,
 		recursorClient, err := NewRecursorClient(
 			ctx,
 			c.RecursorServerURL,
+			c.RecursorServerID,
 			c.APIKey,
 			tlsConfig,
 			c.RequestTimeout,
