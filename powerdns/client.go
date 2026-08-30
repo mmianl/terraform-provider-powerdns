@@ -1599,3 +1599,221 @@ func (client *RecursorClient) SetConfig(ctx context.Context, name string, values
 
 	return nil
 }
+
+// TSIGKey represents a PowerDNS TSIG key object.
+type TSIGKey struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Algorithm string `json:"algorithm,omitempty"`
+	Key       string `json:"key,omitempty"`
+	Type      string `json:"type,omitempty"`
+}
+
+// ListTSIGKeys returns all TSIG keys on the server. The API omits the secret
+// when listing, so Key is empty on every element.
+func (client *PowerDNSClient) ListTSIGKeys(ctx context.Context) ([]TSIGKey, error) {
+	req, err := client.newRequest(ctx, http.MethodGet, client.serverEndpoint("/tsigkeys"), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error listing TSIG keys: failed to decode error response: %w", err)
+		}
+		return nil, fmt.Errorf("error listing TSIG keys: %q", errorResp.ErrorMsg)
+	}
+
+	var tsigKeys []TSIGKey
+	if err := json.NewDecoder(resp.Body).Decode(&tsigKeys); err != nil {
+		return nil, err
+	}
+
+	return tsigKeys, nil
+}
+
+// GetTSIGKey retrieves a single TSIG key by its ID.
+func (client *PowerDNSClient) GetTSIGKey(ctx context.Context, id string) (*TSIGKey, error) {
+	endpoint := client.serverEndpoint("/tsigkeys/" + url.PathEscape(id))
+
+	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var tsigKey TSIGKey
+		if err := json.NewDecoder(resp.Body).Decode(&tsigKey); err != nil {
+			return nil, err
+		}
+		return &tsigKey, nil
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error getting TSIG key %s: failed to decode error response: %w", id, err)
+		}
+		return nil, fmt.Errorf("error getting TSIG key %s: %q", id, errorResp.ErrorMsg)
+	}
+}
+
+// CreateTSIGKey creates a TSIG key. Leaving Key empty asks the server to
+// generate the secret material.
+func (client *PowerDNSClient) CreateTSIGKey(ctx context.Context, tsigKey TSIGKey) (*TSIGKey, error) {
+	body, err := json.Marshal(tsigKey)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := client.newRequest(ctx, http.MethodPost, client.serverEndpoint("/tsigkeys"), body)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated {
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error creating TSIG key %s: failed to decode error response: %w", tsigKey.Name, err)
+		}
+		return nil, fmt.Errorf("error creating TSIG key %s: %q", tsigKey.Name, errorResp.ErrorMsg)
+	}
+
+	var created TSIGKey
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, err
+	}
+
+	return &created, nil
+}
+
+// UpdateTSIGKey changes the name or secret of an existing TSIG key.
+//
+// The algorithm is deliberately not sent here: PowerDNS stores a changed
+// algorithm as an additional key under the same name rather than replacing the
+// existing one, so the resource forces a new key instead.
+func (client *PowerDNSClient) UpdateTSIGKey(ctx context.Context, id string, tsigKey TSIGKey) (*TSIGKey, error) {
+	body, err := json.Marshal(tsigKey)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := client.serverEndpoint("/tsigkeys/" + url.PathEscape(id))
+
+	req, err := client.newRequest(ctx, http.MethodPut, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var updated TSIGKey
+		if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+			return nil, err
+		}
+		return &updated, nil
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return nil, fmt.Errorf("error updating TSIG key %s: failed to decode error response: %w", id, err)
+		}
+		return nil, fmt.Errorf("error updating TSIG key %s: %q", id, errorResp.ErrorMsg)
+	}
+}
+
+// DeleteTSIGKey removes a TSIG key.
+func (client *PowerDNSClient) DeleteTSIGKey(ctx context.Context, id string) error {
+	endpoint := client.serverEndpoint("/tsigkeys/" + url.PathEscape(id))
+
+	req, err := client.newRequest(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return ErrNotFound
+	default:
+		var errorResp errorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("error deleting TSIG key %s: failed to decode error response: %w", id, err)
+		}
+		return fmt.Errorf("error deleting TSIG key %s: %q", id, errorResp.ErrorMsg)
+	}
+}
