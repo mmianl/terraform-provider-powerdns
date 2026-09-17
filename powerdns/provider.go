@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 type ProviderClients struct {
@@ -79,10 +80,11 @@ func Provider() *schema.Provider {
 				Description: "Cache TTL in seconds. Also via PDNS_CACHE_TTL.",
 			},
 			"request_timeout": {
-				Type:        schema.TypeInt,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("PDNS_REQUEST_TIMEOUT", 60),
-				Description: "Timeout in seconds for a single API request. 0 disables the timeout. Also via PDNS_REQUEST_TIMEOUT.",
+				Type:         schema.TypeInt,
+				Optional:     true,
+				DefaultFunc:  schema.EnvDefaultFunc("PDNS_REQUEST_TIMEOUT", 60),
+				ValidateFunc: validation.IntAtLeast(0),
+				Description:  "Timeout in seconds for a single API request. 0 disables the timeout. Also via PDNS_REQUEST_TIMEOUT.",
 			},
 			"recursor_server_url": {
 				Type:        schema.TypeString,

@@ -92,3 +92,10 @@ func TestProviderRequestTimeoutEnvironmentOverride(t *testing.T) {
 		t.Errorf("request_timeout from environment = %v, want 5", value)
 	}
 }
+
+func TestProviderRequestTimeoutRejectsNegative(t *testing.T) {
+	_, errs := Provider().Schema["request_timeout"].ValidateFunc(-1, "request_timeout")
+	if len(errs) == 0 {
+		t.Error("request_timeout = -1 should fail validation, got no errors")
+	}
+}
