@@ -73,6 +73,8 @@ resource "powerdns_ptr_record" "example_ipv6" {
 }
 ```
 
+~> **Note:** PowerDNS stores a single record set per name and type, and its API replaces one wholesale. Creating a resource for a record set that already exists on the server is therefore refused, so that an apply cannot destroy a record it does not manage. Import the existing record instead. The same applies to two resources that name the same record set, which would otherwise overwrite each other on every apply.
+
 ## Argument Reference
 
 This resource supports the following arguments:
