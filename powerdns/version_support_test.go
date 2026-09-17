@@ -32,7 +32,7 @@ func detectServerCapabilities(t *testing.T) {
 			return
 		}
 
-		client, err := NewPowerDNSClient(context.Background(), serverURL, os.Getenv("PDNS_SERVER_ID"), apiKey, nil, false, "0", 0)
+		client, err := NewPowerDNSClient(context.Background(), serverURL, os.Getenv("PDNS_SERVER_ID"), apiKey, nil, false, "0", 0, 0)
 		if err != nil {
 			return
 		}
