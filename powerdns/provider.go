@@ -97,6 +97,8 @@ func Provider() *schema.Provider {
 			"powerdns_reverse_zone":          resourcePDNSReverseZone(),
 			"powerdns_recursor_config":       resourcePDNSRecursorConfig(),
 			"powerdns_recursor_forward_zone": resourcePDNSRecursorForwardZone(),
+			"powerdns_zone_notify":           resourcePDNSZoneNotify(),
+			"powerdns_zone_rectify":          resourcePDNSZoneRectify(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
