@@ -4,7 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 )
+
+// recordCreateLocks serializes the check-then-write in guardRecordOverwrite
+// per zone/name/type. PowerDNS's API has no compare-and-swap for record sets,
+// so this only closes the race between resources created concurrently by the
+// same provider process; it cannot protect against separate terraform apply
+// runs racing each other.
+var recordCreateLocks sync.Map
+
+func lockRecordCreate(zone, name, recordType string) func() {
+	key := zone + "\x00" + name + "\x00" + recordType
+	muAny, _ := recordCreateLocks.LoadOrStore(key, &sync.Mutex{})
+	mu := muAny.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
 
 // errRecordExists explains that a record set is already present on the server.
 // PowerDNS stores one record set per name and type and its API upserts them, so

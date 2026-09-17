@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -80,4 +82,62 @@ func TestGuardRecordOverwriteIsCaseInsensitive(t *testing.T) {
 
 	err := guardRecordOverwrite(context.Background(), client, "powerdns_record", "example.com.", "WWW.Example.COM.", "a")
 	assert.Error(t, err)
+}
+
+// lockRecordCreate has to actually exclude a second holder of the same key,
+// or two resources racing to create the same record set could both pass the
+// guard's existence check before either one writes.
+func TestLockRecordCreateExcludesSameKey(t *testing.T) {
+	var active int32
+	var sawOverlap bool
+	var mu sync.Mutex
+
+	hold := func() {
+		unlock := lockRecordCreate("example.com.", "www.example.com.", "A")
+		defer unlock()
+
+		mu.Lock()
+		active++
+		if active > 1 {
+			sawOverlap = true
+		}
+		mu.Unlock()
+
+		time.Sleep(10 * time.Millisecond)
+
+		mu.Lock()
+		active--
+		mu.Unlock()
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hold()
+		}()
+	}
+	wg.Wait()
+
+	assert.False(t, sawOverlap, "lockRecordCreate let two holders of the same key run concurrently")
+}
+
+// A different key must not be blocked by an unrelated key's lock.
+func TestLockRecordCreateAllowsDifferentKeys(t *testing.T) {
+	done := make(chan struct{})
+
+	unlockA := lockRecordCreate("a.example.com.", "www.a.example.com.", "A")
+	go func() {
+		unlockB := lockRecordCreate("b.example.com.", "www.b.example.com.", "A")
+		unlockB()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("lockRecordCreate blocked an unrelated key")
+	}
+	unlockA()
 }
