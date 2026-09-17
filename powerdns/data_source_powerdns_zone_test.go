@@ -11,9 +11,9 @@ func TestAccDataSourcePDNSZone_basic(t *testing.T) {
 	zoneName := "example.com."
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourcePDNSZoneConfig(zoneName),
@@ -29,9 +29,9 @@ func TestAccDataSourcePDNSZone_withRecords(t *testing.T) {
 	zoneName := "example.com."
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckPDNSZoneDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourcePDNSZoneConfigWithRecords(zoneName),
