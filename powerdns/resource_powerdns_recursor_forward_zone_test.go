@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -26,6 +27,11 @@ func TestAccPowerDNSRecursorForwardZone_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.test", "servers.1", "192.0.2.2"),
 				),
 			},
+			{
+				ResourceName:      "powerdns_recursor_forward_zone.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -34,6 +40,49 @@ const testAccPowerDNSRecursorForwardZoneConfig = `
 resource "powerdns_recursor_forward_zone" "test" {
   zone    = "example.com."
   servers = ["192.0.2.1", "192.0.2.2"]
+}
+`
+
+// This resource always creates zones with recursion disabled and has no
+// schema field to preserve a "true" value, so importing a zone the server
+// already has recursion enabled on has to fail loudly instead of reporting
+// no diff and later flipping the setting on an update.
+func TestAccPowerDNSRecursorForwardZone_ImportRecursiveRejected(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:  func() { testAccPreCheckRecursor(t) },
+		Providers: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				PreConfig: func() {
+					client := testAccProvider.Meta().(*ProviderClients)
+					zone := &RecursorForwardZone{
+						Name:             "recursive.example.com.",
+						Type:             "Zone",
+						Kind:             "Forwarded",
+						Servers:          []string{"192.0.2.1"},
+						RecursionDesired: true,
+					}
+					if err := client.Recursor.CreateForwardZone(context.Background(), zone); err != nil {
+						t.Fatalf("failed to create recursive forward zone out of band: %v", err)
+					}
+				},
+				Config:        testAccPowerDNSRecursorForwardZoneRecursiveImportConfig,
+				ResourceName:  "powerdns_recursor_forward_zone.recursive",
+				ImportState:   true,
+				ImportStateId: "recursive.example.com.",
+				ExpectError:   regexp.MustCompile("cannot represent"),
+			},
+		},
+	})
+
+	client := testAccProvider.Meta().(*ProviderClients)
+	_ = client.Recursor.DeleteForwardZone(context.Background(), "recursive.example.com.")
+}
+
+const testAccPowerDNSRecursorForwardZoneRecursiveImportConfig = `
+resource "powerdns_recursor_forward_zone" "recursive" {
+  zone    = "recursive.example.com."
+  servers = ["192.0.2.1"]
 }
 `
 
