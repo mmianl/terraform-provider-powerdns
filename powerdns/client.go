@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	freecache "github.com/coocood/freecache"
@@ -334,6 +335,7 @@ func parseID(recID string) (string, string, error) {
 type PowerDNSClient struct {
 	*BaseClient
 	serverID string
+	zoneGen  zoneGenerations
 }
 
 // NewPowerDNSClient constructs the derived PowerDNS client used by the provider.
@@ -521,6 +523,10 @@ func (client *PowerDNSClient) CreateZone(ctx context.Context, zoneInfo ZoneInfo)
 		return ZoneInfo{}, err
 	}
 
+	// A zone recreated under a name that was cached earlier must not be served
+	// from the stale entry.
+	client.invalidateZoneCache(zoneInfo.Name)
+
 	return createdZoneInfo, nil
 }
 
@@ -559,6 +565,8 @@ func (client *PowerDNSClient) UpdateZone(ctx context.Context, name string, zoneI
 		return fmt.Errorf("error updating zone: %s, reason: %q", zoneInfo.Name, errorResp.ErrorMsg)
 	}
 
+	client.invalidateZoneCache(name)
+
 	return nil
 }
 
@@ -591,6 +599,8 @@ func (client *PowerDNSClient) DeleteZone(ctx context.Context, name string) error
 		}
 		return fmt.Errorf("error deleting zone: %s, reason: %q", name, errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(name)
+
 	return nil
 }
 
@@ -772,10 +782,64 @@ func zoneCacheKey(zone string) []byte {
 	return []byte(key)
 }
 
+// zoneGenerations counts the writes seen per zone. A read notes the count
+// before it asks the server, and only caches its answer if the count is still
+// the same afterwards: otherwise a write finished in between and the answer
+// may predate it. The zero value is ready to use.
+type zoneGenerations struct {
+	mu  sync.Mutex
+	gen map[string]uint64
+}
+
+func (z *zoneGenerations) current(key string) uint64 {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	return z.gen[key]
+}
+
+// bump records a write and runs drop under the same lock, so a read cannot
+// pass the generation check and then store its answer after the drop.
+func (z *zoneGenerations) bump(key string, drop func()) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if z.gen == nil {
+		z.gen = make(map[string]uint64)
+	}
+	z.gen[key]++
+	drop()
+}
+
+// storeIfCurrent runs store only if no write has been recorded for the zone
+// since gen was read. It reports whether store ran.
+func (z *zoneGenerations) storeIfCurrent(key string, gen uint64, store func() error) (bool, error) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if z.gen[key] != gen {
+		return false, nil
+	}
+	return true, store()
+}
+
+// invalidateZoneCache drops any cached copy of a zone. Every write has to call
+// this, otherwise a later read in the same run is served a pre-write snapshot
+// for up to the configured TTL. It also makes any read that is already in
+// flight skip caching its answer, since that answer may predate the write.
+func (client *PowerDNSClient) invalidateZoneCache(zone string) {
+	if client.CacheEnable {
+		key := zoneCacheKey(zone)
+		client.zoneGen.bump(string(key), func() { client.Cache.Del(key) })
+	}
+}
+
 // GetZoneInfoFromCache return ZoneInfo struct
 func (client *PowerDNSClient) GetZoneInfoFromCache(ctx context.Context, zone string) (*ZoneInfo, error) {
 	if client.CacheEnable {
 		cacheZoneInfo, err := client.Cache.Get(zoneCacheKey(zone))
+		// A miss is the normal case for the first read of a zone, so it has to
+		// fall through to the API rather than failing the whole request.
+		if errors.Is(err, freecache.ErrNotFound) {
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -793,6 +857,9 @@ func (client *PowerDNSClient) GetZoneInfoFromCache(ctx context.Context, zone str
 
 // ListRecords returns all records in Zone
 func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]Record, error) {
+	// Read before asking the server; see zoneGenerations.
+	gen := client.zoneGen.current(string(zoneCacheKey(zone)))
+
 	zoneInfo, err := client.GetZoneInfoFromCache(ctx, zone)
 	if err != nil {
 		tflog.Warn(ctx, "Cache get failed", map[string]interface{}{
@@ -850,7 +917,11 @@ func (client *PowerDNSClient) ListRecords(ctx context.Context, zone string) ([]R
 				return nil, err
 			}
 
-			if err := client.Cache.Set(zoneCacheKey(zone), cacheValue, client.CacheTTL); err != nil {
+			key := zoneCacheKey(zone)
+			_, err = client.zoneGen.storeIfCurrent(string(key), gen, func() error {
+				return client.Cache.Set(key, cacheValue, client.CacheTTL)
+			})
+			if err != nil {
 				return nil, fmt.Errorf("the cache for REST API requests is enabled but the size isn't enough: cacheSize: %db \n %s",
 					DefaultCacheSize, err)
 			}
@@ -977,6 +1048,8 @@ func (client *PowerDNSClient) ReplaceRecordSet(ctx context.Context, zone string,
 		}
 		return "", fmt.Errorf("error creating record set: %s, reason: %q", rrSet.ID(), errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(zone)
+
 	return rrSet.ID(), nil
 }
 
@@ -1024,6 +1097,8 @@ func (client *PowerDNSClient) DeleteRecordSet(ctx context.Context, zone string, 
 		}
 		return fmt.Errorf("error deleting record: %s %s, reason: %q", name, tpe, errorResp.ErrorMsg)
 	}
+	client.invalidateZoneCache(zone)
+
 	return nil
 }
 
