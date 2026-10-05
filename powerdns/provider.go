@@ -105,6 +105,7 @@ func Provider() *schema.Provider {
 			"powerdns_reverse_zone":          resourcePDNSReverseZone(),
 			"powerdns_recursor_config":       resourcePDNSRecursorConfig(),
 			"powerdns_recursor_forward_zone": resourcePDNSRecursorForwardZone(),
+			"powerdns_tsigkey":               resourcePDNSTSIGKey(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -114,6 +115,7 @@ func Provider() *schema.Provider {
 			"powerdns_zone":               dataSourcePDNSZone(),
 			"powerdns_zone_metadata":      dataSourcePDNSZoneMetadata(),
 			"powerdns_zone_metadata_list": dataSourcePDNSZoneMetadataList(),
+			"powerdns_tsigkey":            dataSourcePDNSTSIGKey(),
 		},
 
 		ConfigureContextFunc: providerConfigure,
