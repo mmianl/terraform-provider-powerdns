@@ -18,6 +18,11 @@ func resourcePDNSRecursorForwardZone() *schema.Resource {
 		UpdateContext: resourcePDNSRecursorForwardZoneUpdate,
 		DeleteContext: resourcePDNSRecursorForwardZoneDelete,
 
+		// The read path works from the zone name alone, which is the ID.
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
+
 		Schema: map[string]*schema.Schema{
 			"zone": {
 				Type:         schema.TypeString,
@@ -103,6 +108,16 @@ func resourcePDNSRecursorForwardZoneRead(ctx context.Context, d *schema.Resource
 			return nil
 		}
 		return diag.FromErr(fmt.Errorf("failed to read recursor forward zone %q: %w", zoneName, err))
+	}
+
+	// This resource only ever creates zones with recursion disabled, and the
+	// schema has no field to preserve a server's existing "true" through
+	// state. Importing one and reporting no diff would let a later update
+	// silently delete and recreate it with recursion turned off.
+	if zone.RecursionDesired {
+		return diag.FromErr(fmt.Errorf(
+			"recursor forward zone %q has recursion_desired=true on the server, which this resource cannot represent; "+
+				"it always manages zones with recursion disabled", zoneName))
 	}
 
 	if err := d.Set("zone", zone.Name); err != nil {

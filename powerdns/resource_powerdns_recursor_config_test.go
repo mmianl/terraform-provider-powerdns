@@ -24,6 +24,11 @@ func TestAccPowerDNSRecursorConfig_Basic(t *testing.T) {
 					resource.TestCheckTypeSetElemAttr("powerdns_recursor_config.test", "value.*", "127.0.0.0/8"),
 				),
 			},
+			{
+				ResourceName:      "powerdns_recursor_config.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
