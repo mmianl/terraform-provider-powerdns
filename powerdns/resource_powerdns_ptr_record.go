@@ -81,6 +81,16 @@ func resourcePDNSPTRRecordCreate(ctx context.Context, d *schema.ResourceData, me
 		suffix = ".ip6.arpa."
 	}
 
+	// Held across the check and the write below so two resources for the same
+	// reverse zone/name created concurrently by this provider can't both
+	// observe "does not exist" and both proceed.
+	unlock := lockRecordCreate(reverseZone, ptrName+suffix, "PTR")
+	defer unlock()
+
+	if err := guardRecordOverwrite(ctx, client.PDNS, "powerdns_ptr_record", reverseZone, ptrName+suffix, "PTR"); err != nil {
+		return diag.FromErr(err)
+	}
+
 	// Create the PTR record with full FQDN
 	rrSet := ResourceRecordSet{
 		Name:       ptrName + suffix,
