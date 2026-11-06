@@ -10,7 +10,7 @@ description: |-
 
 Manages DNSSEC keys (cryptokeys) for a zone on a PowerDNS authoritative server. PowerDNS can generate the key material, or you can import an existing private key.
 
-~> **Note:** The zone must have DNSSEC enabled for its keys to be used. See the `dnssec` argument on `powerdns_zone`.
+~> **Note:** This resource manages DNSSEC keys and their active/published flags. Zone-level DNSSEC settings are configured separately in PowerDNS.
 
 ## Example Usage
 
@@ -18,9 +18,8 @@ Let PowerDNS generate a combined signing key:
 
 ```hcl
 resource "powerdns_zone" "example" {
-  name   = "example.com."
-  kind   = "Native"
-  dnssec = true
+  name = "example.com."
+  kind = "Native"
 }
 
 resource "powerdns_zone_cryptokey" "example" {
@@ -79,7 +78,7 @@ In addition to the arguments above, the following attributes are exported:
 - `ds` - The DS records for this key, to be published in the parent zone.
 - `cds` - The DS records for this key, filtered by the zone's CDS publication settings.
 
-~> **Note:** Some backends store a single combined key and report every key as `csk` regardless of the requested `keytype`.
+~> **Note:** When PowerDNS reports a key as `csk`, this resource retains its previously requested `keytype` in state. Changing the configured `keytype` still forces a new key. Imported keys initially use the role reported by PowerDNS.
 
 ## Importing
 

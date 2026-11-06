@@ -65,11 +65,8 @@ func resourcePDNSZoneCryptokey() *schema.Resource {
 				Required:     true,
 				ForceNew:     true,
 				ValidateFunc: validation.StringInSlice(cryptokeyKeyTypes, false),
-				// Some backends store a single combined key and report every key
-				// as "csk" regardless of what was requested, which would otherwise
-				// show up as a permanent diff.
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return strings.EqualFold(old, new) || strings.EqualFold(old, "csk")
+					return strings.EqualFold(old, new)
 				},
 				Description: "The role of the key: ksk, zsk or csk.",
 			},
@@ -226,7 +223,15 @@ func resourcePDNSZoneCryptokeyRead(ctx context.Context, d *schema.ResourceData, 
 	if err := d.Set("zone", zone); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS cryptokey zone: %w", err))
 	}
-	if err := d.Set("keytype", cryptokey.KeyType); err != nil {
+	keytype := cryptokey.KeyType
+	// PowerDNS can report a requested KSK or ZSK as a combined key. Keep the
+	// previously requested role in state so refreshes remain stable and a later
+	// configuration change still forces replacement. Imports have no prior role
+	// and use the value reported by the server.
+	if previous := d.Get("keytype").(string); strings.EqualFold(keytype, "csk") && previous != "" {
+		keytype = previous
+	}
+	if err := d.Set("keytype", keytype); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS cryptokey keytype: %w", err))
 	}
 	if err := d.Set("active", cryptokey.Active); err != nil {
