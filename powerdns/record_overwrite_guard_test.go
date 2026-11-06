@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,6 +29,17 @@ func TestGuardRecordOverwriteBlocksExisting(t *testing.T) {
 	// The message has to carry a command the user can actually run.
 	assert.Contains(t, err.Error(), "terraform import powerdns_record")
 	assert.Contains(t, err.Error(), `"id": "www.example.com.:::A"`)
+}
+
+func TestGuardRecordOverwriteBlocksLegacyRecord(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, `{"name":"example.com.","records":[{"name":"www.example.com.","type":"A","content":"192.0.2.1","ttl":300}]}`), nil
+	})
+
+	err := guardRecordOverwrite(context.Background(), client, "powerdns_record", "example.com.", "WWW.Example.COM.", "a")
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "already exists")
+	}
 }
 
 func TestGuardRecordOverwriteAllowsNewName(t *testing.T) {
@@ -82,6 +94,63 @@ func TestGuardRecordOverwriteIsCaseInsensitive(t *testing.T) {
 
 	err := guardRecordOverwrite(context.Background(), client, "powerdns_record", "example.com.", "WWW.Example.COM.", "a")
 	assert.Error(t, err)
+}
+
+// Provider aliases have independent caches. A cached empty zone in one alias
+// must not allow it to overwrite a record just created through another alias.
+func TestRecordCreateRejectsOverwriteAcrossCachedAliases(t *testing.T) {
+	ctx := context.Background()
+	zoneBody := `{"name":"example.com.","kind":"Native","rrsets":[]}`
+	patchCalls := 0
+	transport := func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, "/api/v1/servers/localhost/zones/example.com.", r.URL.Path)
+		switch r.Method {
+		case http.MethodGet:
+			assert.Equal(t, "true", r.URL.Query().Get("rrsets"))
+			return jsonResponse(http.StatusOK, zoneBody), nil
+		case http.MethodPatch:
+			patchCalls++
+			zoneBody = guardZoneWithRecord
+			return jsonResponse(http.StatusNoContent, ""), nil
+		default:
+			t.Fatalf("unexpected request method: %s", r.Method)
+			return nil, nil
+		}
+	}
+	aliasA := newCachingTestClient(transport)
+	aliasB := newCachingTestClient(transport)
+
+	// A data source read through B primes its cache before A creates the record.
+	records, err := aliasB.ListRecords(ctx, "example.com.")
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Empty(t, records)
+	newRecord := func(content string) *schema.ResourceData {
+		return schema.TestResourceDataRaw(t, resourcePDNSRecord().Schema, map[string]interface{}{
+			"zone": "example.com.", "name": "www.example.com.", "type": "A",
+			"ttl": 300, "records": []interface{}{content},
+		})
+	}
+	first := newRecord("192.0.2.1")
+	diags := resourcePDNSRecordCreate(ctx, first, &ProviderClients{PDNS: aliasA})
+	if !assert.False(t, diags.HasError(), "%v", diags) {
+		return
+	}
+	assert.NotEmpty(t, first.Id())
+
+	// A's write invalidates only A's cache, so B still sees its empty snapshot.
+	records, err = aliasB.ListRecords(ctx, "example.com.")
+	assert.NoError(t, err)
+	assert.Empty(t, records)
+
+	second := newRecord("192.0.2.2")
+	diags = resourcePDNSRecordCreate(ctx, second, &ProviderClients{PDNS: aliasB})
+	if assert.True(t, diags.HasError(), "the second alias must refuse to overwrite the first record") {
+		assert.Contains(t, diags[0].Summary, "already exists")
+	}
+	assert.Empty(t, second.Id())
+	assert.Equal(t, 1, patchCalls, "only the first create may write to PowerDNS")
 }
 
 // lockRecordCreate has to actually exclude a second holder of the same key,
