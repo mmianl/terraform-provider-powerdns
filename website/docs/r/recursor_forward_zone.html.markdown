@@ -36,6 +36,10 @@ This resource supports the following arguments:
 - `zone` - (Required) The DNS zone name to forward queries for. Must be a fully qualified domain name (FQDN) ending with a trailing dot (e.g., `"example.com."`).
 - `servers` - (Required) A list of DNS server IP addresses to forward queries to for this zone.
 
+## Attribute Reference
+
+- `kind` - The zone kind reported by the Recursor API. Always `Forwarded` for zones managed by this resource.
+
 ## Notes
 
 - This resource requires the `recursor_server_url` to be configured in the provider.
@@ -50,5 +54,7 @@ An existing forward zone can be imported using the zone name, ending with a trai
 ```bash
 terraform import powerdns_recursor_forward_zone.example example.com.
 ```
+
+Only zones with kind `Forwarded` and `recursion_desired=false` can be imported. Native zones and zones with recursion enabled are rejected to prevent later updates from silently changing their DNS behavior.
 
 For more information on how to use terraform's `import` command, please refer to terraform's [core documentation](https://www.terraform.io/docs/import/index.html#currently-state-only).
