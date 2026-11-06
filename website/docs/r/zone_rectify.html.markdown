@@ -8,17 +8,26 @@ description: |-
 
 # powerdns_zone_rectify
 
-Rectifies a zone, rebuilding its DNSSEC ordering and auth records. This is the same operation as `pdnsutil rectify-zone`, and is mainly useful for zones that are not rectified automatically. See the `api_rectify` argument on `powerdns_zone` for the automatic option.
+Rectifies a zone, rebuilding its DNSSEC ordering and auth records. This is the same operation as `pdnsutil rectify-zone`, and is mainly useful for zones that are not rectified automatically.
 
 ~> **Note:** This is an operation rather than a tracked object. It runs when the resource is created and whenever `triggers` change, nothing is read back from the server, and destroying the resource only removes it from state.
 
 ## Example Usage
 
+This example rectifies the zone after the `www` record is created and whenever its record values change. Configure DNSSEC separately in PowerDNS if needed; `powerdns_zone` does not manage DNSSEC settings.
+
 ```hcl
 resource "powerdns_zone" "example" {
-  name   = "example.com."
-  kind   = "Master"
-  dnssec = true
+  name = "example.com."
+  kind = "Master"
+}
+
+resource "powerdns_record" "www" {
+  zone    = powerdns_zone.example.name
+  name    = "www.example.com."
+  type    = "A"
+  ttl     = 300
+  records = ["192.0.2.1"]
 }
 
 resource "powerdns_zone_rectify" "example" {
