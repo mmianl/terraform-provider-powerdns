@@ -36,9 +36,13 @@ func resourcePDNSTSIGKey() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"name": {
-				Type:        schema.TypeString,
-				Required:    true,
-				Description: "The name of the TSIG key.",
+				Type:     schema.TypeString,
+				Required: true,
+				// The name is part of the API ID. Replacement makes the new ID
+				// unknown during planning so dependent zone references update in
+				// the same apply, instead of retaining the removed key's ID.
+				ForceNew:    true,
+				Description: "The name of the TSIG key. Changing this forces a new key.",
 				// PowerDNS returns names without their optional trailing dot.
 				// Normalize before planning so dependent resources see the same
 				// name before and after key creation.
@@ -166,12 +170,12 @@ func resourcePDNSTSIGKeyUpdate(ctx context.Context, d *schema.ResourceData, meta
 	ctx = tflog.SetField(ctx, "tsigkey_id", d.Id())
 	tflog.Debug(ctx, "Updating PowerDNS TSIG key")
 
-	if d.HasChanges("name", "key", "key_wo_version") {
+	if d.HasChanges("key", "key_wo_version") {
 		tsigKey := TSIGKey{
 			Name: d.Get("name").(string),
 		}
-		// A rename can omit the secret. In write-only mode, only a version
-		// change requests rotation, even if the configured secret also changed.
+		// In write-only mode, only a version change requests an in-place
+		// rotation, even if the configured secret also changed.
 		rotate := d.HasChange("key")
 		if d.Get("key_wo_version").(int) != 0 {
 			rotate = d.HasChange("key_wo_version")
@@ -184,14 +188,9 @@ func resourcePDNSTSIGKeyUpdate(ctx context.Context, d *schema.ResourceData, meta
 			tsigKey.Key = key
 		}
 
-		updated, err := client.PDNS.UpdateTSIGKey(ctx, d.Id(), d.Get("algorithm").(string), tsigKey)
+		_, err := client.PDNS.UpdateTSIGKey(ctx, d.Id(), d.Get("algorithm").(string), tsigKey)
 		if err != nil {
 			return diag.FromErr(fmt.Errorf("error updating PowerDNS TSIG key: %w", err))
-		}
-
-		// Renaming a key changes its ID, so follow it to keep later reads working.
-		if updated.ID != "" {
-			d.SetId(updated.ID)
 		}
 	}
 

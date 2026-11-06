@@ -219,16 +219,20 @@ type ZoneInfo struct {
 	Nameservers        []string            `json:"nameservers,omitempty"`
 	Masters            []string            `json:"masters,omitempty"`
 	SoaEditAPI         string              `json:"soa_edit_api,omitempty"`
+	MasterTsigKeyIDs   []string            `json:"master_tsig_key_ids,omitempty"`
+	SlaveTsigKeyIDs    []string            `json:"slave_tsig_key_ids,omitempty"`
 }
 
 // ZoneInfoUpd is a limited subset for supported updates
 type ZoneInfoUpd struct {
-	Name       string   `json:"name"`
-	Kind       string   `json:"kind"`
-	Catalog    string   `json:"catalog,omitempty"`
-	SoaEditAPI string   `json:"soa_edit_api,omitempty"`
-	Account    string   `json:"account"`
-	Masters    []string `json:"masters,omitempty"`
+	Name             string    `json:"name"`
+	Kind             string    `json:"kind"`
+	Catalog          string    `json:"catalog,omitempty"`
+	SoaEditAPI       string    `json:"soa_edit_api,omitempty"`
+	Account          string    `json:"account"`
+	Masters          []string  `json:"masters,omitempty"`
+	MasterTsigKeyIDs *[]string `json:"master_tsig_key_ids,omitempty"`
+	SlaveTsigKeyIDs  *[]string `json:"slave_tsig_key_ids,omitempty"`
 }
 
 // View represents a PowerDNS view object.
@@ -2088,6 +2092,22 @@ func (client *PowerDNSClient) GetTSIGKey(ctx context.Context, id, algorithm stri
 	}
 }
 
+// tsigMutationError preserves API error context without echoing submitted key
+// material. Redact before quoting, since keys can contain quotes or controls.
+func tsigMutationError(operation, id, key string, resp *http.Response) error {
+	var errorResp errorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+		// Decoder errors can contain response values too. Keep these diagnostics
+		// generic rather than exposing an unexpected API response.
+		return fmt.Errorf("error %s TSIG key %s: failed to decode error response (HTTP %d)", operation, id, resp.StatusCode)
+	}
+	message := errorResp.ErrorMsg
+	if key != "" {
+		message = strings.ReplaceAll(message, key, "[REDACTED]")
+	}
+	return fmt.Errorf("error %s TSIG key %s: %q", operation, id, message)
+}
+
 // CreateTSIGKey creates a TSIG key. Leaving Key empty asks the server to
 // generate the secret material.
 func (client *PowerDNSClient) CreateTSIGKey(ctx context.Context, tsigKey TSIGKey) (*TSIGKey, error) {
@@ -2116,16 +2136,12 @@ func (client *PowerDNSClient) CreateTSIGKey(ctx context.Context, tsigKey TSIGKey
 	}()
 
 	if resp.StatusCode != http.StatusCreated {
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return nil, fmt.Errorf("error creating TSIG key %s: failed to decode error response: %w", tsigKey.Name, err)
-		}
-		return nil, fmt.Errorf("error creating TSIG key %s: %q", tsigKey.Name, errorResp.ErrorMsg)
+		return nil, tsigMutationError("creating", tsigKey.Name, tsigKey.Key, resp)
 	}
 
 	var created TSIGKey
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating TSIG key %s: failed to decode API response (HTTP %d)", tsigKey.Name, resp.StatusCode)
 	}
 
 	return &created, nil
@@ -2170,17 +2186,13 @@ func (client *PowerDNSClient) UpdateTSIGKey(ctx context.Context, id, algorithm s
 	case http.StatusOK:
 		var updated TSIGKey
 		if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error updating TSIG key %s: failed to decode API response (HTTP %d)", id, resp.StatusCode)
 		}
 		return &updated, nil
 	case http.StatusNotFound:
 		return nil, ErrNotFound
 	default:
-		var errorResp errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
-			return nil, fmt.Errorf("error updating TSIG key %s: failed to decode error response: %w", id, err)
-		}
-		return nil, fmt.Errorf("error updating TSIG key %s: %q", id, errorResp.ErrorMsg)
+		return nil, tsigMutationError("updating", id, tsigKey.Key, resp)
 	}
 }
 

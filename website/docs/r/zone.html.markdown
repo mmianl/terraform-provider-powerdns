@@ -96,6 +96,24 @@ resource "powerdns_zone" "catalog_member" {
 }
 ```
 
+### Referencing TSIG keys
+
+```hcl
+resource "powerdns_tsigkey" "transfer" {
+  name      = "transfer-key"
+  algorithm = "hmac-sha256"
+}
+
+resource "powerdns_zone" "signed_transfers" {
+  name                = "example.com."
+  kind                = "Master"
+  master_tsig_key_ids = [powerdns_tsigkey.transfer.id]
+}
+```
+
+Both `transfer-key` and `transfer-key.` identify the same key. References made
+through a key's `name` attribute are also accepted and normalized to dotted IDs.
+
 ## Argument Reference
 
 This resource supports the following arguments:
@@ -106,6 +124,11 @@ This resource supports the following arguments:
 - `catalog` - (Optional) Catalog zone FQDN, ending with a trailing dot, to assign this zone to. This can be used to create or update PowerDNS catalog zone membership.
 - `masters` - (Optional) List of IP addresses configured as a master for this zone. This argument must be provided when `kind` is set to `Slave`.
 - `soa_edit_api` - (Optional) This should map to one of the [supported API values](https://doc.powerdns.com/authoritative/dnsupdate.html#soa-edit-dnsupdate-settings) *or* in [case you wish to remove the setting](https://doc.powerdns.com/authoritative/domainmetadata.html#soa-edit-api), set this argument as `""` (that will translate to the API value `""`).
+- `master_tsig_key_ids` - (Optional, Computed) Set of TSIG key IDs allowed to authenticate AXFR requests for this zone (`TSIG-ALLOW-AXFR` metadata). Accepts bare names or dotted IDs. Omission retains existing server values; set `[]` to clear them.
+- `slave_tsig_key_ids` - (Optional, Computed) Set containing at most one TSIG key ID used to sign requests to the primary server (`AXFR-MASTER-TSIG` metadata). Accepts bare names or dotted IDs. Omission retains existing server values; set `[]` to clear them.
+
+Manage each TSIG metadata kind through either these zone attributes or a
+`powerdns_zone_metadata` resource so that only one resource owns its value.
 
 ## Importing
 

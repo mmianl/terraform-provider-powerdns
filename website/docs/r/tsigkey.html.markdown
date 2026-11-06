@@ -33,7 +33,7 @@ resource "powerdns_tsigkey" "transfer" {
 }
 ```
 
-Keep the secret out of state with a write-only value (needs Terraform 1.11 or later). Terraform cannot see a write-only value change, so bump `key_wo_version` when you want to send a new secret. Renaming a key does not rotate its write-only secret unless `key_wo_version` also changes:
+Keep the secret out of state with a write-only value (needs Terraform 1.11 or later). Terraform cannot see a write-only value change, so bump `key_wo_version` when you want to rotate the secret on an existing key:
 
 ```hcl
 resource "powerdns_tsigkey" "transfer" {
@@ -44,26 +44,31 @@ resource "powerdns_tsigkey" "transfer" {
 }
 ```
 
-Allow this key to authenticate AXFR requests for a primary zone using zone metadata:
+Allow this key to authenticate AXFR requests for a primary zone:
 
 ```hcl
 resource "powerdns_zone" "example" {
-  name = "example.com."
-  kind = "Master"
-}
-
-resource "powerdns_zone_metadata" "allow_transfer" {
-  zone     = powerdns_zone.example.name
-  kind     = "TSIG-ALLOW-AXFR"
-  metadata = [powerdns_tsigkey.transfer.name]
+  name                = "example.com."
+  kind                = "Master"
+  master_tsig_key_ids = [powerdns_tsigkey.transfer.id]
 }
 ```
+
+The zone accepts either the dotted key `id` or the bare `name` and stores the
+reference as a dotted ID. Secondary zones can use `slave_tsig_key_ids` to select
+the key used for requests to their primary server.
+
+Changing a key's name replaces it, allowing dependent zones to use the new ID
+in the same apply. Replacement sends the current configured secret, including
+`key_wo` even when its version is unchanged. If no secret is configured,
+PowerDNS generates a new one. Adding or removing only the trailing dot does
+not replace the key.
 
 ## Argument Reference
 
 This resource supports the following arguments:
 
-- `name` - (Required) The name of the TSIG key. A trailing dot is optional; PowerDNS reports the name without it.
+- `name` - (Required) The name of the TSIG key. Changing the name forces a new key. A trailing dot is optional; PowerDNS reports the name without it.
 - `algorithm` - (Required) The TSIG algorithm. One of `hmac-md5`, `hmac-sha1`, `hmac-sha224`, `hmac-sha256`, `hmac-sha384` or `hmac-sha512`. Changing this forces a new key to be created, because PowerDNS would otherwise keep the previous algorithm alongside the new one under the same name.
 - `key` - (Optional) The base64 encoded secret. When omitted, PowerDNS generates the key material and it is saved to state. Conflicts with `key_wo`.
 - `key_wo` - (Optional, Write-only) The base64 encoded secret. It is never saved to the plan or state. Needs Terraform 1.11 or later, and requires `key_wo_version`. Conflicts with `key`.

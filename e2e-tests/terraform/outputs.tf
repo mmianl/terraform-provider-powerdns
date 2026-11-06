@@ -180,3 +180,14 @@ output "powerdns_tsigkeys" {
 output "powerdns_zone_metadata_tsig_transfer" {
   value = powerdns_zone_metadata.tsig_transfer
 }
+
+output "powerdns_zone_tsig_write_only" {
+  value = powerdns_zone.tsig_write_only
+}
+
+output "powerdns_zone_tsig_references" {
+  value = {
+    zone = powerdns_zone.tsig_references
+    data = data.powerdns_zone.tsig_references
+  }
+}
