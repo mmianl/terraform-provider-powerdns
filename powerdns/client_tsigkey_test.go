@@ -2,6 +2,7 @@ package powerdns
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -31,20 +32,25 @@ func TestListTSIGKeys(t *testing.T) {
 }
 
 func TestGetTSIGKey(t *testing.T) {
-	client := newTestClient(func(r *http.Request) (*http.Response, error) {
-		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/v1/servers/localhost/tsigkeys/test.", r.URL.Path)
-		return jsonResponse(http.StatusOK, `{"id":"test.","name":"test","algorithm":"hmac-sha256","key":"c2VjcmV0","type":"TSIGKey"}`), nil
-	})
+	for _, algorithm := range []string{"", "hmac-sha256"} {
+		t.Run("algorithm="+algorithm, func(t *testing.T) {
+			client := newTestClient(func(r *http.Request) (*http.Response, error) {
+				assert.Equal(t, http.MethodGet, r.Method)
+				assert.Equal(t, "/api/v1/servers/localhost/tsigkeys/test.", r.URL.Path)
+				assert.Equal(t, algorithm, r.URL.Query().Get("algorithm"))
+				return jsonResponse(http.StatusOK, `{"id":"test.","name":"test","algorithm":"hmac-sha256","key":"c2VjcmV0","type":"TSIGKey"}`), nil
+			})
 
-	key, err := client.GetTSIGKey(context.Background(), "test.")
-	if !assert.NoError(t, err) {
-		return
+			key, err := client.GetTSIGKey(context.Background(), "test.", algorithm)
+			if !assert.NoError(t, err) {
+				return
+			}
+
+			assert.Equal(t, "test.", key.ID)
+			assert.Equal(t, "test", key.Name)
+			assert.Equal(t, "c2VjcmV0", key.Key)
+		})
 	}
-
-	assert.Equal(t, "test.", key.ID)
-	assert.Equal(t, "test", key.Name)
-	assert.Equal(t, "c2VjcmV0", key.Key)
 }
 
 func TestGetTSIGKeyNotFound(t *testing.T) {
@@ -52,7 +58,7 @@ func TestGetTSIGKeyNotFound(t *testing.T) {
 		return jsonResponse(http.StatusNotFound, `{"error":"Not Found"}`), nil
 	})
 
-	key, err := client.GetTSIGKey(context.Background(), "missing.")
+	key, err := client.GetTSIGKey(context.Background(), "missing.", "hmac-sha256")
 	assert.Nil(t, key)
 	assert.ErrorIs(t, err, ErrNotFound)
 }
@@ -76,8 +82,12 @@ func TestCreateTSIGKey(t *testing.T) {
 
 func TestUpdateTSIGKeyOmitsAlgorithm(t *testing.T) {
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/api/v1/servers/localhost/tsigkeys" {
+			return jsonResponse(http.StatusOK, `[{"id":"test.","algorithm":"hmac-sha256"}]`), nil
+		}
 		assert.Equal(t, http.MethodPut, r.Method)
 		assert.Equal(t, "/api/v1/servers/localhost/tsigkeys/test.", r.URL.Path)
+		assert.Equal(t, "hmac-sha256", r.URL.Query().Get("algorithm"))
 
 		raw, err := io.ReadAll(r.Body)
 		if !assert.NoError(t, err) {
@@ -93,7 +103,7 @@ func TestUpdateTSIGKeyOmitsAlgorithm(t *testing.T) {
 		return jsonResponse(http.StatusOK, `{"id":"renamed.","name":"renamed","algorithm":"hmac-sha256","key":"c2VjcmV0","type":"TSIGKey"}`), nil
 	})
 
-	updated, err := client.UpdateTSIGKey(context.Background(), "test.", TSIGKey{Name: "renamed", Key: "c2VjcmV0"})
+	updated, err := client.UpdateTSIGKey(context.Background(), "test.", "hmac-sha256", TSIGKey{Name: "renamed", Key: "c2VjcmV0"})
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -103,10 +113,57 @@ func TestUpdateTSIGKeyOmitsAlgorithm(t *testing.T) {
 
 func TestDeleteTSIGKey(t *testing.T) {
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/api/v1/servers/localhost/tsigkeys" {
+			return jsonResponse(http.StatusOK, `[{"id":"test.","algorithm":"hmac-sha256"}]`), nil
+		}
 		assert.Equal(t, http.MethodDelete, r.Method)
 		assert.Equal(t, "/api/v1/servers/localhost/tsigkeys/test.", r.URL.Path)
+		assert.Equal(t, "hmac-sha256", r.URL.Query().Get("algorithm"))
 		return jsonResponse(http.StatusNoContent, ``), nil
 	})
 
-	assert.NoError(t, client.DeleteTSIGKey(context.Background(), "test."))
+	assert.NoError(t, client.DeleteTSIGKey(context.Background(), "test.", "hmac-sha256"))
+}
+
+func TestDeleteTSIGKeyRequiresAlgorithm(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		t.Fatal("deletion without an algorithm must not send a request")
+		return nil, nil
+	})
+	assert.Error(t, client.DeleteTSIGKey(context.Background(), "test.", ""))
+}
+
+func TestDeleteTSIGKeyWithOtherAlgorithms(t *testing.T) {
+	for _, filtering := range []bool{false, true} {
+		t.Run(fmt.Sprintf("filtering=%t", filtering), func(t *testing.T) {
+			algorithms := map[string]bool{"hmac-sha256": true, "hmac-sha384": true}
+			client := newTestClient(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/api/v1/servers/localhost/tsigkeys" {
+					return jsonResponse(http.StatusOK, `[{"id":"test.","algorithm":"hmac-sha256"},{"id":"test.","algorithm":"hmac-sha384"}]`), nil
+				}
+				if r.Method == http.MethodGet {
+					if filtering {
+						return jsonResponse(http.StatusNotFound, `{"error":"Not Found"}`), nil
+					}
+					return jsonResponse(http.StatusOK, `{"id":"test.","algorithm":"hmac-sha256"}`), nil
+				}
+				assert.Equal(t, http.MethodDelete, r.Method)
+				if filtering {
+					delete(algorithms, r.URL.Query().Get("algorithm"))
+				} else {
+					clear(algorithms)
+				}
+				return jsonResponse(http.StatusNoContent, ``), nil
+			})
+			err := client.DeleteTSIGKey(context.Background(), "test.", "hmac-sha256")
+			if filtering {
+				assert.NoError(t, err)
+				assert.False(t, algorithms["hmac-sha256"])
+			} else {
+				assert.ErrorIs(t, err, errTSIGAlgorithmFilterUnsupported)
+				assert.True(t, algorithms["hmac-sha256"])
+			}
+			assert.True(t, algorithms["hmac-sha384"], "the unrelated algorithm must survive")
+		})
+	}
 }

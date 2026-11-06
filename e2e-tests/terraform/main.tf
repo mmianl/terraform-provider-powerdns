@@ -321,3 +321,91 @@ resource "powerdns_zone_rectify" "once" {
 
   depends_on = [powerdns_zone_cryptokey.zone_actions, powerdns_record.zone_actions_www]
 }
+
+variable "tsig_explicit_rotated" {
+  type    = bool
+  default = false
+}
+
+variable "tsig_migrate_to_write_only" {
+  type    = bool
+  default = false
+}
+
+variable "tsig_algorithm" {
+  type    = string
+  default = "hmac-sha256"
+}
+
+variable "tsig_wo_name" {
+  type    = string
+  default = "e2e-tsig-write-only"
+}
+
+variable "tsig_wo_secret_revision" {
+  type    = number
+  default = 1
+}
+
+variable "tsig_wo_version" {
+  type    = number
+  default = 1
+}
+
+locals {
+  # Fixed, non-production secrets make rotation and state checks repeatable.
+  tsig_explicit_secret  = base64encode(var.tsig_explicit_rotated ? "e2e-tsig-explicit-rotated-secret" : "e2e-tsig-explicit-initial-secret")
+  tsig_wo_secret        = base64encode(var.tsig_wo_secret_revision == 1 ? "e2e-tsig-write-only-initial-secret" : "e2e-tsig-write-only-rotated-secret")
+  tsig_migration_secret = base64encode("e2e-tsig-generated-migration-secret")
+}
+
+resource "powerdns_tsigkey" "generated" {
+  name           = "e2e-tsig-generated."
+  algorithm      = "hmac-sha256"
+  key_wo         = var.tsig_migrate_to_write_only ? local.tsig_migration_secret : null
+  key_wo_version = var.tsig_migrate_to_write_only ? 1 : null
+}
+
+resource "powerdns_tsigkey" "explicit" {
+  name           = "e2e-tsig-explicit"
+  algorithm      = var.tsig_algorithm
+  key            = var.tsig_migrate_to_write_only ? null : local.tsig_explicit_secret
+  key_wo         = var.tsig_migrate_to_write_only ? local.tsig_explicit_secret : null
+  key_wo_version = var.tsig_migrate_to_write_only ? 1 : null
+}
+
+resource "powerdns_tsigkey" "write_only" {
+  name           = var.tsig_wo_name
+  algorithm      = "hmac-sha256"
+  key_wo         = local.tsig_wo_secret
+  key_wo_version = var.tsig_wo_version
+}
+
+variable "tsig_scoped_algorithm" {
+  type    = string
+  default = "hmac-sha256"
+}
+
+resource "powerdns_tsigkey" "algorithm_scope" {
+  name      = "e2e-tsig-algorithm-scope"
+  algorithm = var.tsig_scoped_algorithm
+}
+
+# Reading a TSIG data source intentionally persists its secret. Remove this
+# consumer when the generated resource switches to write-only mode.
+data "powerdns_tsigkey" "generated" {
+  count = var.tsig_migrate_to_write_only ? 0 : 1
+
+  id = powerdns_tsigkey.generated.id
+}
+
+resource "powerdns_zone" "tsig" {
+  name = "tsig.example.com."
+  kind = "Master"
+}
+
+resource "powerdns_zone_metadata" "tsig_transfer" {
+  zone     = powerdns_zone.tsig.name
+  kind     = "TSIG-ALLOW-AXFR"
+  metadata = [powerdns_tsigkey.generated.name]
+}

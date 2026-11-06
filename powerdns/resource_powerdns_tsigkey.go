@@ -40,6 +40,11 @@ func resourcePDNSTSIGKey() *schema.Resource {
 				Required:    true,
 				Description: "The name of the TSIG key.",
 				// PowerDNS returns names without their optional trailing dot.
+				// Normalize before planning so dependent resources see the same
+				// name before and after key creation.
+				StateFunc: func(value interface{}) string {
+					return strings.TrimSuffix(value.(string), ".")
+				},
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 					return strings.TrimSuffix(old, ".") == strings.TrimSuffix(new, ".")
 				},
@@ -122,7 +127,7 @@ func resourcePDNSTSIGKeyRead(ctx context.Context, d *schema.ResourceData, meta i
 	ctx = tflog.SetField(ctx, "tsigkey_id", d.Id())
 	tflog.Debug(ctx, "Reading PowerDNS TSIG key")
 
-	tsigKey, err := client.PDNS.GetTSIGKey(ctx, d.Id())
+	tsigKey, err := client.PDNS.GetTSIGKey(ctx, d.Id(), d.Get("algorithm").(string))
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			tflog.Warn(ctx, "TSIG key not found; removing from state")
@@ -179,7 +184,7 @@ func resourcePDNSTSIGKeyUpdate(ctx context.Context, d *schema.ResourceData, meta
 			tsigKey.Key = key
 		}
 
-		updated, err := client.PDNS.UpdateTSIGKey(ctx, d.Id(), tsigKey)
+		updated, err := client.PDNS.UpdateTSIGKey(ctx, d.Id(), d.Get("algorithm").(string), tsigKey)
 		if err != nil {
 			return diag.FromErr(fmt.Errorf("error updating PowerDNS TSIG key: %w", err))
 		}
@@ -199,7 +204,7 @@ func resourcePDNSTSIGKeyDelete(ctx context.Context, d *schema.ResourceData, meta
 	ctx = tflog.SetField(ctx, "tsigkey_id", d.Id())
 	tflog.Debug(ctx, "Deleting PowerDNS TSIG key")
 
-	if err := client.PDNS.DeleteTSIGKey(ctx, d.Id()); err != nil {
+	if err := client.PDNS.DeleteTSIGKey(ctx, d.Id(), d.Get("algorithm").(string)); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil
 		}

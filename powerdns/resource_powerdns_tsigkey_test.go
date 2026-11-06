@@ -62,6 +62,12 @@ func TestTSIGKeyUpdateSendsSecretOnlyForRotation(t *testing.T) {
 			secret := testTSIGSecret
 			puts := 0
 			client := newTestClient(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/api/v1/servers/localhost/tsigkeys" {
+					return jsonResponse(http.StatusOK, `[{"id":"tf-old.","algorithm":"hmac-sha256"}]`), nil
+				}
+				if r.URL.Query().Get("algorithm") != "hmac-sha256" {
+					t.Error("managed reads and updates must select the algorithm in state")
+				}
 				if r.Method == http.MethodPut {
 					puts++
 					var payload map[string]string
@@ -114,6 +120,84 @@ func TestTSIGKeyNameTrailingDotDoesNotPlanRename(t *testing.T) {
 			changed := diff != nil && !diff.Empty()
 			if changed != (name == "renamed-key") {
 				t.Fatalf("name %q produces a rename: %t", name, changed)
+			}
+		})
+	}
+}
+
+func TestTSIGKeyNameNormalizedInPlan(t *testing.T) {
+	diff, err := resourcePDNSTSIGKey().Diff(context.Background(), nil, terraform.NewResourceConfigRaw(map[string]interface{}{
+		"name": "transfer-key.", "algorithm": "hmac-sha256",
+	}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name := diff.Attributes["name"]; name == nil || name.New != "transfer-key" {
+		t.Fatal("the planned name must match the API spelling for dependent resources")
+	}
+}
+
+func TestTSIGKeyDeletePreservesOtherAlgorithms(t *testing.T) {
+	for _, managedPresent := range []bool{true, false} {
+		t.Run(fmt.Sprintf("managedPresent=%t", managedPresent), func(t *testing.T) {
+			keys := map[string]string{"hmac-sha384": testTSIGSecretRotated}
+			if managedPresent {
+				keys["hmac-sha256"] = testTSIGSecret
+			}
+			deletes := 0
+			client := newTestClient(func(r *http.Request) (*http.Response, error) {
+				if r.Method == http.MethodGet && r.URL.Path == "/api/v1/servers/localhost/tsigkeys" {
+					var listed []TSIGKey
+					for algorithm := range keys {
+						listed = append(listed, TSIGKey{ID: "shared-key.", Name: "shared-key", Algorithm: algorithm})
+					}
+					body, err := json.Marshal(listed)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return jsonResponse(http.StatusOK, string(body)), nil
+				}
+				if r.URL.Path != "/api/v1/servers/localhost/tsigkeys/shared-key." {
+					t.Fatalf("unexpected TSIG endpoint: %s", r.URL.Path)
+				}
+				algorithm := r.URL.Query().Get("algorithm")
+				if r.Method == http.MethodGet {
+					return jsonResponse(http.StatusNotFound, `{"error":"Not Found"}`), nil
+				}
+				if r.Method != http.MethodDelete {
+					t.Fatalf("unexpected TSIG operation: %s", r.Method)
+				}
+				deletes++
+				// Model the API's destructive fallback when no filter is supplied.
+				if algorithm == "" {
+					clear(keys)
+				} else {
+					delete(keys, algorithm)
+				}
+				return jsonResponse(http.StatusNoContent, ``), nil
+			})
+			// An imported resource identifies its managed algorithm through state.
+			state := &terraform.InstanceState{
+				ID: "shared-key.",
+				Attributes: map[string]string{
+					"name": "shared-key", "algorithm": "hmac-sha256", "key": testTSIGSecret,
+				},
+			}
+			result, diags := resourcePDNSTSIGKey().Apply(context.Background(), state, &terraform.InstanceDiff{Destroy: true}, &ProviderClients{PDNS: client})
+			if diags.HasError() {
+				t.Fatalf("destroy failed: %v", diags)
+			}
+			if result != nil && result.ID != "" {
+				t.Fatal("destroy retained the managed key in state")
+			}
+			if _, exists := keys["hmac-sha256"]; exists {
+				t.Fatal("destroy did not remove the managed algorithm")
+			}
+			if keys["hmac-sha384"] != testTSIGSecretRotated {
+				t.Fatal("destroy changed the unrelated algorithm or its secret")
+			}
+			if (deletes == 1) != managedPresent || deletes > 1 {
+				t.Fatalf("delete requests=%d, managed algorithm present=%t", deletes, managedPresent)
 			}
 		})
 	}
@@ -417,7 +501,7 @@ func testAccCheckPDNSTSIGKeyDestroy(s *terraform.State) error {
 		}
 
 		client := testAccProvider.Meta().(*ProviderClients)
-		_, err := client.PDNS.GetTSIGKey(context.Background(), rs.Primary.ID)
+		_, err := client.PDNS.GetTSIGKey(context.Background(), rs.Primary.ID, rs.Primary.Attributes["algorithm"])
 		if err == nil {
 			return fmt.Errorf("TSIG key %s still exists", rs.Primary.ID)
 		}
@@ -440,7 +524,7 @@ func testAccCheckPDNSTSIGKeyExists(n string) resource.TestCheckFunc {
 		}
 
 		client := testAccProvider.Meta().(*ProviderClients)
-		if _, err := client.PDNS.GetTSIGKey(context.Background(), rs.Primary.ID); err != nil {
+		if _, err := client.PDNS.GetTSIGKey(context.Background(), rs.Primary.ID, rs.Primary.Attributes["algorithm"]); err != nil {
 			return fmt.Errorf("error fetching TSIG key %s: %w", rs.Primary.ID, err)
 		}
 
@@ -516,7 +600,7 @@ func testAccCheckPDNSTSIGKeySecret(n string, want string) resource.TestCheckFunc
 		}
 
 		client := testAccProvider.Meta().(*ProviderClients)
-		got, err := client.PDNS.GetTSIGKey(context.Background(), rs.Primary.ID)
+		got, err := client.PDNS.GetTSIGKey(context.Background(), rs.Primary.ID, rs.Primary.Attributes["algorithm"])
 		if err != nil {
 			return fmt.Errorf("error fetching TSIG key %s: %w", rs.Primary.ID, err)
 		}

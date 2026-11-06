@@ -47,7 +47,7 @@ func dataSourcePDNSTSIGKeyRead(ctx context.Context, d *schema.ResourceData, meta
 	ctx = tflog.SetField(ctx, "tsigkey_id", keyID)
 	tflog.Info(ctx, "Reading TSIG key data source")
 
-	tsigKey, err := client.PDNS.GetTSIGKey(ctx, keyID)
+	tsigKey, err := client.PDNS.GetTSIGKey(ctx, keyID, "")
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return diag.FromErr(fmt.Errorf("TSIG key %s not found", keyID))

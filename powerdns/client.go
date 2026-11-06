@@ -2032,9 +2032,21 @@ func (client *PowerDNSClient) ListTSIGKeys(ctx context.Context) ([]TSIGKey, erro
 	return tsigKeys, nil
 }
 
-// GetTSIGKey retrieves a single TSIG key by its ID.
-func (client *PowerDNSClient) GetTSIGKey(ctx context.Context, id string) (*TSIGKey, error) {
+// tsigKeyEndpoint selects a single algorithm when known. Import and data-source
+// lookups can omit it to discover a key from its name-based ID.
+func (client *PowerDNSClient) tsigKeyEndpoint(id, algorithm string) string {
 	endpoint := client.serverEndpoint("/tsigkeys/" + url.PathEscape(id))
+	if algorithm != "" {
+		endpoint += "?" + url.Values{"algorithm": {algorithm}}.Encode()
+	}
+	return endpoint
+}
+
+var errTSIGAlgorithmFilterUnsupported = errors.New("PowerDNS server does not support TSIG algorithm filtering")
+
+// GetTSIGKey retrieves a TSIG key by its ID and optional algorithm filter.
+func (client *PowerDNSClient) GetTSIGKey(ctx context.Context, id, algorithm string) (*TSIGKey, error) {
+	endpoint := client.tsigKeyEndpoint(id, algorithm)
 
 	req, err := client.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -2060,6 +2072,9 @@ func (client *PowerDNSClient) GetTSIGKey(ctx context.Context, id string) (*TSIGK
 		var tsigKey TSIGKey
 		if err := json.NewDecoder(resp.Body).Decode(&tsigKey); err != nil {
 			return nil, err
+		}
+		if algorithm != "" && tsigKey.Algorithm != algorithm {
+			return nil, fmt.Errorf("%w: requested %q, received %q", errTSIGAlgorithmFilterUnsupported, algorithm, tsigKey.Algorithm)
 		}
 		return &tsigKey, nil
 	case http.StatusNotFound:
@@ -2118,16 +2133,19 @@ func (client *PowerDNSClient) CreateTSIGKey(ctx context.Context, tsigKey TSIGKey
 
 // UpdateTSIGKey changes the name or secret of an existing TSIG key.
 //
-// The algorithm is deliberately not sent here: PowerDNS stores a changed
-// algorithm as an additional key under the same name rather than replacing the
-// existing one, so the resource forces a new key instead.
-func (client *PowerDNSClient) UpdateTSIGKey(ctx context.Context, id string, tsigKey TSIGKey) (*TSIGKey, error) {
+// The algorithm filter selects the existing key. The algorithm is deliberately
+// omitted from the JSON body: PowerDNS stores a changed algorithm as an extra
+// key under the same name, so the resource forces replacement instead.
+func (client *PowerDNSClient) UpdateTSIGKey(ctx context.Context, id, algorithm string, tsigKey TSIGKey) (*TSIGKey, error) {
+	if err := client.checkTSIGKeyMutation(ctx, id, algorithm); err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(tsigKey)
 	if err != nil {
 		return nil, err
 	}
 
-	endpoint := client.serverEndpoint("/tsigkeys/" + url.PathEscape(id))
+	endpoint := client.tsigKeyEndpoint(id, algorithm)
 
 	req, err := client.newRequest(ctx, http.MethodPut, endpoint, body)
 	if err != nil {
@@ -2166,9 +2184,47 @@ func (client *PowerDNSClient) UpdateTSIGKey(ctx context.Context, id string, tsig
 	}
 }
 
-// DeleteTSIGKey removes a TSIG key.
-func (client *PowerDNSClient) DeleteTSIGKey(ctx context.Context, id string) error {
-	endpoint := client.serverEndpoint("/tsigkeys/" + url.PathEscape(id))
+// checkTSIGKeyMutation protects same-name keys on older servers that silently
+// ignore the algorithm filter, including during rename and deletion.
+func (client *PowerDNSClient) checkTSIGKeyMutation(ctx context.Context, id, algorithm string) error {
+	if algorithm == "" {
+		return fmt.Errorf("TSIG key algorithm is required for mutation")
+	}
+	keys, err := client.ListTSIGKeys(ctx)
+	if err != nil {
+		return err
+	}
+	found, count := false, 0
+	for _, key := range keys {
+		if strings.TrimSuffix(key.ID, ".") == strings.TrimSuffix(id, ".") {
+			count++
+			found = found || key.Algorithm == algorithm
+		}
+	}
+	if !found {
+		return ErrNotFound
+	}
+	if count > 1 {
+		// No supported TSIG algorithm has this name. A filtering server must
+		// return 404, whereas older servers return an arbitrary same-name key.
+		_, err := client.GetTSIGKey(ctx, id, "terraform-provider-powerdns-probe")
+		if err == nil || errors.Is(err, errTSIGAlgorithmFilterUnsupported) {
+			return fmt.Errorf("cannot safely modify TSIG key %q with multiple algorithms: %w", id, errTSIGAlgorithmFilterUnsupported)
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteTSIGKey removes only the managed algorithm, preserving other keys with
+// the same name. PowerDNS deletes every algorithm when this filter is absent.
+func (client *PowerDNSClient) DeleteTSIGKey(ctx context.Context, id, algorithm string) error {
+	if err := client.checkTSIGKeyMutation(ctx, id, algorithm); err != nil {
+		return err
+	}
+	endpoint := client.tsigKeyEndpoint(id, algorithm)
 
 	req, err := client.newRequest(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
