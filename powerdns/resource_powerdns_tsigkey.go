@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -38,6 +39,10 @@ func resourcePDNSTSIGKey() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 				Description: "The name of the TSIG key.",
+				// PowerDNS returns names without their optional trailing dot.
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					return strings.TrimSuffix(old, ".") == strings.TrimSuffix(new, ".")
+				},
 			},
 
 			"algorithm": {
@@ -133,10 +138,15 @@ func resourcePDNSTSIGKeyRead(ctx context.Context, d *schema.ResourceData, meta i
 	if err := d.Set("algorithm", tsigKey.Algorithm); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS TSIG key algorithm: %w", err))
 	}
-	// Listing omits the secret, but a direct GET returns it. Keep whatever is
-	// already in state when the API hands back an empty value.
-	// A write-only key must stay out of state, so it is not read back either.
-	if tsigKey.Key != "" && d.Get("key_wo_version").(int) == 0 {
+	// Switching to write-only mode must also remove a previously persisted
+	// generated or explicit secret, even if the API omits it on this read.
+	if d.Get("key_wo_version").(int) != 0 {
+		if err := d.Set("key", nil); err != nil {
+			return diag.FromErr(fmt.Errorf("error clearing PowerDNS TSIG key material: %w", err))
+		}
+	} else if tsigKey.Key != "" {
+		// Listing omits the secret, but a direct GET returns it. Keep whatever
+		// is already in state when the API hands back an empty value.
 		if err := d.Set("key", tsigKey.Key); err != nil {
 			return diag.FromErr(fmt.Errorf("error setting PowerDNS TSIG key material: %w", err))
 		}
@@ -152,13 +162,21 @@ func resourcePDNSTSIGKeyUpdate(ctx context.Context, d *schema.ResourceData, meta
 	tflog.Debug(ctx, "Updating PowerDNS TSIG key")
 
 	if d.HasChanges("name", "key", "key_wo_version") {
-		key, diags := tsigKeyFromConfig(d)
-		if diags.HasError() {
-			return diags
-		}
 		tsigKey := TSIGKey{
 			Name: d.Get("name").(string),
-			Key:  key,
+		}
+		// A rename can omit the secret. In write-only mode, only a version
+		// change requests rotation, even if the configured secret also changed.
+		rotate := d.HasChange("key")
+		if d.Get("key_wo_version").(int) != 0 {
+			rotate = d.HasChange("key_wo_version")
+		}
+		if rotate {
+			key, diags := tsigKeyFromConfig(d)
+			if diags.HasError() {
+				return diags
+			}
+			tsigKey.Key = key
 		}
 
 		updated, err := client.PDNS.UpdateTSIGKey(ctx, d.Id(), tsigKey)

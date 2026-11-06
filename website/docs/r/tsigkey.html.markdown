@@ -31,7 +31,7 @@ resource "powerdns_tsigkey" "transfer" {
 }
 ```
 
-Keep the secret out of state with a write-only value (needs Terraform 1.11 or later). Terraform cannot see a write-only value change, so bump `key_wo_version` when you want to send a new secret:
+Keep the secret out of state with a write-only value (needs Terraform 1.11 or later). Terraform cannot see a write-only value change, so bump `key_wo_version` when you want to send a new secret. Renaming a key does not rotate its write-only secret unless `key_wo_version` also changes:
 
 ```hcl
 resource "powerdns_tsigkey" "transfer" {
@@ -42,13 +42,18 @@ resource "powerdns_tsigkey" "transfer" {
 }
 ```
 
-The key can then be referenced from a zone:
+Allow this key to authenticate AXFR requests for a primary zone using zone metadata:
 
 ```hcl
 resource "powerdns_zone" "example" {
-  name                 = "example.com."
-  kind                 = "Master"
-  master_tsig_key_ids  = [powerdns_tsigkey.transfer.id]
+  name = "example.com."
+  kind = "Master"
+}
+
+resource "powerdns_zone_metadata" "allow_transfer" {
+  zone     = powerdns_zone.example.name
+  kind     = "TSIG-ALLOW-AXFR"
+  metadata = [powerdns_tsigkey.transfer.name]
 }
 ```
 
@@ -56,7 +61,7 @@ resource "powerdns_zone" "example" {
 
 This resource supports the following arguments:
 
-- `name` - (Required) The name of the TSIG key.
+- `name` - (Required) The name of the TSIG key. A trailing dot is optional; PowerDNS reports the name without it.
 - `algorithm` - (Required) The TSIG algorithm. One of `hmac-md5`, `hmac-sha1`, `hmac-sha224`, `hmac-sha256`, `hmac-sha384` or `hmac-sha512`. Changing this forces a new key to be created, because PowerDNS would otherwise keep the previous algorithm alongside the new one under the same name.
 - `key` - (Optional) The base64 encoded secret. When omitted, PowerDNS generates the key material and it is saved to state. Conflicts with `key_wo`.
 - `key_wo` - (Optional, Write-only) The base64 encoded secret. It is never saved to the plan or state. Needs Terraform 1.11 or later, and requires `key_wo_version`. Conflicts with `key`.
