@@ -2,7 +2,7 @@ FROM golang:1.24 AS tests
 
 WORKDIR /tests
 COPY go.mod .
-COPY assert_test.go .
+COPY *_test.go .
 RUN CGO_ENABLED=0 go test -c -o assert.test ./...
 
 FROM hashicorp/terraform:1.13
