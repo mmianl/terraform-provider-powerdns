@@ -224,11 +224,14 @@ func resourcePDNSZoneCryptokeyRead(ctx context.Context, d *schema.ResourceData, 
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS cryptokey zone: %w", err))
 	}
 	keytype := cryptokey.KeyType
-	// PowerDNS can report a requested KSK or ZSK as a combined key. Keep the
-	// previously requested role in state so refreshes remain stable and a later
-	// configuration change still forces replacement. Imports have no prior role
-	// and use the value reported by the server.
-	if previous := d.Get("keytype").(string); strings.EqualFold(keytype, "csk") && previous != "" {
+	// PowerDNS derives roles from the zone's active keys: a KSK/ZSK can appear
+	// as CSK, and adding an active ZSK can make a requested CSK appear as KSK.
+	// Preserve the previous requested role for these normalizations so refreshes
+	// stay stable while configuration changes still force replacement. Imports
+	// have no prior role and use the value reported by the server.
+	if previous := d.Get("keytype").(string); previous != "" &&
+		(strings.EqualFold(keytype, "csk") ||
+			(strings.EqualFold(previous, "csk") && strings.EqualFold(keytype, "ksk"))) {
 		keytype = previous
 	}
 	if err := d.Set("keytype", keytype); err != nil {
