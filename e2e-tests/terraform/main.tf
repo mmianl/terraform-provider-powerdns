@@ -207,3 +207,49 @@ resource "powerdns_network" "internal_clients" {
   network = "192.0.2.0/24"
   view    = powerdns_view_zone_association.test2.view
 }
+
+variable "cryptokey_keytype" {
+  type    = string
+  default = "csk"
+}
+
+variable "cryptokey_active" {
+  type    = bool
+  default = true
+}
+
+variable "cryptokey_published" {
+  type    = bool
+  default = true
+}
+
+resource "powerdns_zone" "cryptokey" {
+  name = "cryptokey.example.com."
+  kind = "Native"
+}
+
+resource "powerdns_zone_cryptokey" "test" {
+  zone      = powerdns_zone.cryptokey.name
+  keytype   = var.cryptokey_keytype
+  algorithm = "ecdsa256"
+  active    = var.cryptokey_active
+  published = var.cryptokey_published
+}
+
+data "powerdns_zone_cryptokeys" "test" {
+  zone = powerdns_zone.cryptokey.name
+
+  depends_on = [powerdns_zone_cryptokey.test]
+}
+
+resource "powerdns_zone" "cryptokey_rsa" {
+  name = "cryptokey-rsa.example.com."
+  kind = "Native"
+}
+
+resource "powerdns_zone_cryptokey" "rsa" {
+  zone      = powerdns_zone.cryptokey_rsa.name
+  keytype   = "ksk"
+  algorithm = "rsasha256"
+  bits      = 2048
+}

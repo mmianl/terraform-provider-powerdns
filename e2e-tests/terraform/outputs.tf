@@ -109,3 +109,40 @@ output "powerdns_view_zone_association_test_variant" {
 output "powerdns_network_internal_clients" {
   value = powerdns_network.internal_clients
 }
+
+# Export public key attributes without the sensitive private-key content.
+output "powerdns_zone_cryptokey_test" {
+  value = {
+    id        = powerdns_zone_cryptokey.test.id
+    zone      = powerdns_zone_cryptokey.test.zone
+    key_id    = powerdns_zone_cryptokey.test.key_id
+    keytype   = powerdns_zone_cryptokey.test.keytype
+    algorithm = powerdns_zone_cryptokey.test.algorithm
+    bits      = powerdns_zone_cryptokey.test.bits
+    active    = powerdns_zone_cryptokey.test.active
+    published = powerdns_zone_cryptokey.test.published
+    dnskey    = powerdns_zone_cryptokey.test.dnskey
+    ds        = powerdns_zone_cryptokey.test.ds
+    cds       = powerdns_zone_cryptokey.test.cds
+  }
+}
+
+output "powerdns_zone_cryptokey_rsa" {
+  value = {
+    id        = powerdns_zone_cryptokey.rsa.id
+    zone      = powerdns_zone_cryptokey.rsa.zone
+    key_id    = powerdns_zone_cryptokey.rsa.key_id
+    keytype   = powerdns_zone_cryptokey.rsa.keytype
+    algorithm = powerdns_zone_cryptokey.rsa.algorithm
+    bits      = powerdns_zone_cryptokey.rsa.bits
+    active    = powerdns_zone_cryptokey.rsa.active
+    published = powerdns_zone_cryptokey.rsa.published
+    dnskey    = powerdns_zone_cryptokey.rsa.dnskey
+    ds        = powerdns_zone_cryptokey.rsa.ds
+    cds       = powerdns_zone_cryptokey.rsa.cds
+  }
+}
+
+output "data_powerdns_zone_cryptokeys_test" {
+  value = data.powerdns_zone_cryptokeys.test
+}
