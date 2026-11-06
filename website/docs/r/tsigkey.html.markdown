@@ -10,6 +10,8 @@ description: |-
 
 Manages TSIG keys on a PowerDNS authoritative server. TSIG keys authenticate NOTIFY, AXFR and DNS UPDATE messages between servers.
 
+Each resource manages one algorithm for a key name and preserves keys using other algorithms. On servers that ignore TSIG algorithm filters, the provider refuses updates and deletion when multiple algorithms share that name.
+
 ## Example Usage
 
 Let PowerDNS generate the secret:

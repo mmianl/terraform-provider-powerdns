@@ -155,3 +155,28 @@ output "powerdns_zone_actions" {
     rectify_once = powerdns_zone_rectify.once
   }
 }
+
+# Public identities only; secret values are checked through state and the API.
+output "powerdns_tsigkeys" {
+  value = {
+    generated = {
+      id        = powerdns_tsigkey.generated.id
+      name      = powerdns_tsigkey.generated.name
+      algorithm = powerdns_tsigkey.generated.algorithm
+    }
+    explicit = {
+      id        = powerdns_tsigkey.explicit.id
+      name      = powerdns_tsigkey.explicit.name
+      algorithm = powerdns_tsigkey.explicit.algorithm
+    }
+    write_only = {
+      id        = powerdns_tsigkey.write_only.id
+      name      = powerdns_tsigkey.write_only.name
+      algorithm = powerdns_tsigkey.write_only.algorithm
+    }
+  }
+}
+
+output "powerdns_zone_metadata_tsig_transfer" {
+  value = powerdns_zone_metadata.tsig_transfer
+}
