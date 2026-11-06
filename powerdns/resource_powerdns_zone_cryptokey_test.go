@@ -15,9 +15,13 @@ import (
 )
 
 func TestCryptokeyRoleChangesRequireReplacement(t *testing.T) {
-	for _, oldRole := range []string{"csk", "ksk", "zsk"} {
+	for _, roles := range []struct{ requested, reported string }{
+		{"csk", "csk"}, {"ksk", "csk"}, {"zsk", "csk"},
+		{"csk", "ksk"}, {"ksk", "ksk"}, {"zsk", "zsk"},
+	} {
+		oldRole := roles.requested
 		for _, newRole := range []string{"csk", "ksk", "zsk"} {
-			t.Run(oldRole+"_to_"+newRole, func(t *testing.T) {
+			t.Run(oldRole+"_reported_as_"+roles.reported+"_to_"+newRole, func(t *testing.T) {
 				res := resourcePDNSZoneCryptokey()
 				data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{
 					"zone": "example.com.", "keytype": oldRole, "algorithm": "ecdsa256",
@@ -25,7 +29,7 @@ func TestCryptokeyRoleChangesRequireReplacement(t *testing.T) {
 				data.SetId("example.com.:1")
 				client := newTestClient(func(r *http.Request) (*http.Response, error) {
 					assert.Equal(t, http.MethodGet, r.Method)
-					return jsonResponse(http.StatusOK, `{"id":1,"keytype":"csk","algorithm":"ECDSAP256SHA256","bits":256,"active":true,"published":true}`), nil
+					return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":1,"keytype":%q,"algorithm":"ECDSAP256SHA256","bits":256,"active":true,"published":true}`, roles.reported)), nil
 				})
 				ctx := context.Background()
 				state := data.State()
@@ -77,19 +81,21 @@ func TestCryptokeyImportUsesServerRole(t *testing.T) {
 }
 
 func TestCryptokeyReadUsesSeparateServerRoles(t *testing.T) {
-	for _, role := range []string{"ksk", "zsk"} {
-		t.Run(role, func(t *testing.T) {
+	for _, roles := range []struct{ previous, reported string }{
+		{"zsk", "ksk"}, {"csk", "zsk"},
+	} {
+		t.Run(roles.previous+"_to_"+roles.reported, func(t *testing.T) {
 			client := newTestClient(func(r *http.Request) (*http.Response, error) {
-				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":1,"keytype":%q,"active":true,"published":true}`, role)), nil
+				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":1,"keytype":%q,"active":true,"published":true}`, roles.reported)), nil
 			})
 			res := resourcePDNSZoneCryptokey()
 			data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{
-				"zone": "example.com.", "keytype": "csk",
+				"zone": "example.com.", "keytype": roles.previous,
 			})
 			data.SetId("example.com.:1")
 			diags := res.ReadContext(context.Background(), data, &ProviderClients{PDNS: client})
 			if assert.False(t, diags.HasError(), "%v", diags) {
-				assert.Equal(t, role, data.Get("keytype"), "only a combined server role may preserve the requested role")
+				assert.Equal(t, roles.reported, data.Get("keytype"), "changes between KSK/CSK and ZSK are not normalizations")
 			}
 		})
 	}

@@ -78,7 +78,7 @@ In addition to the arguments above, the following attributes are exported:
 - `ds` - The DS records for this key, to be published in the parent zone.
 - `cds` - The DS records for this key, filtered by the zone's CDS publication settings.
 
-~> **Note:** When PowerDNS reports a key as `csk`, this resource retains its previously requested `keytype` in state. Changing the configured `keytype` still forces a new key. Imported keys initially use the role reported by PowerDNS.
+~> **Note:** PowerDNS derives key roles from the zone's active keys. This resource retains its previously requested `keytype` when PowerDNS reports a key as `csk`, or reports a requested `csk` as `ksk` during split signing. Changing the configured `keytype` still forces a new key. Imported keys initially use the role reported by PowerDNS.
 
 ## Importing
 

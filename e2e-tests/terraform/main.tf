@@ -223,6 +223,11 @@ variable "cryptokey_published" {
   default = true
 }
 
+variable "cryptokey_split_signing" {
+  type    = bool
+  default = false
+}
+
 resource "powerdns_zone" "cryptokey" {
   name = "cryptokey.example.com."
   kind = "Native"
@@ -236,10 +241,18 @@ resource "powerdns_zone_cryptokey" "test" {
   published = var.cryptokey_published
 }
 
+resource "powerdns_zone_cryptokey" "split_zsk" {
+  count = var.cryptokey_split_signing ? 1 : 0
+
+  zone      = powerdns_zone.cryptokey.name
+  keytype   = "zsk"
+  algorithm = "ecdsa256"
+}
+
 data "powerdns_zone_cryptokeys" "test" {
   zone = powerdns_zone.cryptokey.name
 
-  depends_on = [powerdns_zone_cryptokey.test]
+  depends_on = [powerdns_zone_cryptokey.test, powerdns_zone_cryptokey.split_zsk]
 }
 
 resource "powerdns_zone" "cryptokey_rsa" {
