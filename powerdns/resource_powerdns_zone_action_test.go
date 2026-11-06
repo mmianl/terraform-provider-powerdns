@@ -83,7 +83,10 @@ func TestAccPDNSZoneRectify(t *testing.T) {
 			{
 				Config: testPDNSZoneRectifyConfig,
 				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneCryptokeyExists("powerdns_zone_cryptokey.rectify-action"),
+					resource.TestCheckResourceAttr("powerdns_zone_cryptokey.rectify-action", "active", "true"),
 					resource.TestCheckResourceAttr("powerdns_zone_rectify.test", "zone", "rectify-action.sysa.xyz."),
+					resource.TestCheckResourceAttr("powerdns_zone_rectify.test", "id", "rectify-action.sysa.xyz.:rectify"),
 				),
 			},
 			{
@@ -123,8 +126,18 @@ resource "powerdns_zone" "rectify-action" {
 	kind = "Master"
 }
 
+# An active key secures the zone before the rectify operation runs.
+resource "powerdns_zone_cryptokey" "rectify-action" {
+	zone      = powerdns_zone.rectify-action.name
+	keytype   = "csk"
+	algorithm = "ecdsa256"
+	active    = true
+}
+
 resource "powerdns_zone_rectify" "test" {
 	zone = powerdns_zone.rectify-action.name
+
+	depends_on = [powerdns_zone_cryptokey.rectify-action]
 }`
 
 const testPDNSZoneNotifyMissingConfig = `

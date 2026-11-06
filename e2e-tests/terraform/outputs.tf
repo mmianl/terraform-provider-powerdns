@@ -146,3 +146,12 @@ output "powerdns_zone_cryptokey_rsa" {
 output "data_powerdns_zone_cryptokeys_test" {
   value = data.powerdns_zone_cryptokeys.test
 }
+
+output "powerdns_zone_actions" {
+  value = {
+    notify       = powerdns_zone_notify.test
+    rectify      = powerdns_zone_rectify.test
+    notify_once  = powerdns_zone_notify.once
+    rectify_once = powerdns_zone_rectify.once
+  }
+}
