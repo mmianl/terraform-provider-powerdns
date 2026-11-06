@@ -123,6 +123,87 @@ func TestLockRecordCreateExcludesSameKey(t *testing.T) {
 	assert.False(t, sawOverlap, "lockRecordCreate let two holders of the same key run concurrently")
 }
 
+func TestLockRecordCreateCanonicalKeys(t *testing.T) {
+	tests := []struct {
+		name        string
+		zone        string
+		otherZone   string
+		otherName   string
+		otherType   string
+		wantBlocked bool
+	}{
+		{
+			name: "owner case", zone: "example.com.", otherZone: "example.com.",
+			otherName: "WWW.Example.COM.", otherType: "A", wantBlocked: true,
+		},
+		{
+			name: "type case", zone: "example.com.", otherZone: "example.com.",
+			otherName: "www.example.com.", otherType: "a", wantBlocked: true,
+		},
+		{
+			name: "zone case", zone: "example.com.", otherZone: "Example.COM.",
+			otherName: "www.example.com.", otherType: "A", wantBlocked: true,
+		},
+		{
+			name: "case within same variant", zone: "example.com..internal", otherZone: "Example.COM..internal",
+			otherName: "WWW.Example.COM.", otherType: "a", wantBlocked: true,
+		},
+		{
+			name: "variant case preserved", zone: "example.com..internal", otherZone: "example.com..Internal",
+			otherName: "www.example.com.", otherType: "A",
+		},
+		{
+			name: "different variant", zone: "example.com..internal", otherZone: "example.com..external",
+			otherName: "www.example.com.", otherType: "A",
+		},
+		{
+			name: "plain zone and variant", zone: "example.com.", otherZone: "example.com..internal",
+			otherName: "www.example.com.", otherType: "A",
+		},
+		{
+			name: "different owner", zone: "example.com.", otherZone: "example.com.",
+			otherName: "other.example.com.", otherType: "A",
+		},
+		{
+			name: "different type", zone: "example.com.", otherZone: "example.com.",
+			otherName: "www.example.com.", otherType: "AAAA",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			unlock := lockRecordCreate(tt.zone, "www.example.com.", "A")
+			started := make(chan struct{})
+			acquired := make(chan struct{})
+			go func() {
+				close(started)
+				unlockOther := lockRecordCreate(tt.otherZone, tt.otherName, tt.otherType)
+				defer unlockOther()
+				close(acquired)
+			}()
+			<-started
+
+			wait := time.Second
+			if tt.wantBlocked {
+				wait = 50 * time.Millisecond
+			}
+			select {
+			case <-acquired:
+				assert.False(t, tt.wantBlocked, "equivalent record sets must share a lock")
+			case <-time.After(wait):
+				assert.True(t, tt.wantBlocked, "distinct record sets must have independent locks")
+			}
+
+			unlock()
+			select {
+			case <-acquired:
+			case <-time.After(time.Second):
+				t.Error("contender did not acquire the released lock")
+			}
+		})
+	}
+}
+
 // A different key must not be blocked by an unrelated key's lock.
 func TestLockRecordCreateAllowsDifferentKeys(t *testing.T) {
 	done := make(chan struct{})
