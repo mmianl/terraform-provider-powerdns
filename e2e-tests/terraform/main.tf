@@ -266,3 +266,58 @@ resource "powerdns_zone_cryptokey" "rsa" {
   algorithm = "rsasha256"
   bits      = 2048
 }
+
+variable "zone_actions_record_value" {
+  type    = string
+  default = "192.0.2.1"
+}
+
+resource "powerdns_zone" "zone_actions" {
+  name = "zone-actions.example.com."
+  kind = "Master"
+}
+
+resource "powerdns_record" "zone_actions_www" {
+  zone    = powerdns_zone.zone_actions.name
+  name    = "www.${powerdns_zone.zone_actions.name}"
+  type    = "A"
+  ttl     = 300
+  records = [var.zone_actions_record_value]
+}
+
+# Prepare DNSSEC using the supported key resource, without a zone dnssec argument.
+resource "powerdns_zone_cryptokey" "zone_actions" {
+  zone      = powerdns_zone.zone_actions.name
+  keytype   = "csk"
+  algorithm = "ecdsa256"
+}
+
+resource "powerdns_zone_notify" "test" {
+  zone = powerdns_zone.zone_actions.name
+
+  triggers = {
+    records = join(",", powerdns_record.zone_actions_www.records)
+  }
+}
+
+resource "powerdns_zone_rectify" "test" {
+  zone = powerdns_zone.zone_actions.name
+
+  triggers = {
+    records = join(",", powerdns_record.zone_actions_www.records)
+  }
+
+  depends_on = [powerdns_zone_cryptokey.zone_actions]
+}
+
+resource "powerdns_zone_notify" "once" {
+  zone = powerdns_zone.zone_actions.name
+
+  depends_on = [powerdns_record.zone_actions_www]
+}
+
+resource "powerdns_zone_rectify" "once" {
+  zone = powerdns_zone.zone_actions.name
+
+  depends_on = [powerdns_zone_cryptokey.zone_actions, powerdns_record.zone_actions_www]
+}
