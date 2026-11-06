@@ -4,12 +4,140 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/stretchr/testify/assert"
 )
+
+func TestCryptokeyRoleChangesRequireReplacement(t *testing.T) {
+	for _, oldRole := range []string{"csk", "ksk", "zsk"} {
+		for _, newRole := range []string{"csk", "ksk", "zsk"} {
+			t.Run(oldRole+"_to_"+newRole, func(t *testing.T) {
+				res := resourcePDNSZoneCryptokey()
+				data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{
+					"zone": "example.com.", "keytype": oldRole, "algorithm": "ecdsa256",
+				})
+				data.SetId("example.com.:1")
+				client := newTestClient(func(r *http.Request) (*http.Response, error) {
+					assert.Equal(t, http.MethodGet, r.Method)
+					return jsonResponse(http.StatusOK, `{"id":1,"keytype":"csk","algorithm":"ECDSAP256SHA256","bits":256,"active":true,"published":true}`), nil
+				})
+				ctx := context.Background()
+				state := data.State()
+				// Refresh twice to ensure the requested role survives in saved state.
+				for i := 0; i < 2; i++ {
+					refreshed, diags := res.RefreshWithoutUpgrade(ctx, state, &ProviderClients{PDNS: client})
+					if !assert.False(t, diags.HasError(), "%v", diags) || !assert.NotNil(t, refreshed) {
+						return
+					}
+					state = refreshed
+					assert.Equal(t, oldRole, state.Attributes["keytype"])
+				}
+				diff, err := res.Diff(ctx, state, terraform.NewResourceConfigRaw(map[string]interface{}{
+					"zone": "example.com.", "keytype": newRole, "algorithm": "ecdsa256",
+				}), nil)
+				if !assert.NoError(t, err) {
+					return
+				}
+				if oldRole == newRole {
+					assert.True(t, diff == nil || diff.Empty(), "unchanged role must produce an empty plan")
+				} else if assert.NotNil(t, diff, "a role change must produce a diff") {
+					assert.True(t, diff.RequiresNew(), "a role change must replace the key")
+					if change := diff.Attributes["keytype"]; assert.NotNil(t, change) {
+						assert.Equal(t, oldRole, change.Old)
+						assert.Equal(t, newRole, change.New)
+						assert.True(t, change.RequiresNew)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestCryptokeyImportUsesServerRole(t *testing.T) {
+	for _, role := range []string{"csk", "ksk", "zsk"} {
+		t.Run(role, func(t *testing.T) {
+			client := newTestClient(func(r *http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":1,"keytype":%q,"algorithm":"ECDSAP256SHA256","bits":256,"active":true,"published":true}`, role)), nil
+			})
+			res := resourcePDNSZoneCryptokey()
+			data := res.Data(nil)
+			data.SetId("example.com.:1")
+			imported, err := res.Importer.StateContext(context.Background(), data, &ProviderClients{PDNS: client})
+			if assert.NoError(t, err) && assert.Len(t, imported, 1) {
+				assert.Equal(t, role, imported[0].Get("keytype"))
+			}
+		})
+	}
+}
+
+func TestCryptokeyReadUsesSeparateServerRoles(t *testing.T) {
+	for _, role := range []string{"ksk", "zsk"} {
+		t.Run(role, func(t *testing.T) {
+			client := newTestClient(func(r *http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":1,"keytype":%q,"active":true,"published":true}`, role)), nil
+			})
+			res := resourcePDNSZoneCryptokey()
+			data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{
+				"zone": "example.com.", "keytype": "csk",
+			})
+			data.SetId("example.com.:1")
+			diags := res.ReadContext(context.Background(), data, &ProviderClients{PDNS: client})
+			if assert.False(t, diags.HasError(), "%v", diags) {
+				assert.Equal(t, role, data.Get("keytype"), "only a combined server role may preserve the requested role")
+			}
+		})
+	}
+}
+
+func TestAccPDNSZoneCryptokeyRoleChanges(t *testing.T) {
+	const resourceName = "powerdns_zone_cryptokey.role-change"
+	var previousDNSKey string
+	var steps []resource.TestStep
+	for _, role := range []string{"csk", "ksk", "zsk", "csk"} {
+		config := fmt.Sprintf(`
+resource "powerdns_zone" "cryptokey-role-change" {
+  name = "cryptokey-role-change.sysa.abc."
+  kind = "Native"
+}
+
+resource "powerdns_zone_cryptokey" "role-change" {
+  zone      = powerdns_zone.cryptokey-role-change.name
+  keytype   = %q
+  algorithm = "ecdsa256"
+}`, role)
+		steps = append(steps,
+			resource.TestStep{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSZoneCryptokeyExists(resourceName),
+					resource.TestCheckResourceAttr(resourceName, "keytype", role),
+					func(s *terraform.State) error {
+						dnskey := s.RootModule().Resources[resourceName].Primary.Attributes["dnskey"]
+						if dnskey == "" || dnskey == previousDNSKey {
+							return fmt.Errorf("changing the key role to %s did not generate new key material", role)
+						}
+						previousDNSKey = dnskey
+						return nil
+					},
+				),
+			},
+			// Server normalization must not produce a replacement on the next plan.
+			resource.TestStep{Config: config, PlanOnly: true},
+		)
+	}
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckPDNSZoneCryptokeyDestroy,
+		Steps:             steps,
+	})
+}
 
 func TestAccPDNSZoneCryptokeyGenerated(t *testing.T) {
 	resourceName := "powerdns_zone_cryptokey.test-generated"
