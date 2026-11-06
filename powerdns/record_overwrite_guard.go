@@ -43,19 +43,29 @@ func errRecordExists(resourceType, zone, name, recordType string) error {
 // Callers must only use it on create: an update legitimately rewrites the
 // record set it already owns.
 func guardRecordOverwrite(ctx context.Context, client *PowerDNSClient, resourceType, zone, name, recordType string) error {
-	exists, err := client.RecordExists(ctx, zone, name, recordType)
+	// Provider aliases have separate caches, so another alias's write may leave
+	// this client's snapshot stale. Always check the server while holding the
+	// create lock rather than trusting the request cache.
+	zoneInfo, err := client.GetZoneWithRRsets(ctx, zone)
 	if err != nil {
-		// A missing zone is reported by the zone resource itself, and any other
-		// failure will resurface on the write that follows, so a failed check
-		// must not block the apply on its own.
+		// A missing zone is reported by the zone resource itself. Other failures
+		// must block the create rather than allow an unchecked overwrite.
 		if errors.Is(err, ErrNotFound) {
 			return nil
 		}
 		return fmt.Errorf("couldn't check whether %s %q already exists in zone %s: %w", recordType, name, zone, err)
 	}
 
-	if exists {
-		return errRecordExists(resourceType, zone, name, recordType)
+	for _, rrSet := range zoneInfo.ResourceRecordSets {
+		if strings.EqualFold(rrSet.Name, name) && strings.EqualFold(rrSet.Type, recordType) {
+			return errRecordExists(resourceType, zone, name, recordType)
+		}
+	}
+	// Older API responses carry records directly instead of RRsets.
+	for _, record := range zoneInfo.Records {
+		if strings.EqualFold(record.Name, name) && strings.EqualFold(record.Type, recordType) {
+			return errRecordExists(resourceType, zone, name, recordType)
+		}
 	}
 
 	return nil
