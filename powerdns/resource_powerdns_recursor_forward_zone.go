@@ -31,6 +31,11 @@ func resourcePDNSRecursorForwardZone() *schema.Resource {
 				ValidateFunc: ValidateFQDN,
 				Description:  "The zone name to forward. Must be a fully qualified domain name ending with a trailing dot.",
 			},
+			"kind": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The zone kind reported by the Recursor API. This resource only manages Forwarded zones.",
+			},
 			"servers": {
 				Type:     schema.TypeList,
 				Required: true,
@@ -110,6 +115,13 @@ func resourcePDNSRecursorForwardZoneRead(ctx context.Context, d *schema.Resource
 		return diag.FromErr(fmt.Errorf("failed to read recursor forward zone %q: %w", zoneName, err))
 	}
 
+	// Updates recreate a Forwarded zone, so accepting any other kind would
+	// silently change its DNS behavior on the next servers update.
+	if zone.Kind != "Forwarded" {
+		return diag.FromErr(fmt.Errorf(
+			"recursor zone %q has kind %q on the server; this resource only manages Forwarded zones", zoneName, zone.Kind))
+	}
+
 	// This resource only ever creates zones with recursion disabled, and the
 	// schema has no field to preserve a server's existing "true" through
 	// state. Importing one and reporting no diff would let a later update
@@ -122,6 +134,9 @@ func resourcePDNSRecursorForwardZoneRead(ctx context.Context, d *schema.Resource
 
 	if err := d.Set("zone", zone.Name); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting zone: %w", err))
+	}
+	if err := d.Set("kind", zone.Kind); err != nil {
+		return diag.FromErr(fmt.Errorf("error setting kind: %w", err))
 	}
 	// The Recursor API appends ":53" to servers that were created without
 	// an explicit port.  Strip the default suffix so the state matches
