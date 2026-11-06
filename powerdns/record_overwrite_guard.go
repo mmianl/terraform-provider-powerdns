@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -15,7 +16,11 @@ import (
 var recordCreateLocks sync.Map
 
 func lockRecordCreate(zone, name, recordType string) func() {
-	key := zone + "\x00" + name + "\x00" + recordType
+	// Match DNS names and types case-insensitively, while keeping the zone's
+	// variant suffix verbatim, just as the zone cache does.
+	// NUL bytes (\x00) separate the components so different zone/name/type
+	// combinations cannot produce the same key; these values cannot contain NUL.
+	key := string(zoneCacheKey(zone)) + "\x00" + strings.ToLower(name) + "\x00" + strings.ToLower(recordType)
 	muAny, _ := recordCreateLocks.LoadOrStore(key, &sync.Mutex{})
 	mu := muAny.(*sync.Mutex)
 	mu.Lock()
