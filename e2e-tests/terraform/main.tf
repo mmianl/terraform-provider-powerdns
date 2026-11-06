@@ -355,7 +355,7 @@ variable "tsig_wo_version" {
 locals {
   # Fixed, non-production secrets make rotation and state checks repeatable.
   tsig_explicit_secret  = base64encode(var.tsig_explicit_rotated ? "e2e-tsig-explicit-rotated-secret" : "e2e-tsig-explicit-initial-secret")
-  tsig_wo_secret        = base64encode(var.tsig_wo_secret_revision == 1 ? "e2e-tsig-write-only-initial-secret" : "e2e-tsig-write-only-rotated-secret")
+  tsig_wo_secret        = base64encode(var.tsig_wo_secret_revision == 1 ? "e2e-tsig-write-only-initial-secret" : var.tsig_wo_secret_revision == 2 ? "e2e-tsig-write-only-replacement-secret" : "e2e-tsig-write-only-rotated-secret")
   tsig_migration_secret = base64encode("e2e-tsig-generated-migration-secret")
 }
 
@@ -404,8 +404,51 @@ resource "powerdns_zone" "tsig" {
   kind = "Master"
 }
 
+resource "powerdns_zone" "tsig_write_only" {
+  name                = "tsig-write-only.example.com."
+  kind                = "Master"
+  master_tsig_key_ids = [powerdns_tsigkey.write_only.id]
+  slave_tsig_key_ids  = [powerdns_tsigkey.write_only.id]
+}
+
 resource "powerdns_zone_metadata" "tsig_transfer" {
   zone     = powerdns_zone.tsig.name
   kind     = "TSIG-ALLOW-AXFR"
   metadata = [powerdns_tsigkey.generated.name]
+}
+
+variable "tsig_zone_reference_mode" {
+  type    = string
+  default = "bare"
+}
+
+resource "powerdns_tsigkey" "zone_reference" {
+  name      = "e2e-zone-transfer"
+  algorithm = "hmac-sha256"
+}
+
+resource "powerdns_tsigkey" "zone_reference_next" {
+  name      = "e2e-zone-transfer-next"
+  algorithm = "hmac-sha256"
+}
+
+locals {
+  tsig_zone_key_id   = var.tsig_zone_reference_mode == "next" ? powerdns_tsigkey.zone_reference_next.id : powerdns_tsigkey.zone_reference.id
+  tsig_zone_key_name = var.tsig_zone_reference_mode == "next" ? powerdns_tsigkey.zone_reference_next.name : powerdns_tsigkey.zone_reference.name
+  tsig_zone_key_ref  = var.tsig_zone_reference_mode == "id" ? local.tsig_zone_key_id : local.tsig_zone_key_name
+}
+
+resource "powerdns_zone" "tsig_references" {
+  name = "tsig-references.example.com."
+  kind = "Master"
+
+  # A bare name and its ID must identify one set element.
+  master_tsig_key_ids = var.tsig_zone_reference_mode == "clear" ? [] : [local.tsig_zone_key_ref, local.tsig_zone_key_id]
+  slave_tsig_key_ids  = var.tsig_zone_reference_mode == "clear" ? [] : [local.tsig_zone_key_ref]
+}
+
+data "powerdns_zone" "tsig_references" {
+  name = powerdns_zone.tsig_references.name
+
+  depends_on = [powerdns_zone.tsig_references]
 }

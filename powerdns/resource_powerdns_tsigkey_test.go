@@ -20,14 +20,12 @@ func TestTSIGKeyUpdateSendsSecretOnlyForRotation(t *testing.T) {
 		name           string
 		oldVersion     int
 		newVersion     int
-		rename         bool
 		storedRotation bool
 		wantKey        bool
 	}{
-		{name: "write-only rename", oldVersion: 1, newVersion: 1, rename: true},
-		{name: "write-only rename and rotation", oldVersion: 1, newVersion: 2, rename: true, wantKey: true},
+		{name: "unchanged write-only version", oldVersion: 1, newVersion: 1},
 		{name: "write-only rotation", oldVersion: 1, newVersion: 2, wantKey: true},
-		{name: "stored secret rename", rename: true},
+		{name: "unchanged stored secret"},
 		{name: "stored secret rotation", storedRotation: true, wantKey: true},
 	}
 	for _, tt := range tests {
@@ -45,14 +43,10 @@ func TestTSIGKeyUpdateSendsSecretOnlyForRotation(t *testing.T) {
 			diff := &terraform.InstanceDiff{
 				Attributes: map[string]*terraform.ResourceAttrDiff{},
 				// Deliberately change the write-only input even when its version
-				// is unchanged, to ensure a rename does not send that new secret.
+				// is unchanged, to ensure that does not request a rotation.
 				RawConfig: cty.ObjectVal(map[string]cty.Value{"key_wo": cty.StringVal(testTSIGSecretRotated)}),
 			}
 			name := "tf-old"
-			if tt.rename {
-				name = "tf-renamed"
-				diff.Attributes["name"] = &terraform.ResourceAttrDiff{Old: "tf-old", New: name}
-			}
 			if tt.newVersion != tt.oldVersion {
 				diff.Attributes["key_wo_version"] = &terraform.ResourceAttrDiff{Old: fmt.Sprint(tt.oldVersion), New: fmt.Sprint(tt.newVersion)}
 			}
@@ -94,8 +88,12 @@ func TestTSIGKeyUpdateSendsSecretOnlyForRotation(t *testing.T) {
 			if diags.HasError() {
 				t.Fatalf("update failed: %v", diags)
 			}
-			if puts != 1 || updated.ID != name+"." {
-				t.Fatalf("update calls=%d id=%q, want one update and id %q", puts, updated.ID, name+".")
+			wantPuts := 0
+			if tt.wantKey {
+				wantPuts = 1
+			}
+			if puts != wantPuts || updated.ID != name+"." {
+				t.Fatalf("update calls=%d id=%q, want %d updates and id %q", puts, updated.ID, wantPuts, name+".")
 			}
 		})
 	}
@@ -120,6 +118,9 @@ func TestTSIGKeyNameTrailingDotDoesNotPlanRename(t *testing.T) {
 			changed := diff != nil && !diff.Empty()
 			if changed != (name == "renamed-key") {
 				t.Fatalf("name %q produces a rename: %t", name, changed)
+			}
+			if changed && !diff.RequiresNew() {
+				t.Fatal("a genuine rename must replace the key so dependent references see the new ID")
 			}
 		})
 	}
@@ -345,11 +346,11 @@ func TestAccPDNSTSIGKeyWriteOnly(t *testing.T) {
 	})
 }
 
-func TestAccPDNSTSIGKeyWriteOnlyRenameDoesNotRotate(t *testing.T) {
+func TestAccPDNSTSIGKeyWriteOnlyRenameReplacesKey(t *testing.T) {
 	const resourceName = "powerdns_tsigkey.test-wo"
 	initial := testPDNSTSIGKeyConfigWriteOnlyNamed("tf-wo-rename", testTSIGSecret, 1)
 	renamed := testPDNSTSIGKeyConfigWriteOnlyNamed("tf-wo-renamed", testTSIGSecretRotated, 1)
-	rotated := testPDNSTSIGKeyConfigWriteOnlyNamed("tf-wo-renamed", testTSIGSecretRotated, 2)
+	rotated := testPDNSTSIGKeyConfigWriteOnlyNamed("tf-wo-renamed", testTSIGSecret, 2)
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheck(t) },
 		ProviderFactories: testAccProviderFactories,
@@ -360,13 +361,13 @@ func TestAccPDNSTSIGKeyWriteOnlyRenameDoesNotRotate(t *testing.T) {
 				Check:  testAccCheckPDNSTSIGKeySecret(resourceName, testTSIGSecret),
 			},
 			{
-				// The input secret changes together with the name, but its version
-				// stays unchanged: the server must retain the original secret.
+				// A rename replaces the key and sends the currently configured
+				// secret even though its version has not changed.
 				Config: renamed,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "id", "tf-wo-renamed."),
 					resource.TestCheckResourceAttr(resourceName, "name", "tf-wo-renamed"),
-					testAccCheckPDNSTSIGKeySecret(resourceName, testTSIGSecret),
+					testAccCheckPDNSTSIGKeySecret(resourceName, testTSIGSecretRotated),
 					testAccCheckPDNSTSIGKeyNoPersistedSecret(resourceName),
 					resource.TestCheckNoResourceAttr(resourceName, "key_wo"),
 				),
@@ -375,7 +376,7 @@ func TestAccPDNSTSIGKeyWriteOnlyRenameDoesNotRotate(t *testing.T) {
 			{
 				Config: rotated,
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckPDNSTSIGKeySecret(resourceName, testTSIGSecretRotated),
+					testAccCheckPDNSTSIGKeySecret(resourceName, testTSIGSecret),
 					testAccCheckPDNSTSIGKeyNoPersistedSecret(resourceName),
 				),
 			},

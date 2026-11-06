@@ -71,6 +71,8 @@ This resource exports the following attributes in addition to the arguments abov
 - `account` - The account associated with the zone (defaults to "admin").
 - `masters` - Set of master servers for this zone (Slave zones only).
 - `soa_edit_api` - SOA edit API setting.
+- `master_tsig_key_ids` - Set of dotted TSIG key IDs allowed to authenticate AXFR requests for this zone.
+- `slave_tsig_key_ids` - Set containing the dotted TSIG key ID used to sign requests to the primary server, if configured.
 - `records` - List of all DNS records in the zone. Each record has the following attributes:
   - `name` - The name of the record.
   - `type` - The type of the record (A, AAAA, CNAME, MX, etc.).

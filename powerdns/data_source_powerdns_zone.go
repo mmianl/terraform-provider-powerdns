@@ -78,6 +78,18 @@ func dataSourcePDNSZone() *schema.Resource {
 				},
 				Description: "List of all records in the zone",
 			},
+			"master_tsig_key_ids": {
+				Type:        schema.TypeSet,
+				Computed:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "TSIG key IDs allowed to authenticate AXFR requests for this zone.",
+			},
+			"slave_tsig_key_ids": {
+				Type:        schema.TypeSet,
+				Computed:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "TSIG key IDs used to sign requests to this zone's primary server.",
+			},
 		},
 	}
 }
@@ -117,6 +129,14 @@ func dataSourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta in
 	}
 	if err := d.Set("soa_edit_api", zone.SoaEditAPI); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting zone SOA edit API: %w", err))
+	}
+	for name, values := range map[string][]string{
+		"master_tsig_key_ids": zone.MasterTsigKeyIDs,
+		"slave_tsig_key_ids":  zone.SlaveTsigKeyIDs,
+	} {
+		if err := d.Set(name, values); err != nil {
+			return diag.FromErr(fmt.Errorf("error setting zone %s: %w", name, err))
+		}
 	}
 
 	// Set masters for Slave zones

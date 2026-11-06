@@ -81,8 +81,47 @@ func resourcePDNSZone() *schema.Resource {
 				Computed: true,
 				ForceNew: false,
 			},
+			"master_tsig_key_ids": zoneTSIGReferencesSchema("TSIG key IDs allowed to authenticate AXFR requests for this zone.", 0),
+			"slave_tsig_key_ids":  zoneTSIGReferencesSchema("TSIG key IDs used to sign requests to this zone's primary server.", 1),
 		},
 	}
+}
+
+// NormalizeTSIGKeyID accepts a bare name or the dotted ID returned by PowerDNS.
+func NormalizeTSIGKeyID(keyID string) string {
+	if keyID == "" || strings.HasSuffix(keyID, ".") {
+		return keyID
+	}
+	return keyID + "."
+}
+
+func zoneTSIGReferencesSchema(description string, maxItems int) *schema.Schema {
+	return &schema.Schema{
+		Type:        schema.TypeSet,
+		Optional:    true,
+		Computed:    true,
+		MaxItems:    maxItems,
+		Description: description + " Bare names are normalized to dotted IDs; set [] to clear existing references.",
+		// A set computes identity before applying its element StateFunc.
+		Set: func(value interface{}) int {
+			return schema.HashString(NormalizeTSIGKeyID(value.(string)))
+		},
+		Elem: &schema.Schema{
+			Type: schema.TypeString,
+			StateFunc: func(value interface{}) string {
+				return NormalizeTSIGKeyID(value.(string))
+			},
+		},
+	}
+}
+
+func zoneTSIGReferences(d *schema.ResourceData, name string) []string {
+	values := d.Get(name).(*schema.Set).List()
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, NormalizeTSIGKeyID(value.(string)))
+	}
+	return result
 }
 
 func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -96,12 +135,14 @@ func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta in
 	}
 
 	zoneInfo := ZoneInfo{
-		Name:        d.Get("name").(string),
-		Kind:        d.Get("kind").(string),
-		Catalog:     d.Get("catalog").(string),
-		Account:     d.Get("account").(string),
-		Nameservers: []string{},
-		SoaEditAPI:  d.Get("soa_edit_api").(string),
+		Name:             d.Get("name").(string),
+		Kind:             d.Get("kind").(string),
+		Catalog:          d.Get("catalog").(string),
+		Account:          d.Get("account").(string),
+		Nameservers:      []string{},
+		SoaEditAPI:       d.Get("soa_edit_api").(string),
+		MasterTsigKeyIDs: zoneTSIGReferences(d, "master_tsig_key_ids"),
+		SlaveTsigKeyIDs:  zoneTSIGReferences(d, "slave_tsig_key_ids"),
 	}
 
 	if len(masters) != 0 {
@@ -163,6 +204,14 @@ func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta inte
 	if err := d.Set("soa_edit_api", zoneInfo.SoaEditAPI); err != nil {
 		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit API: %w", err))
 	}
+	for name, values := range map[string][]string{
+		"master_tsig_key_ids": zoneInfo.MasterTsigKeyIDs,
+		"slave_tsig_key_ids":  zoneInfo.SlaveTsigKeyIDs,
+	} {
+		if err := d.Set(name, values); err != nil {
+			return diag.FromErr(fmt.Errorf("error setting PowerDNS %s: %w", name, err))
+		}
+	}
 
 	if strings.EqualFold(zoneInfo.Kind, "Slave") {
 		if err := d.Set("masters", zoneInfo.Masters); err != nil {
@@ -179,7 +228,7 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 
 	client := meta.(*ProviderClients)
 
-	if d.HasChange("kind") || d.HasChange("account") || d.HasChange("catalog") || d.HasChange("soa_edit_api") || d.HasChange("masters") {
+	if d.HasChanges("kind", "account", "catalog", "soa_edit_api", "masters", "master_tsig_key_ids", "slave_tsig_key_ids") {
 		var masters []string
 		for _, m := range d.Get("masters").(*schema.Set).List() {
 			masters = append(masters, m.(string))
@@ -192,6 +241,16 @@ func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta in
 			Account:    d.Get("account").(string),
 			SoaEditAPI: d.Get("soa_edit_api").(string),
 			Masters:    masters,
+		}
+		// Pointer fields distinguish clearing an explicitly managed set from
+		// omitting it during an unrelated zone update.
+		if d.HasChange("master_tsig_key_ids") {
+			values := zoneTSIGReferences(d, "master_tsig_key_ids")
+			zoneInfo.MasterTsigKeyIDs = &values
+		}
+		if d.HasChange("slave_tsig_key_ids") {
+			values := zoneTSIGReferences(d, "slave_tsig_key_ids")
+			zoneInfo.SlaveTsigKeyIDs = &values
 		}
 
 		if err := client.PDNS.UpdateZone(ctx, d.Id(), zoneInfo); err != nil {

@@ -169,6 +169,7 @@ func TestPowerDNSTSIGKeys(t *testing.T) {
 	targets := []string{
 		"-target=powerdns_tsigkey.generated", "-target=powerdns_tsigkey.explicit", "-target=powerdns_tsigkey.write_only",
 		"-target=data.powerdns_tsigkey.generated", "-target=powerdns_zone_metadata.tsig_transfer",
+		"-target=powerdns_zone.tsig_write_only",
 	}
 	var flags []string
 	stablePlan := func() {
@@ -200,7 +201,7 @@ func TestPowerDNSTSIGKeys(t *testing.T) {
 		}
 		got := map[string][]string{}
 		for _, change := range plan.Changes {
-			if change.Mode == "managed" && change.Type == "powerdns_tsigkey" && !slices.Equal(change.Change.Actions, []string{"no-op"}) {
+			if change.Mode == "managed" && (change.Type == "powerdns_tsigkey" || change.Address == "powerdns_zone.tsig_write_only") && !slices.Equal(change.Change.Actions, []string{"no-op"}) {
 				got[change.Address] = change.Change.Actions
 			}
 		}
@@ -209,9 +210,21 @@ func TestPowerDNSTSIGKeys(t *testing.T) {
 		}
 		runTerraform(t, "apply", "-input=false", "-no-color", planFile)
 	}
+	checkWriteOnlyZone := func(keyID string) {
+		t.Helper()
+		var output, live zoneTSIGReferences
+		terraformOutput(t, "powerdns_zone_tsig_write_only", &output)
+		doJSON(t, newRequest(t, http.MethodGet, authBaseURL(), "/api/v1/servers/localhost/zones/tsig-write-only.example.com."), &live)
+		for _, zone := range []zoneTSIGReferences{output, live} {
+			if !slices.Equal(zone.Master, []string{keyID}) || !slices.Equal(zone.Slave, []string{keyID}) {
+				t.Fatalf("zone references must follow the key ID in the same apply: got master=%v slave=%v, want %q", zone.Master, zone.Slave, keyID)
+			}
+		}
+	}
 
 	t.Log("Verify generated, explicit, and write-only keys, data-source values, and stable trailing-dot names")
 	live := checkTSIGFixtures(t, want)
+	checkWriteOnlyZone(live["write_only"].ID)
 	generated := want["generated"]
 	generated.Secret = live["generated"].Key
 	want["generated"] = generated
@@ -256,23 +269,24 @@ func TestPowerDNSTSIGKeys(t *testing.T) {
 	checkTSIGFixtures(t, want)
 	stablePlan()
 
-	t.Log("Rename a write-only key with a changed input but unchanged version, preserving the server secret")
+	t.Log("A rename replaces the key and updates dependent zone references in the same apply")
 	oldID := live["write_only"].ID
 	flags = append(flags, "-var=tsig_wo_name=e2e-tsig-renamed.")
-	apply(map[string][]string{"powerdns_tsigkey.write_only": {"update"}})
-	// The SDK plans the old ID for in-place updates, although SetId follows
-	// the renamed key in resource state. Refresh outputs before checking them.
-	refresh := append([]string{"apply", "-refresh-only", "-input=false", "-no-color", "-auto-approve"}, targets...)
-	runTerraform(t, append(refresh, flags...)...)
+	apply(map[string][]string{
+		"powerdns_tsigkey.write_only":   {"delete", "create"},
+		"powerdns_zone.tsig_write_only": {"update"},
+	})
 	writeOnly := want["write_only"]
 	writeOnly.Name = "e2e-tsig-renamed."
+	writeOnly.Secret = secret("e2e-tsig-write-only-replacement-secret")
 	want["write_only"] = writeOnly
 	checkTSIGFixtures(t, want)
+	checkWriteOnlyZone("e2e-tsig-renamed.")
 	assertTSIGKeyDeleted(t, oldID, writeOnly.Algorithm)
 	stablePlan()
 
 	t.Log("Rotate the write-only secret only when its version increases")
-	flags = append(flags, "-var=tsig_wo_version=2")
+	flags = append(flags, "-var=tsig_wo_version=2", "-var=tsig_wo_secret_revision=3")
 	apply(map[string][]string{"powerdns_tsigkey.write_only": {"update"}})
 	writeOnly.Secret = secret("e2e-tsig-write-only-rotated-secret")
 	writeOnly.WriteOnlyVersion = 2

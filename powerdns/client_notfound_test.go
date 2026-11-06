@@ -58,7 +58,9 @@ func TestGetZoneMetadataNotFound(t *testing.T) {
 // A non-404 failure must stay a real error rather than being mistaken for a
 // deleted zone, which would silently drop the resource from state.
 func TestGetZoneServerErrorIsNotNotFound(t *testing.T) {
+	calls := 0
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		calls++
 		return jsonResponse(http.StatusInternalServerError, `{"error":"Internal Server Error"}`), nil
 	})
 
@@ -66,4 +68,5 @@ func TestGetZoneServerErrorIsNotNotFound(t *testing.T) {
 	if assert.Error(t, err) {
 		assert.NotErrorIs(t, err, ErrNotFound)
 	}
+	assert.Equal(t, 1, calls)
 }
