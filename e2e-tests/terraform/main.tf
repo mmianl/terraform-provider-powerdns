@@ -452,3 +452,73 @@ data "powerdns_zone" "tsig_references" {
 
   depends_on = [powerdns_zone.tsig_references]
 }
+
+variable "zone_fields_dnssec" {
+  type    = bool
+  default = true
+}
+
+variable "zone_fields_api_rectify" {
+  type    = bool
+  default = true
+}
+
+variable "zone_fields_soa_edit" {
+  type    = string
+  default = "INCEPTION-INCREMENT"
+}
+
+variable "zone_fields_manage_settings" {
+  type    = bool
+  default = true
+}
+
+variable "zone_fields_account" {
+  type    = string
+  default = "admin"
+}
+
+# Native zones keep notification serials stable while testing computed fields.
+resource "powerdns_zone" "fields" {
+  name        = "zone-fields.example.com."
+  kind        = "Native"
+  account     = var.zone_fields_account
+  dnssec      = var.zone_fields_manage_settings ? var.zone_fields_dnssec : null
+  api_rectify = var.zone_fields_manage_settings ? var.zone_fields_api_rectify : null
+  soa_edit    = var.zone_fields_manage_settings ? var.zone_fields_soa_edit : null
+}
+
+resource "powerdns_record" "zone_fields" {
+  zone    = powerdns_zone.fields.name
+  name    = "www.${powerdns_zone.fields.name}"
+  type    = "A"
+  ttl     = 300
+  records = ["192.0.2.42"]
+}
+
+data "powerdns_zone" "fields" {
+  name = powerdns_zone.fields.name
+
+  depends_on = [powerdns_zone.fields, powerdns_record.zone_fields]
+}
+
+# Exercise explicit false values during creation as well as during updates.
+resource "powerdns_zone" "fields_disabled" {
+  name        = "zone-fields-disabled.example.com."
+  kind        = "Native"
+  dnssec      = false
+  api_rectify = false
+  soa_edit    = "NONE"
+}
+
+data "powerdns_zone" "fields_disabled" {
+  name = powerdns_zone.fields_disabled.name
+
+  depends_on = [powerdns_zone.fields_disabled]
+}
+
+data "powerdns_zone" "fields_catalog_member" {
+  name = powerdns_zone.catalog_member.name
+
+  depends_on = [powerdns_zone.catalog_member]
+}
