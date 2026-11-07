@@ -1,3 +1,26 @@
+# 2.6.0 (November 7, 2026)
+
+FEATURES:
+  * **Add DNSSEC key management with the `powerdns_zone_cryptokey` resource and `powerdns_zone_cryptokeys` data source** ([#121](https://github.com/mmianl/terraform-provider-powerdns/pull/121), @MrKeiKun, @mmianl)
+  * **Add `powerdns_zone_notify` and `powerdns_zone_rectify` resources for triggering zone notifications and DNSSEC rectification** ([#119](https://github.com/mmianl/terraform-provider-powerdns/pull/119), @MrKeiKun, @mmianl)
+  * **Add the `powerdns_tsigkey` resource and data source, including write-only secret rotation and zone TSIG key references** ([#123](https://github.com/mmianl/terraform-provider-powerdns/pull/123), @MrKeiKun, @mmianl)
+  * **Expose DNSSEC, SOA edit, automatic rectification, serial and freshness attributes on zone resources and data sources, and catalog membership on the zone data source** ([#124](https://github.com/mmianl/terraform-provider-powerdns/pull/124), @MrKeiKun, @mmianl)
+  * **Add Terraform import support for `powerdns_recursor_config` and `powerdns_recursor_forward_zone`, with validation of forward-zone kind and recursion settings** ([#120](https://github.com/mmianl/terraform-provider-powerdns/pull/120), @MrKeiKun, @mmianl)
+  * **Add configurable PowerDNS Recursor server ID** ([#99](https://github.com/mmianl/terraform-provider-powerdns/pull/99), @MrKeiKun)
+  * **Add configurable API request timeout, defaulting to 60 seconds** ([#113](https://github.com/mmianl/terraform-provider-powerdns/pull/113), @MrKeiKun)
+  * **Dependency updates** ([#115](https://github.com/mmianl/terraform-provider-powerdns/pull/115), [#117](https://github.com/mmianl/terraform-provider-powerdns/pull/117), @dependabot)
+
+FIXES:
+  * **Prevent record creation from overwriting existing RRsets, including concurrent creates and stale cached reads** ([#118](https://github.com/mmianl/terraform-provider-powerdns/pull/118), @MrKeiKun, @mmianl)
+  * **Correct zone request caching by normalizing cache keys, handling cache misses, and invalidating stale entries on writes** ([#98](https://github.com/mmianl/terraform-provider-powerdns/pull/98), [#106](https://github.com/mmianl/terraform-provider-powerdns/pull/106), @MrKeiKun)
+  * **Remove zone-scoped resources from state when their zone is deleted outside Terraform** ([#104](https://github.com/mmianl/terraform-provider-powerdns/pull/104), @MrKeiKun)
+  * **Accept HTTP 200 when deleting zone metadata on PowerDNS versions before 4.9** ([#109](https://github.com/mmianl/terraform-provider-powerdns/pull/109), @MrKeiKun)
+  * **Preserve logging context, honor request cancellation, and handle previously unchecked errors** ([#97](https://github.com/mmianl/terraform-provider-powerdns/pull/97), @MrKeiKun)
+  * **Fix `make lint` to run the pinned golangci-lint version shared with CI** ([#107](https://github.com/mmianl/terraform-provider-powerdns/pull/107), @MrKeiKun)
+
+ENHANCEMENTS:
+  * **Expand acceptance testing across PowerDNS versions and LMDB/PostgreSQL backends, support configurable end-to-end test versions, and migrate tests to `ProviderFactories`** ([#110](https://github.com/mmianl/terraform-provider-powerdns/pull/110), [#114](https://github.com/mmianl/terraform-provider-powerdns/pull/114), [#112](https://github.com/mmianl/terraform-provider-powerdns/pull/112), @MrKeiKun)
+
 # 2.5.0 (August 27, 2026)
 
 FEATURES:
