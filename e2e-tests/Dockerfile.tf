@@ -1,11 +1,11 @@
-FROM golang:1.24 AS tests
+FROM golang:1.26.10 AS tests
 
 WORKDIR /tests
 COPY go.mod .
 COPY *_test.go .
 RUN CGO_ENABLED=0 go test -c -o assert.test ./...
 
-FROM hashicorp/terraform:1.13
+FROM hashicorp/terraform:1.17.1
 ARG TF_PLUGIN_PLATFORM=linux_amd64
 
 WORKDIR /tf

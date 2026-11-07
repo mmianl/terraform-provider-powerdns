@@ -14,7 +14,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v7
         with:
-          go-version: 1.26.1
+          go-version-file: go.mod
 
       - name: Format
         run: make fmtcheck
@@ -32,6 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
 
       - name: Ensure go.mod tidy and vendor are clean
         run: |
@@ -52,7 +57,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v7
         with:
-          go-version: 1.26.1
+          go-version-file: go.mod
 
       - name: Run Tests
         run: |
@@ -90,12 +95,12 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v7
         with:
-          go-version: 1.26.1
+          go-version-file: go.mod
 
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v4
         with:
-          terraform_version: "1.14.8"
+          terraform_version: "1.17.1"
 
       - name: Start PowerDNS
         working-directory: acc-tests
@@ -143,7 +148,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v7
         with:
-          go-version: 1.26.1
+          go-version-file: go.mod
 
       - name: Run E2E tests
         timeout-minutes: 2
