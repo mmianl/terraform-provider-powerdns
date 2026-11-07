@@ -191,3 +191,11 @@ output "powerdns_zone_tsig_references" {
     data = data.powerdns_zone.tsig_references
   }
 }
+
+output "powerdns_zone_fields" {
+  value = {
+    data          = data.powerdns_zone.fields
+    disabled_data = data.powerdns_zone.fields_disabled
+    catalog       = data.powerdns_zone.fields_catalog_member
+  }
+}
