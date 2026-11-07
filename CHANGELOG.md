@@ -19,6 +19,7 @@ FIXES:
   * **Fix `make lint` to run the pinned golangci-lint version shared with CI** ([#107](https://github.com/mmianl/terraform-provider-powerdns/pull/107), @MrKeiKun)
 
 ENHANCEMENTS:
+  * **Refresh indirect Go dependencies and align build/test tooling on Go 1.26.10, Terraform 1.17.1, and golangci-lint 2.15.0**
   * **Expand acceptance testing across PowerDNS versions and LMDB/PostgreSQL backends, support configurable end-to-end test versions, and migrate tests to `ProviderFactories`** ([#110](https://github.com/mmianl/terraform-provider-powerdns/pull/110), [#114](https://github.com/mmianl/terraform-provider-powerdns/pull/114), [#112](https://github.com/mmianl/terraform-provider-powerdns/pull/112), @MrKeiKun)
 
 # 2.5.0 (August 27, 2026)
