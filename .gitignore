@@ -35,3 +35,6 @@ website/vendor
 # Test exclusions
 !command/test-fixtures/**/*.tfstate
 !command/test-fixtures/**/.terraform/
+
+# Dependencies are fetched from the module cache
+/vendor/
