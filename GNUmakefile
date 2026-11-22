@@ -3,8 +3,6 @@ GOFMT_FILES?=$$(find . -name '*.go' |grep -v vendor)
 WEBSITE_REPO=github.com/hashicorp/terraform-website
 PKG_NAME=powerdns
 
-.EXPORT_ALL_VARIABLES:
-GOFLAGS=-mod=vendor
 
 default: build
 

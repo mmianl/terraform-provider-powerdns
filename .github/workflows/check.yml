@@ -38,13 +38,12 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Ensure go.mod tidy and vendor are clean
+      - name: Ensure go.mod and go.sum are tidy
         run: |
           go mod tidy
-          go mod vendor
           if ! git diff --exit-code; then
-            echo "ERROR: go.mod, go.sum, or vendor directory are not up-to-date."
-            echo "Run: go mod tidy && go mod vendor"
+            echo "ERROR: go.mod or go.sum is not up-to-date."
+            echo "Run: go mod tidy"
             exit 1
           fi
 
