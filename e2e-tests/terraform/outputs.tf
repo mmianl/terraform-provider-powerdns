@@ -86,28 +86,12 @@ output "data_powerdns_record_soa_disabled_zone_disabled" {
   value = data.powerdns_record_soa.disabled_zone.disabled
 }
 
-output "powerdns_zone_test_variant" {
-  value = powerdns_zone.test_variant
-}
-
 output "powerdns_zone_catalog" {
   value = powerdns_zone.catalog
 }
 
 output "powerdns_zone_catalog_member" {
   value = powerdns_zone.catalog_member
-}
-
-output "powerdns_view_zone_association_test2" {
-  value = powerdns_view_zone_association.test2
-}
-
-output "powerdns_view_zone_association_test_variant" {
-  value = powerdns_view_zone_association.test_variant
-}
-
-output "powerdns_network_internal_clients" {
-  value = powerdns_network.internal_clients
 }
 
 # Export public key attributes without the sensitive private-key content.

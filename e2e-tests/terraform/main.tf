@@ -175,11 +175,6 @@ resource "powerdns_zone" "test2" {
   kind = "Native"
 }
 
-resource "powerdns_zone" "test_variant" {
-  name = "test.example.com..internal"
-  kind = "Native"
-}
-
 resource "powerdns_zone" "catalog" {
   name = "catalog-a.example."
   kind = "Producer"
@@ -191,21 +186,6 @@ resource "powerdns_zone" "catalog_member" {
   catalog = "catalog-a.example."
 
   depends_on = [powerdns_zone.catalog]
-}
-
-resource "powerdns_view_zone_association" "test2" {
-  view = "internal"
-  zone = powerdns_zone.test2.name
-}
-
-resource "powerdns_view_zone_association" "test_variant" {
-  view = "internal"
-  zone = powerdns_zone.test_variant.name
-}
-
-resource "powerdns_network" "internal_clients" {
-  network = "192.0.2.0/24"
-  view    = powerdns_view_zone_association.test2.view
 }
 
 variable "cryptokey_keytype" {

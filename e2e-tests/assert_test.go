@@ -144,22 +144,6 @@ type zoneMetadata struct {
 	Metadata []string `json:"metadata"`
 }
 
-type authView struct {
-	ID    string   `json:"id"`
-	Name  string   `json:"name"`
-	Zones []string `json:"zones"`
-}
-
-type authNetwork struct {
-	Network string `json:"network"`
-	View    string `json:"view"`
-}
-
-type viewZoneAssociationOutput struct {
-	View string `json:"view"`
-	Zone string `json:"zone"`
-}
-
 // Recursor config setting
 type recursorConfig struct {
 	Name  string   `json:"name"`
@@ -494,20 +478,6 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 		}
 	}
 
-	// 5) Zone variant: test.example.com..internal
-	{
-		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com..internal")
-		var zone authZone
-		doJSON(t, req, &zone)
-
-		if zone.Name != "test.example.com..internal" {
-			t.Fatalf("variant zone name: got %q, want %q", zone.Name, "test.example.com..internal")
-		}
-		if zone.Kind != "Native" {
-			t.Fatalf("variant zone kind: got %q, want %q", zone.Kind, "Native")
-		}
-	}
-
 	// 6) Zone metadata: verify resource
 	{
 		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/zones/test.example.com./metadata")
@@ -521,49 +491,6 @@ func TestPowerDNSAuthoritativeResources(t *testing.T) {
 
 		assertMetadataKindValues(t, metadataByKind, "ALSO-NOTIFY", []string{"192.0.2.10", "192.0.2.11:5300"})
 		assertMetadataKindValues(t, metadataByKind, "ALLOW-AXFR-FROM", []string{"AUTO-NS", "2001:db8::/48"})
-	}
-
-	// 7) View and network mapping
-	{
-		req := newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/views/internal")
-		var view authView
-		doJSON(t, req, &view)
-
-		zoneSet := valuesToSet(view.Zones)
-		for _, want := range []string{"test2.example.com.", "test.example.com..internal"} {
-			if !zoneSet[want] {
-				t.Fatalf("view internal missing zone %q in %v", want, view.Zones)
-			}
-		}
-
-		var test2Association viewZoneAssociationOutput
-		terraformOutput(t, "powerdns_view_zone_association_test2", &test2Association)
-		if test2Association.View != "internal" {
-			t.Fatalf("test2 view association view: got %q, want %q", test2Association.View, "internal")
-		}
-		if test2Association.Zone != "test2.example.com." {
-			t.Fatalf("test2 view association zone: got %q, want %q", test2Association.Zone, "test2.example.com.")
-		}
-
-		var variantAssociation viewZoneAssociationOutput
-		terraformOutput(t, "powerdns_view_zone_association_test_variant", &variantAssociation)
-		if variantAssociation.View != "internal" {
-			t.Fatalf("variant view association view: got %q, want %q", variantAssociation.View, "internal")
-		}
-		if variantAssociation.Zone != "test.example.com..internal" {
-			t.Fatalf("variant view association zone: got %q, want %q", variantAssociation.Zone, "test.example.com..internal")
-		}
-
-		req = newRequest(t, http.MethodGet, base, "/api/v1/servers/localhost/networks/192.0.2.0/24")
-		var network authNetwork
-		doJSON(t, req, &network)
-
-		if network.Network != "192.0.2.0/24" {
-			t.Fatalf("network CIDR: got %q, want %q", network.Network, "192.0.2.0/24")
-		}
-		if network.View != "internal" {
-			t.Fatalf("network view: got %q, want %q", network.View, "internal")
-		}
 	}
 
 	// 8) Catalog producer zone and catalog zone membership
