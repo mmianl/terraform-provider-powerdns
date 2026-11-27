@@ -11,7 +11,9 @@ The Terraform PowerDNS provider allows you to manage PowerDNS zones, records, vi
 ### PowerDNS versions
 
 The provider is tested against PowerDNS Authoritative 4.9, 5.0 and 5.1, paired
-with PowerDNS Recursor 5.1, 5.3 and 5.4. Older releases mostly work, but some
+with PowerDNS Recursor 5.1, 5.3 and 5.4. It is also run against the next
+releases, Authoritative 5.2 and Recursor 5.5, where a failure is reported but
+does not block a change. Older releases mostly work, but some
 resources depend on features that arrived in a particular version:
 
 | Feature | Resources | Requires |
