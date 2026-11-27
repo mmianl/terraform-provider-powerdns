@@ -269,6 +269,7 @@ func (r *zoneResource) Create(ctx context.Context, req resource.CreateRequest, r
 
 	found := r.refresh(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
+		keepCreated(ctx, req.Plan, &resp.State, created.ID, &resp.Diagnostics)
 		return
 	}
 	if !found {

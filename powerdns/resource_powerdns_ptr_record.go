@@ -203,6 +203,7 @@ func (r *ptrRecordResource) Create(ctx context.Context, req resource.CreateReque
 	found, err := r.refresh(ctx, &plan)
 	if err != nil {
 		resp.Diagnostics.AddError("Couldn't fetch PTR record", err.Error())
+		keepCreated(ctx, req.Plan, &resp.State, recID, &resp.Diagnostics)
 		return
 	}
 	if !found {

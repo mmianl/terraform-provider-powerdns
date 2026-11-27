@@ -12,7 +12,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -98,9 +97,12 @@ func (r *recordSOAResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				// Configuring 0 means "let soa_edit_api manage this", so whatever
 				// PowerDNS actually computes and stores is never treated as drift
 				// against that 0 (see soaSerialType).
-				CustomType:    soaSerialType,
-				PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-				Description:   "SOA serial number. If omitted or 0, PowerDNS manages it via soa_edit_api.",
+				//
+				// An omitted serial is left unknown whenever the record changes,
+				// because PowerDNS may advance it as part of the edit. It keeps
+				// its value only when nothing else changes.
+				CustomType:  soaSerialType,
+				Description: "SOA serial number. If omitted or 0, PowerDNS manages it via soa_edit_api.",
 			},
 			"refresh": schema.Int64Attribute{
 				Required:    true,
@@ -260,16 +262,25 @@ func (r *recordSOAResource) Create(ctx context.Context, req resource.CreateReque
 	}
 	r.upsert(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
+		if !plan.ID.IsNull() && !plan.ID.IsUnknown() {
+			keepCreated(ctx, req.Plan, &resp.State, plan.ID.ValueString(), &resp.Diagnostics)
+		}
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *recordSOAResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan recordSOAModel
+	var plan, state recordSOAModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+	// With no serial configured, send the current one and let PowerDNS advance
+	// it. Sending 0 would reset it on servers that do not manage serials.
+	if plan.Serial.IsUnknown() {
+		plan.Serial = state.Serial
 	}
 	r.upsert(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {

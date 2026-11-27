@@ -138,7 +138,9 @@ func (r *zoneCryptokeyResource) Schema(_ context.Context, _ resource.SchemaReque
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.UseStateForUnknown(),
 					int64planmodifier.RequiresReplaceIf(func(_ context.Context, req planmodifier.Int64Request, resp *int64planmodifier.RequiresReplaceIfFuncResponse) {
-						resp.RequiresReplace = !req.ConfigValue.IsNull() && req.ConfigValue.ValueInt64() != 0
+						// An unknown size cannot be compared yet, so replace to be safe.
+						resp.RequiresReplace = req.ConfigValue.IsUnknown() ||
+							(!req.ConfigValue.IsNull() && req.ConfigValue.ValueInt64() != 0)
 					}, "Changing a configured key size forces a new key.", "Changing a configured key size forces a new key."),
 				},
 				Description: "The key size in bits. Required for the RSA algorithms, " +
@@ -251,7 +253,9 @@ func (r *zoneCryptokeyResource) Create(ctx context.Context, req resource.CreateR
 	tflog.Info(ctx, "Created PowerDNS cryptokey", map[string]any{"key_id": created.ID})
 
 	if !r.refresh(ctx, &plan, &resp.Diagnostics) {
-		if !resp.Diagnostics.HasError() {
+		if resp.Diagnostics.HasError() {
+			keepCreated(ctx, req.Plan, &resp.State, plan.ID.ValueString(), &resp.Diagnostics)
+		} else {
 			resp.Diagnostics.AddError("Cryptokey not found after creation", plan.ID.ValueString())
 		}
 		return

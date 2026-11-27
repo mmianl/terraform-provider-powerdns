@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/stretchr/testify/assert"
@@ -225,4 +226,45 @@ func TestSameServerAddress(t *testing.T) {
 	} {
 		assert.Equal(t, tc.want, sameServerAddress(tc.configured, tc.api), "%s vs %s", tc.configured, tc.api)
 	}
+}
+
+func TestRecursorForwardZoneCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestRecursorClient("localhost", writesSucceedReadsFail(http.StatusCreated, "", 0, ""))
+	assertCreateKeepsState(t, newRecursorForwardZoneResource(), &ProviderClients{Recursor: client},
+		map[string]tftypes.Value{"zone": tfString("kept.example."), "servers": tfStringList("192.0.2.53")},
+		"kept.example.")
+}
+
+// The Recursor stores an address in place of a host name. The host name written
+// in the configuration stays in state, on create and on every refresh.
+func TestRecursorForwardZoneKeepsConfiguredHostName(t *testing.T) {
+	client := newTestRecursorClient("localhost", func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet {
+			return jsonResponse(http.StatusCreated, ""), nil
+		}
+		return jsonResponse(http.StatusOK,
+			`{"name":"kept.example.","kind":"Forwarded","servers":["172.23.0.2:5300","192.0.2.9:53"],"recursion_desired":false}`), nil
+	})
+	h := newResourceHarness(t, newRecursorForwardZoneResource(), &ProviderClients{Recursor: client})
+	state, diags := h.create(map[string]tftypes.Value{
+		"zone": tfString("kept.example."), "servers": tfStringList("pdns:5300", "192.0.2.9"),
+	})
+	assert.False(t, diags.HasError(), "%v", diags)
+	assert.Equal(t, []string{"pdns:5300", "192.0.2.9"}, tfAttrStrings(t, state, "servers"))
+
+	state, diags = h.read(state)
+	assert.False(t, diags.HasError(), "%v", diags)
+	assert.Equal(t, []string{"pdns:5300", "192.0.2.9"}, tfAttrStrings(t, state, "servers"))
+
+	// A change of port or of an address written as an address is not hidden. The
+	// provider cannot resolve names, so a host name matches any address on its
+	// port.
+	other := newTestRecursorClient("localhost", func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK,
+			`{"name":"kept.example.","kind":"Forwarded","servers":["172.23.0.2:5301","198.51.100.7:53"],"recursion_desired":false}`), nil
+	})
+	changed := newResourceHarness(t, newRecursorForwardZoneResource(), &ProviderClients{Recursor: other})
+	state, diags = changed.read(state)
+	assert.False(t, diags.HasError(), "%v", diags)
+	assert.Equal(t, []string{"172.23.0.2:5301", "198.51.100.7"}, tfAttrStrings(t, state, "servers"))
 }

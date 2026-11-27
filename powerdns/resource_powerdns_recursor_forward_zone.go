@@ -185,7 +185,9 @@ func (r *recursorForwardZoneResource) Create(ctx context.Context, req resource.C
 	plan.ID = types.StringValue(zoneName)
 	tflog.Info(ctx, "Created recursor forward zone", map[string]any{"id": zoneName})
 	if !r.refresh(ctx, &plan, &resp.Diagnostics) {
-		if !resp.Diagnostics.HasError() {
+		if resp.Diagnostics.HasError() {
+			keepCreated(ctx, req.Plan, &resp.State, zoneName, &resp.Diagnostics)
+		} else {
 			resp.Diagnostics.AddError("Recursor forward zone not found after creation", zoneName)
 		}
 		return
@@ -281,7 +283,8 @@ func (r *recursorForwardZoneResource) Delete(ctx context.Context, req resource.D
 
 // sameServerAddress reports whether the server entry written in the
 // configuration (a host name or an address, with an optional port) is what the
-// Recursor reports as api.
+// Recursor reports as api. The provider cannot resolve names, so a host name
+// matches any address on the same port.
 func sameServerAddress(configured, api string) bool {
 	if configured == api {
 		return true

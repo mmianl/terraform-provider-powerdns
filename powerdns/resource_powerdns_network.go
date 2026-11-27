@@ -100,6 +100,9 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 	r.upsert(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
+		if !plan.ID.IsNull() && !plan.ID.IsUnknown() {
+			keepCreated(ctx, req.Plan, &resp.State, plan.ID.ValueString(), &resp.Diagnostics)
+		}
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)

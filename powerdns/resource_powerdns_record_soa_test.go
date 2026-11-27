@@ -2,12 +2,17 @@ package powerdns
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAccPDNSRecordSOA_Basic(t *testing.T) {
@@ -65,6 +70,58 @@ func TestAccPDNSRecordSOA_Update(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "disabled", "true"),
 					resource.TestCheckResourceAttr(resourceName, "refresh", "14400"),
 				),
+			},
+		},
+	})
+}
+
+// With no serial configured, PowerDNS may advance the serial when another SOA
+// field changes. The plan must not promise the old serial.
+func TestAccPDNSRecordSOA_UpdateOmittedSerial(t *testing.T) {
+	resourceName := "powerdns_record_soa.test-soa-omit"
+	config := func(ttl, refresh int) string {
+		return fmt.Sprintf(`
+resource "powerdns_zone" "test-soa-omit" {
+	name = "test-soa-omit-sysa.xyz."
+	kind = "MASTER"
+}
+
+resource "powerdns_record_soa" "test-soa-omit" {
+	zone    = powerdns_zone.test-soa-omit.name
+	name    = "test-soa-omit-sysa.xyz."
+	ttl     = %d
+	mname   = "ns1.sysa.xyz."
+	rname   = "hostmaster.sysa.xyz."
+	refresh = %d
+	retry   = 600
+	expire  = 1209600
+	minimum = 6400
+}`, ttl, refresh)
+	}
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordSOADestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config(3600, 7200),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckPDNSRecordSOAExists(resourceName),
+					resource.TestCheckResourceAttrSet(resourceName, "serial"),
+				),
+			},
+			{
+				Config: config(7200, 14400),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "ttl", "7200"),
+					resource.TestCheckResourceAttr(resourceName, "refresh", "14400"),
+					resource.TestCheckResourceAttrSet(resourceName, "serial"),
+				),
+			},
+			{
+				Config:   config(7200, 14400),
+				PlanOnly: true,
 			},
 		},
 	})
@@ -272,3 +329,63 @@ resource "powerdns_record" "test-soa-blocked" {
 	ttl     = 3600
 	records = [ "ns1.sysa.xyz. hostmaster.sysa.xyz. 2019090301 10800 3600 604800 3600" ]
 }`
+
+// With no serial configured, an update sends the current serial and accepts
+// whatever PowerDNS advances it to.
+func TestSOAUpdateSendsCurrentSerialAndTakesServerValue(t *testing.T) {
+	const zone = "soa.example."
+	content := ""
+	ttl := 3600
+	var sent []string
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		switch r.Method {
+		case http.MethodPatch:
+			var body struct {
+				RRSets []ResourceRecordSet `json:"rrsets"`
+			}
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			rec := body.RRSets[0].Records[0]
+			sent = append(sent, rec.Content)
+			ttl = body.RRSets[0].TTL
+			// The server advances the serial on every change.
+			fields := strings.Fields(rec.Content)
+			var serial int
+			_, err := fmt.Sscan(fields[2], &serial)
+			assert.NoError(t, err)
+			fields[2] = fmt.Sprint(serial + 1)
+			content = strings.Join(fields, " ")
+			return jsonResponse(http.StatusNoContent, ""), nil
+		default:
+			return jsonResponse(http.StatusOK, fmt.Sprintf(
+				`{"name":%q,"rrsets":[{"name":%q,"type":"SOA","ttl":%d,"records":[{"content":%q,"disabled":false}]}]}`,
+				zone, zone, ttl, content)), nil
+		}
+	})
+	h := newResourceHarness(t, newRecordSOAResource(), &ProviderClients{PDNS: client})
+	config := func(ttl int64) map[string]tftypes.Value {
+		return map[string]tftypes.Value{
+			"zone": tfString(zone), "name": tfString(zone), "ttl": tfInt(ttl),
+			"mname": tfString("ns1.example."), "rname": tfString("host.example."),
+			"refresh": tfInt(7200), "retry": tfInt(600), "expire": tfInt(1209600), "minimum": tfInt(6400),
+		}
+	}
+
+	created, diags := h.create(config(3600))
+	assert.False(t, diags.HasError(), "%v", diags)
+	assert.Equal(t, int64(1), tfAttrInt(t, created, "serial"), "creating with no serial sends 0 and the server advances it")
+
+	updated, diags := h.updateWithUnknown(created, config(7200), "serial")
+	assert.False(t, diags.HasError(), "%v", diags)
+	assert.Contains(t, sent[len(sent)-1], " 1 7200 ", "the update must send the current serial, not 0")
+	assert.Equal(t, int64(2), tfAttrInt(t, updated, "serial"), "the new serial comes from the server")
+}
+
+func TestSOACreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusNoContent, "", 0, ""))
+	assertCreateKeepsState(t, newRecordSOAResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{
+			"zone": tfString("kept.example."), "name": tfString("kept.example."), "ttl": tfInt(3600),
+			"mname": tfString("ns1.example."), "rname": tfString("host.example."),
+			"refresh": tfInt(7200), "retry": tfInt(600), "expire": tfInt(1209600), "minimum": tfInt(6400),
+		}, "kept.example.:::SOA")
+}

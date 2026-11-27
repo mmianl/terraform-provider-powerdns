@@ -149,6 +149,9 @@ func (r *recursorConfigResource) Create(ctx context.Context, req resource.Create
 	}
 	r.write(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
+		if !plan.ID.IsNull() && !plan.ID.IsUnknown() {
+			keepCreated(ctx, req.Plan, &resp.State, plan.ID.ValueString(), &resp.Diagnostics)
+		}
 		return
 	}
 	tflog.Info(ctx, "Created recursor config", map[string]any{"id": plan.ID.ValueString()})

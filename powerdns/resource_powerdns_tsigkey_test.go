@@ -601,3 +601,10 @@ resource "powerdns_tsigkey" "test-wo" {
 	key_wo_version = %d
 }`, name, secret, version)
 }
+
+func TestTSIGKeyCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusCreated, `{"id":"kept.","name":"kept","algorithm":"hmac-sha256"}`, 0, ""))
+	assertCreateKeepsState(t, newTSIGKeyResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"name": tfString("kept"), "algorithm": tfString("hmac-sha256")},
+		"kept.")
+}

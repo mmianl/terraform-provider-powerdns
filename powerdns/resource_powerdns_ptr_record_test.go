@@ -3,8 +3,10 @@ package powerdns
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
@@ -166,4 +168,14 @@ func testAccCheckPowerDNSPTRRecordExists(n string) resource.TestCheckFunc {
 
 		return nil
 	}
+}
+
+func TestPTRRecordCreateKeepsStateWhenReadFails(t *testing.T) {
+	// The overwrite guard reads the zone first and finds no records.
+	client := newTestClient(writesSucceedReadsFail(http.StatusNoContent, "", 1, `{"name":"2.0.192.in-addr.arpa.","rrsets":[]}`))
+	assertCreateKeepsState(t, newPTRRecordResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{
+			"ip_address": tfString("192.0.2.1"), "hostname": tfString("host.example.com."),
+			"ttl": tfInt(60), "reverse_zone": tfString("2.0.192.in-addr.arpa."),
+		}, "1.2.0.192.in-addr.arpa.:::PTR")
 }

@@ -3,6 +3,7 @@ package powerdns
 import (
 	"context"
 	"math/big"
+	"net/http"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -28,6 +29,10 @@ func tfStrings(kind tftypes.Type, values ...string) tftypes.Value {
 		items[i] = tfString(v)
 	}
 	return tftypes.NewValue(kind, items)
+}
+
+func tfStringList(values ...string) tftypes.Value {
+	return tfStrings(tftypes.List{ElementType: tftypes.String}, values...)
 }
 
 func tfStringSet(values ...string) tftypes.Value {
@@ -152,9 +157,15 @@ func objectOf(typ tftypes.Object, values map[string]tftypes.Value) tftypes.Value
 // without a configured value: computed ones become unknown on create and keep
 // the prior value otherwise.
 func (h *resourceHarness) plan(config tftypes.Value, prior *tftypes.Value) tftypes.Value {
-	attrs := map[string]tftypes.Value{}
-	if err := config.As(&attrs); err != nil {
+	configAttrs := map[string]tftypes.Value{}
+	if err := config.As(&configAttrs); err != nil {
 		h.t.Fatalf("reading config: %v", err)
+	}
+	// Work on a copy: As may hand back the map the config value holds, and the
+	// config must stay as written.
+	attrs := make(map[string]tftypes.Value, len(configAttrs))
+	for name, v := range configAttrs {
+		attrs[name] = v
 	}
 	var priorAttrs map[string]tftypes.Value
 	if prior != nil && !prior.IsNull() {
@@ -197,8 +208,28 @@ func (h *resourceHarness) create(config map[string]tftypes.Value) (tftypes.Value
 
 // update plans and applies a new config on top of a prior state.
 func (h *resourceHarness) update(prior tftypes.Value, config map[string]tftypes.Value) (tftypes.Value, diag.Diagnostics) {
+	return h.updateWithUnknown(prior, config)
+}
+
+// updateWithUnknown is update, with the named computed attributes planned as
+// unknown, as Terraform does for a computed value the server may change.
+func (h *resourceHarness) updateWithUnknown(prior tftypes.Value, config map[string]tftypes.Value, unknown ...string) (tftypes.Value, diag.Diagnostics) {
 	cfg := h.object(config)
 	plan := h.plan(cfg, &prior)
+	if len(unknown) > 0 {
+		planAttrs := map[string]tftypes.Value{}
+		if err := plan.As(&planAttrs); err != nil {
+			h.t.Fatalf("reading plan: %v", err)
+		}
+		attrs := make(map[string]tftypes.Value, len(planAttrs))
+		for name, v := range planAttrs {
+			attrs[name] = v
+		}
+		for _, name := range unknown {
+			attrs[name] = tftypes.NewValue(h.typ.AttributeTypes[name], tftypes.UnknownValue)
+		}
+		plan = tftypes.NewValue(h.typ, attrs)
+	}
 	resp := resource.UpdateResponse{State: tfsdk.State{Schema: h.schema, Raw: prior}}
 	h.res.Update(context.Background(), resource.UpdateRequest{
 		Config: tfsdk.Config{Schema: h.schema, Raw: cfg},
@@ -262,4 +293,39 @@ func (h *resourceHarness) destroy(prior tftypes.Value) diag.Diagnostics {
 		State: tfsdk.State{Schema: h.schema, Raw: prior},
 	}, &resp)
 	return resp.Diagnostics
+}
+
+// writesSucceedReadsFail answers every write with the given status and body and
+// fails every read, except that the first okReads reads return okBody. Some
+// creates look the record up before they write it.
+func writesSucceedReadsFail(writeStatus int, writeBody string, okReads int, okBody string) roundTripFunc {
+	reads := 0
+	return func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet {
+			return jsonResponse(writeStatus, writeBody), nil
+		}
+		reads++
+		if reads <= okReads {
+			return jsonResponse(http.StatusOK, okBody), nil
+		}
+		return jsonResponse(http.StatusInternalServerError, `{"error":"boom"}`), nil
+	}
+}
+
+// assertCreateKeepsState checks that a create which the server accepted, but
+// which cannot be read back, still reports the error and leaves the resource in
+// state with its id. Otherwise the next apply would create it a second time.
+func assertCreateKeepsState(t *testing.T, res resource.Resource, clients *ProviderClients, config map[string]tftypes.Value, wantID string) {
+	t.Helper()
+	h := newResourceHarness(t, res, clients)
+	state, diags := h.create(config)
+	if !diags.HasError() {
+		t.Fatalf("the failed read-back must be reported")
+	}
+	if state.IsNull() {
+		t.Fatalf("the created resource must be saved")
+	}
+	if got := tfAttrString(t, state, "id"); got != wantID {
+		t.Fatalf("saved id: got %q, want %q", got, wantID)
+	}
 }

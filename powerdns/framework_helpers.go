@@ -5,7 +5,10 @@ import (
 	"sort"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
 // clientsFromProviderData extracts the shared clients handed over by the
@@ -61,4 +64,23 @@ func stringsFromSet(ctx context.Context, s types.Set, diags *diag.Diagnostics) [
 	diags.Append(s.ElementsAs(ctx, &out, false)...)
 	sort.Strings(out)
 	return out
+}
+
+// keepCreated saves what is known about a resource that the server has already
+// created, for the case where reading it back fails. Without it Terraform has
+// no record of the resource, and the next apply tries to create it again.
+// Terraform marks the saved resource as tainted, so the next apply replaces it.
+func keepCreated(ctx context.Context, plan tfsdk.Plan, state *tfsdk.State, id string, diags *diag.Diagnostics) {
+	raw, err := tftypes.Transform(plan.Raw, func(_ *tftypes.AttributePath, v tftypes.Value) (tftypes.Value, error) {
+		if !v.IsKnown() {
+			return tftypes.NewValue(v.Type(), nil), nil
+		}
+		return v, nil
+	})
+	if err != nil {
+		diags.AddWarning("Could not save the created resource", err.Error())
+		return
+	}
+	state.Raw = raw
+	diags.Append(state.SetAttribute(ctx, path.Root("id"), id)...)
 }

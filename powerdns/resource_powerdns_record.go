@@ -82,7 +82,7 @@ func (r *recordResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"disabled": schema.BoolAttribute{
 				Optional:      true,
 				Computed:      true,
-				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				PlanModifiers: []planmodifier.Bool{keepUnlessRecordsChange{}},
 				Description:   "Whether all records in this RRset are disabled in PowerDNS.",
 			},
 			"records": schema.SetAttribute{
@@ -155,7 +155,7 @@ func (r *recordResource) upsert(ctx context.Context, config, plan recordModel, s
 
 	disabledByContent := map[string]bool{}
 	if state != nil {
-		disabledChanged := !plan.Disabled.Equal(state.Disabled)
+		disabledChanged := disabledConfigured && !plan.Disabled.Equal(state.Disabled)
 		if shouldPreserveRecordDisabledFlags(true, disabledConfigured, disabledChanged) {
 			existingRRSet, err := r.clients.PDNS.GetRecordSetByID(ctx, zone, state.ID.ValueString())
 			if err != nil {
@@ -290,7 +290,9 @@ func (r *recordResource) Create(ctx context.Context, req resource.CreateRequest,
 	plan.ID = types.StringValue(id)
 
 	if !r.refresh(ctx, &plan, &resp.Diagnostics) {
-		if !resp.Diagnostics.HasError() {
+		if resp.Diagnostics.HasError() {
+			keepCreated(ctx, req.Plan, &resp.State, id, &resp.Diagnostics)
+		} else {
 			resp.Diagnostics.AddError("PowerDNS Record not found after creation", id)
 		}
 		return

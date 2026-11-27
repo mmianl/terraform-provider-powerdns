@@ -3,11 +3,14 @@ package powerdns
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/stretchr/testify/assert"
 )
 
 // volatileZoneSerials are maintained by PowerDNS rather than by configuration.
@@ -801,3 +804,22 @@ resource "powerdns_zone" "test-serials" {
 	name = "serials.sysa.abc."
 	kind = "Native"
 }`
+
+// When the server creates a zone but reading it back fails, Terraform must
+// still have the zone in state, or the next apply would create it again.
+func TestZoneCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPost {
+			return jsonResponse(http.StatusCreated, `{"id":"kept.example."}`), nil
+		}
+		return jsonResponse(http.StatusInternalServerError, `{"error":"boom"}`), nil
+	})
+	h := newResourceHarness(t, newZoneResource(), &ProviderClients{PDNS: client})
+	state, diags := h.create(map[string]tftypes.Value{"name": tfString("kept.example."), "kind": tfString("Native")})
+	assert.True(t, diags.HasError(), "the failed read must still be reported")
+	if assert.False(t, state.IsNull(), "the created zone must be saved") {
+		assert.Equal(t, "kept.example.", tfAttrString(t, state, "id"))
+		assert.Equal(t, "kept.example.", tfAttrString(t, state, "name"))
+		assert.True(t, tfAttr(t, state, "serial").IsNull(), "unknown values must not be saved")
+	}
+}

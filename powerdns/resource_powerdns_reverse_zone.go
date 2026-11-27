@@ -189,7 +189,9 @@ func (r *reverseZoneResource) Create(ctx context.Context, req resource.CreateReq
 	tflog.Info(ctx, "Created reverse zone", map[string]any{"id": createdZone.Name})
 
 	if !r.refresh(ctx, &plan, &resp.Diagnostics) {
-		if !resp.Diagnostics.HasError() {
+		if resp.Diagnostics.HasError() {
+			keepCreated(ctx, req.Plan, &resp.State, createdZone.Name, &resp.Diagnostics)
+		} else {
 			resp.Diagnostics.AddError("Reverse zone not found after creation", createdZone.Name)
 		}
 		return

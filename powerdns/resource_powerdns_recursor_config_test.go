@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
@@ -72,4 +74,11 @@ func testAccCheckPowerDNSRecursorConfigExists(n string) resource.TestCheckFunc {
 
 		return nil
 	}
+}
+
+func TestRecursorConfigCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestRecursorClient("localhost", writesSucceedReadsFail(http.StatusOK, "", 0, ""))
+	assertCreateKeepsState(t, newRecursorConfigResource(), &ProviderClients{Recursor: client},
+		map[string]tftypes.Value{"name": tfString("allow-from"), "value": tfStringSet("127.0.0.0/8")},
+		"allow-from")
 }

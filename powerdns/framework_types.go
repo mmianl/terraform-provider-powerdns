@@ -7,9 +7,11 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
@@ -230,4 +232,34 @@ func requiresReplaceUnlessEquivalent(equal func(prior, next string) bool, descri
 		},
 		description, description,
 	)
+}
+
+// keepUnlessRecordsChange keeps the stored value of a computed value that PowerDNS
+// derives from the record contents. It stays unknown when the contents change,
+// because the server then decides the new value.
+type keepUnlessRecordsChange struct{}
+
+var _ planmodifier.Bool = keepUnlessRecordsChange{}
+
+func (keepUnlessRecordsChange) Description(context.Context) string {
+	return "Keeps the stored value unless the record contents change."
+}
+
+func (m keepUnlessRecordsChange) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (keepUnlessRecordsChange) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
+	if req.State.Raw.IsNull() || !req.ConfigValue.IsNull() || !req.PlanValue.IsUnknown() {
+		return
+	}
+	var planned, stored types.Set
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("records"), &planned)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("records"), &stored)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if planned.Equal(stored) {
+		resp.PlanValue = req.StateValue
+	}
 }

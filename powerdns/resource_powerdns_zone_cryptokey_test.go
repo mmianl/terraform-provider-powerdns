@@ -8,6 +8,9 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
@@ -379,3 +382,34 @@ resource "powerdns_zone_cryptokey" "test-rsa" {
 	algorithm = "rsasha256"
 	bits      = 2048
 }`
+
+// An unknown key size cannot be compared yet, so the key is replaced.
+func TestCryptokeyUnknownBitsRequireReplace(t *testing.T) {
+	h := newResourceHarness(t, newZoneCryptokeyResource(), &ProviderClients{})
+	attribute := h.schema.Attributes["bits"]
+	modifiers := attribute.(interface {
+		Int64PlanModifiers() []planmodifier.Int64
+	}).Int64PlanModifiers()
+
+	present := tfsdk.State{Raw: tftypes.NewValue(tftypes.String, "x")}
+	run := func(config, plan, state types.Int64) bool {
+		resp := &planmodifier.Int64Response{PlanValue: plan}
+		for _, m := range modifiers {
+			m.PlanModifyInt64(context.Background(), planmodifier.Int64Request{
+				ConfigValue: config, PlanValue: plan, StateValue: state,
+				State: present, Plan: tfsdk.Plan{Raw: tftypes.NewValue(tftypes.String, "x")},
+			}, resp)
+		}
+		return resp.RequiresReplace
+	}
+	assert.True(t, run(types.Int64Unknown(), types.Int64Unknown(), types.Int64Value(2048)))
+	assert.False(t, run(types.Int64Null(), types.Int64Value(2048), types.Int64Value(2048)))
+	assert.True(t, run(types.Int64Value(4096), types.Int64Value(4096), types.Int64Value(2048)))
+}
+
+func TestCryptokeyCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusCreated, `{"id":7,"keytype":"csk","algorithm":"ECDSAP256SHA256","bits":256}`, 0, ""))
+	assertCreateKeepsState(t, newZoneCryptokeyResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"zone": tfString("kept.example."), "keytype": tfString("csk"), "algorithm": tfString("ecdsa256")},
+		"kept.example.:7")
+}

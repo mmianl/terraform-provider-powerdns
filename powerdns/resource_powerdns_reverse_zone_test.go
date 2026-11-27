@@ -1,9 +1,11 @@
 package powerdns
 
 import (
+	"net/http"
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
@@ -186,3 +188,10 @@ resource "powerdns_reverse_zone" "test_ipv6" {
   nameservers = ["ns1.example.com."]
 }
 `
+
+func TestReverseZoneCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusCreated, `{"id":"2.0.192.in-addr.arpa.","name":"2.0.192.in-addr.arpa."}`, 0, ""))
+	assertCreateKeepsState(t, newReverseZoneResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"cidr": tfString("192.0.2.0/24"), "kind": tfString("Native")},
+		"2.0.192.in-addr.arpa.")
+}

@@ -1,9 +1,11 @@
 package powerdns
 
 import (
+	"net/http"
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
@@ -91,3 +93,10 @@ resource "powerdns_network" "test" {
   network = "192.0.2.0/24"
   view    = ".invalid-view"
 }`
+
+func TestNetworkCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusNoContent, "", 0, ""))
+	assertCreateKeepsState(t, newNetworkResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"network": tfString("192.0.2.0/24"), "view": tfString("internal")},
+		"192.0.2.0/24")
+}

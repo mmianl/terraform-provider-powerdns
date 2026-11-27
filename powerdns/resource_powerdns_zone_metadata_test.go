@@ -1,8 +1,10 @@
 package powerdns
 
 import (
+	"net/http"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
@@ -72,3 +74,10 @@ resource "powerdns_zone_metadata" "test-also-notify" {
   metadata = ["192.0.2.99"]
 }
 `
+
+func TestZoneMetadataCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusNoContent, "", 0, ""))
+	assertCreateKeepsState(t, newZoneMetadataResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"zone": tfString("kept.example."), "kind": tfString("ALSO-NOTIFY"), "metadata": tfStringSet("192.0.2.1")},
+		"kept.example.:::ALSO-NOTIFY")
+}

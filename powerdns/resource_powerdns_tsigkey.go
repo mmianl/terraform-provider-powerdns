@@ -183,7 +183,9 @@ func (r *tsigKeyResource) Create(ctx context.Context, req resource.CreateRequest
 	tflog.Info(ctx, "Created PowerDNS TSIG key", map[string]any{"id": created.ID})
 
 	if !r.refresh(ctx, &plan, &resp.Diagnostics) {
-		if !resp.Diagnostics.HasError() {
+		if resp.Diagnostics.HasError() {
+			keepCreated(ctx, req.Plan, &resp.State, created.ID, &resp.Diagnostics)
+		} else {
 			resp.Diagnostics.AddError("TSIG key not found after creation", created.ID)
 		}
 		return
