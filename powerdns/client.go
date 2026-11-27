@@ -82,6 +82,10 @@ type BaseClient struct {
 	CacheEnable bool // Enable/Disable cache for REST API requests
 	Cache       *freecache.Cache
 	CacheTTL    int
+
+	// versionMu guards APIVersion, which is detected on the first request
+	// while Terraform may already be sending others in parallel.
+	versionMu sync.Mutex
 }
 
 // NewBaseClient constructs a BaseClient with HTTP, TLS and cache configuration.
@@ -124,17 +128,14 @@ func NewBaseClient(serverURL string, apiKey string, configTLS *tls.Config, cache
 
 // newRequest creates a new request against the API with necessary headers.
 func (client *BaseClient) newRequest(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
-	var err error
-	if client.APIVersion < 0 {
-		client.APIVersion, err = client.detectAPIVersion(ctx)
-	}
+	apiVersion, err := client.apiVersion(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	var urlStr string
-	if client.APIVersion > 0 {
-		urlStr = client.ServerURL + "/api/v" + strconv.Itoa(client.APIVersion) + endpoint
+	if apiVersion > 0 {
+		urlStr = client.ServerURL + "/api/v" + strconv.Itoa(apiVersion) + endpoint
 	} else {
 		urlStr = client.ServerURL + endpoint
 	}
@@ -161,6 +162,21 @@ func (client *BaseClient) newRequest(ctx context.Context, method string, endpoin
 	}
 
 	return req, nil
+}
+
+// apiVersion returns the API version, detecting it once on first use. A failed
+// detection is not remembered, so the next request tries again.
+func (client *BaseClient) apiVersion(ctx context.Context) (int, error) {
+	client.versionMu.Lock()
+	defer client.versionMu.Unlock()
+	if client.APIVersion < 0 {
+		version, err := client.detectAPIVersion(ctx)
+		if err != nil {
+			return -1, err
+		}
+		client.APIVersion = version
+	}
+	return client.APIVersion, nil
 }
 
 // Detects the API version in use on the server
