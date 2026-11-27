@@ -65,10 +65,18 @@ jobs:
   acc-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # A failure on a pre-release PowerDNS image is reported but does not block.
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Pre-release images of the next PowerDNS versions, to find
+          # incompatibilities before they are released.
+          - pdns-auth: "52"
+            pdns-recursor: "55"
+            pdns-conf-dir: "pdns.d-views"
+            experimental: true
           # Newest pairing, and the only one where every feature is available.
           - pdns-auth: "51"
             pdns-recursor: "54"
