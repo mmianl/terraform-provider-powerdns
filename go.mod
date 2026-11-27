@@ -1,13 +1,15 @@
 module github.com/terraform-providers/terraform-provider-powerdns
 
-go 1.26.10
+go 1.27.3
 
 require (
 	github.com/coocood/freecache v1.2.7
 	github.com/hashicorp/go-cleanhttp v0.5.2
-	github.com/hashicorp/go-cty v1.5.0
+	github.com/hashicorp/terraform-plugin-framework v1.19.0
+	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
+	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.11.0
-	github.com/hashicorp/terraform-plugin-sdk/v2 v2.40.1
+	github.com/hashicorp/terraform-plugin-testing v1.16.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/stretchr/testify v1.12.1
 )
@@ -24,6 +26,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-checkpoint v0.5.0 // indirect
+	github.com/hashicorp/go-cty v1.5.0 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-plugin v1.8.0 // indirect
@@ -35,7 +38,7 @@ require (
 	github.com/hashicorp/logutils v1.0.0 // indirect
 	github.com/hashicorp/terraform-exec v0.26.0 // indirect
 	github.com/hashicorp/terraform-json v0.29.0 // indirect
-	github.com/hashicorp/terraform-plugin-go v0.31.0 // indirect
+	github.com/hashicorp/terraform-plugin-sdk/v2 v2.40.1 // indirect
 	github.com/hashicorp/terraform-registry-address v0.5.1 // indirect
 	github.com/hashicorp/terraform-svchost v0.2.1 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
@@ -52,15 +55,15 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/zclconf/go-cty v1.20.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect
-	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/net v0.63.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261104224025-d1e00e9f33ab // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261118221215-c8830f628b3f // indirect
 	google.golang.org/grpc v1.85.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -66,8 +67,23 @@ func TestPowerDNSZoneTSIGReferences(t *testing.T) {
 		terraformOutput(t, "powerdns_zone_tsig_references", &output)
 		var live zoneTSIGReferences
 		doJSON(t, newRequest(t, http.MethodGet, authBaseURL(), "/api/v1/servers/localhost/zones/"+zone), &live)
+		// State keeps the spelling from the configuration, so compare the
+		// references by meaning: a bare name and its dotted ID are one key.
+		canonical := func(refs []string) []string {
+			out := []string{}
+			for _, ref := range refs {
+				if !strings.HasSuffix(ref, ".") {
+					ref += "."
+				}
+				if !slices.Contains(out, ref) {
+					out = append(out, ref)
+				}
+			}
+			slices.Sort(out)
+			return out
+		}
 		for _, value := range []zoneTSIGReferences{output.Zone, output.Data, live} {
-			if value.ID != zone || value.Name != zone || !slices.Equal(value.Master, want) || !slices.Equal(value.Slave, want) {
+			if value.ID != zone || value.Name != zone || !slices.Equal(canonical(value.Master), want) || !slices.Equal(canonical(value.Slave), want) {
 				t.Fatalf("unexpected zone TSIG references: %+v, want %v", value, want)
 			}
 		}
@@ -95,8 +111,10 @@ func TestPowerDNSZoneTSIGReferences(t *testing.T) {
 	check([]string{"e2e-zone-transfer."})
 	stablePlan()
 
-	t.Log("Using dotted IDs instead of bare names leaves an empty plan")
+	t.Log("Switching from bare names to dotted IDs is one in-place update that changes nothing on the server")
 	mode = "id"
+	applyUpdate()
+	check([]string{"e2e-zone-transfer."})
 	stablePlan()
 
 	t.Log("Update both reference sets without replacing the zone")

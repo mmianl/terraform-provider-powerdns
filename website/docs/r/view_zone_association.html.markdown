@@ -36,6 +36,12 @@ resource "powerdns_view_zone_association" "private" {
 - `view` - (Required, Forces new resource) Name of the PowerDNS view.
 - `zone` - (Required, Forces new resource) Name of the zone to associate with the view. This may be a normal FQDN zone such as `example.com.` or a variant zone such as `example.com..internal`.
 
+## Attribute Reference
+
+This resource exports the following attributes in addition to the arguments above:
+
+- `id` - The view and zone names joined by `:::`, for example `internal:::private.example.`.
+
 ## Importing
 
 Import using the view name, three colons (`:::`), and the zone name.

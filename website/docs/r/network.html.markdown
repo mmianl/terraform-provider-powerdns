@@ -43,6 +43,12 @@ The following arguments are supported:
 - `network` - (Required, Forces new resource) Client source network in CIDR notation, for example `192.0.2.0/24` or `2001:db8::/32`.
 - `view` - (Required) Name of the PowerDNS view assigned to the network.
 
+## Attribute Reference
+
+This resource exports the following attributes in addition to the arguments above:
+
+- `id` - The network in CIDR notation.
+
 ## Importing
 
 Import using the network CIDR.

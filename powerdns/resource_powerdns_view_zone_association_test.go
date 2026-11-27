@@ -7,16 +7,16 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccPDNSViewZoneAssociationBasic(t *testing.T) {
 	resourceName := "powerdns_view_zone_association.test"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckViews(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckViews(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy: func(s *terraform.State) error {
 			return testAccCheckPDNSViewZoneAssociationDestroy(s)
 		},
@@ -40,8 +40,8 @@ func TestAccPDNSViewZoneAssociationBasic(t *testing.T) {
 
 func TestAccPDNSViewZoneAssociationInvalidView(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckViews(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckViews(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPDNSViewZoneAssociationConfigInvalidView,
@@ -53,12 +53,12 @@ func TestAccPDNSViewZoneAssociationInvalidView(t *testing.T) {
 
 func TestAccPDNSViewZoneAssociationInvalidZone(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckViews(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckViews(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPDNSViewZoneAssociationConfigInvalidZone,
-				ExpectError: regexp.MustCompile("variant name may contain only lowercase letters, digits, underscore and dash"),
+				ExpectError: regexp.MustCompile(`variant name may contain only lowercase letters, digits, underscore\s+and dash`),
 			},
 		},
 	})

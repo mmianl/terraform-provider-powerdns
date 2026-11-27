@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -126,30 +126,30 @@ func TestRecordCreateRejectsOverwriteAcrossCachedAliases(t *testing.T) {
 		return
 	}
 	assert.Empty(t, records)
-	newRecord := func(content string) *schema.ResourceData {
-		return schema.TestResourceDataRaw(t, resourcePDNSRecord().Schema, map[string]interface{}{
-			"zone": "example.com.", "name": "www.example.com.", "type": "A",
-			"ttl": 300, "records": []interface{}{content},
-		})
+	newRecord := func(content string) map[string]tftypes.Value {
+		return map[string]tftypes.Value{
+			"zone": tfString("example.com."), "name": tfString("www.example.com."), "type": tfString("A"),
+			"ttl": tfInt(300), "records": tfStringSet(content),
+		}
 	}
-	first := newRecord("192.0.2.1")
-	diags := resourcePDNSRecordCreate(ctx, first, &ProviderClients{PDNS: aliasA})
+	first := newResourceHarness(t, newRecordResource(), &ProviderClients{PDNS: aliasA})
+	state, diags := first.create(newRecord("192.0.2.1"))
 	if !assert.False(t, diags.HasError(), "%v", diags) {
 		return
 	}
-	assert.NotEmpty(t, first.Id())
+	assert.NotEmpty(t, tfAttrString(t, state, "id"))
 
 	// A's write invalidates only A's cache, so B still sees its empty snapshot.
 	records, err = aliasB.ListRecords(ctx, "example.com.")
 	assert.NoError(t, err)
 	assert.Empty(t, records)
 
-	second := newRecord("192.0.2.2")
-	diags = resourcePDNSRecordCreate(ctx, second, &ProviderClients{PDNS: aliasB})
+	second := newResourceHarness(t, newRecordResource(), &ProviderClients{PDNS: aliasB})
+	state, diags = second.create(newRecord("192.0.2.2"))
 	if assert.True(t, diags.HasError(), "the second alias must refuse to overwrite the first record") {
-		assert.Contains(t, diags[0].Summary, "already exists")
+		assert.Contains(t, diags[0].Detail(), "already exists")
 	}
-	assert.Empty(t, second.Id())
+	assert.Empty(t, tfAttrString(t, state, "id"))
 	assert.Equal(t, 1, patchCalls, "only the first create may write to PowerDNS")
 }
 

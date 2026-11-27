@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccPowerDNSRecursorConfig_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckRecursor(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckRecursor(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSRecursorConfigConfig,

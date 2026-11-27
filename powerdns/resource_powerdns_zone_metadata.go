@@ -6,154 +6,73 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-func resourcePDNSZoneMetadata() *schema.Resource {
-	return &schema.Resource{
-		CreateContext: resourcePDNSZoneMetadataCreate,
-		ReadContext:   resourcePDNSZoneMetadataRead,
-		UpdateContext: resourcePDNSZoneMetadataUpdate,
-		DeleteContext: resourcePDNSZoneMetadataDelete,
+var (
+	_ resource.Resource                = &zoneMetadataResource{}
+	_ resource.ResourceWithConfigure   = &zoneMetadataResource{}
+	_ resource.ResourceWithImportState = &zoneMetadataResource{}
+)
 
-		Importer: &schema.ResourceImporter{
-			StateContext: resourcePDNSZoneMetadataImport,
-		},
+func newZoneMetadataResource() resource.Resource { return &zoneMetadataResource{} }
 
-		Schema: map[string]*schema.Schema{
-			"zone": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ForceNew:     true,
-				ValidateFunc: ValidateZoneName,
-				Description:  "Zone name, for example \"example.com.\".",
+type zoneMetadataResource struct {
+	clients *ProviderClients
+}
+
+type zoneMetadataModel struct {
+	ID       types.String `tfsdk:"id"`
+	Zone     types.String `tfsdk:"zone"`
+	Kind     types.String `tfsdk:"kind"`
+	Metadata types.Set    `tfsdk:"metadata"`
+}
+
+func (r *zoneMetadataResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_zone_metadata"
+}
+
+func (r *zoneMetadataResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "Manages one kind of PowerDNS zone metadata.",
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Description:   "The zone and metadata kind joined by `:::`.",
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"kind": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: "Metadata kind as used by PowerDNS, for example \"ALSO-NOTIFY\" or \"ALLOW-AXFR-FROM\".",
+			"zone": schema.StringAttribute{
+				Required:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				Validators:    []validator.String{validateWith(ValidateZoneName)},
+				Description:   "Zone name, for example \"example.com.\".",
 			},
-			"metadata": {
-				Type:        schema.TypeSet,
+			"kind": schema.StringAttribute{
+				Required:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				Description:   "Metadata kind as used by PowerDNS, for example \"ALSO-NOTIFY\" or \"ALLOW-AXFR-FROM\".",
+			},
+			"metadata": schema.SetAttribute{
 				Required:    true,
-				MinItems:    1,
-				Elem:        &schema.Schema{Type: schema.TypeString},
+				ElementType: types.StringType,
+				Validators:  []validator.Set{setvalidator.SizeAtLeast(1)},
 				Description: "Set of values for this metadata kind.",
 			},
 		},
 	}
 }
 
-func resourcePDNSZoneMetadataCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
-
-	zone := d.Get("zone").(string)
-	kind := d.Get("kind").(string)
-	values := expandStringSet(d.Get("metadata").(*schema.Set))
-
-	ctx = tflog.SetField(ctx, "zone", zone)
-	ctx = tflog.SetField(ctx, "kind", kind)
-	tflog.Debug(ctx, "Creating PowerDNS zone metadata")
-
-	if err := client.PDNS.ReplaceZoneMetadata(ctx, zone, kind, values); err != nil {
-		return diag.FromErr(fmt.Errorf("error creating zone metadata %s for %s: %w", kind, zone, err))
-	}
-
-	d.SetId(zoneMetadataID(zone, kind))
-	return resourcePDNSZoneMetadataRead(ctx, d, meta)
-}
-
-func resourcePDNSZoneMetadataRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
-
-	zone := d.Get("zone").(string)
-	kind := d.Get("kind").(string)
-
-	ctx = tflog.SetField(ctx, "zone", zone)
-	ctx = tflog.SetField(ctx, "kind", kind)
-	tflog.Debug(ctx, "Reading PowerDNS zone metadata")
-
-	allMetadata, err := client.PDNS.ListZoneMetadata(ctx, zone)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			tflog.Warn(ctx, "Zone no longer exists; removing metadata from state")
-			d.SetId("")
-			return nil
-		}
-		return diag.FromErr(fmt.Errorf("couldn't fetch zone metadata for %s: %w", zone, err))
-	}
-
-	values := getMetadataValues(allMetadata, kind)
-	if len(values) == 0 {
-		tflog.Warn(ctx, "Zone metadata not found; removing from state")
-		d.SetId("")
-		return nil
-	}
-
-	if err := d.Set("zone", zone); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting zone for metadata resource: %w", err))
-	}
-	if err := d.Set("kind", kind); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting kind for metadata resource: %w", err))
-	}
-	if err := d.Set("metadata", values); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting metadata values: %w", err))
-	}
-
-	return nil
-}
-
-func resourcePDNSZoneMetadataUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
-
-	zone := d.Get("zone").(string)
-	kind := d.Get("kind").(string)
-
-	if d.HasChange("metadata") {
-		values := expandStringSet(d.Get("metadata").(*schema.Set))
-		if err := client.PDNS.ReplaceZoneMetadata(ctx, zone, kind, values); err != nil {
-			return diag.FromErr(fmt.Errorf("error updating zone metadata %s for %s: %w", kind, zone, err))
-		}
-	}
-
-	return resourcePDNSZoneMetadataRead(ctx, d, meta)
-}
-
-func resourcePDNSZoneMetadataDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
-
-	zone := d.Get("zone").(string)
-	kind := d.Get("kind").(string)
-
-	ctx = tflog.SetField(ctx, "zone", zone)
-	ctx = tflog.SetField(ctx, "kind", kind)
-	tflog.Debug(ctx, "Deleting PowerDNS zone metadata")
-
-	if err := client.PDNS.DeleteZoneMetadata(ctx, zone, kind); err != nil {
-		return diag.FromErr(fmt.Errorf("error deleting zone metadata %s for %s: %w", kind, zone, err))
-	}
-
-	return nil
-}
-
-func resourcePDNSZoneMetadataImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	zone, kind, err := parseZoneMetadataID(d.Id())
-	if err != nil {
-		return nil, err
-	}
-
-	if err := d.Set("zone", zone); err != nil {
-		return nil, fmt.Errorf("error setting zone in import: %w", err)
-	}
-	if err := d.Set("kind", kind); err != nil {
-		return nil, fmt.Errorf("error setting kind in import: %w", err)
-	}
-	d.SetId(zoneMetadataID(zone, kind))
-
-	return []*schema.ResourceData{d}, nil
+func (r *zoneMetadataResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.clients = clientsFromProviderData(req.ProviderData, &resp.Diagnostics)
 }
 
 func zoneMetadataID(zone string, kind string) string {
@@ -169,4 +88,131 @@ func parseZoneMetadataID(id string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid zone metadata id %q, zone and kind must be non-empty", id)
 	}
 	return parts[0], parts[1], nil
+}
+
+func (r *zoneMetadataResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	zone, kind, err := parseZoneMetadataID(req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid import id", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), zoneMetadataID(zone, kind))...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("zone"), zone)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("kind"), kind)...)
+}
+
+func (r *zoneMetadataResource) write(ctx context.Context, m *zoneMetadataModel, diags *diag.Diagnostics) {
+	zone := m.Zone.ValueString()
+	kind := m.Kind.ValueString()
+	values := stringsFromSet(ctx, m.Metadata, diags)
+	if diags.HasError() {
+		return
+	}
+
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "kind", kind)
+	tflog.Debug(ctx, "Writing PowerDNS zone metadata")
+
+	if err := r.clients.PDNS.ReplaceZoneMetadata(ctx, zone, kind, values); err != nil {
+		diags.AddError("Error writing zone metadata", fmt.Sprintf("error writing zone metadata %s for %s: %s", kind, zone, err))
+		return
+	}
+
+	m.ID = types.StringValue(zoneMetadataID(zone, kind))
+	if !r.refresh(ctx, m, diags) && !diags.HasError() {
+		diags.AddError("Zone metadata not found after write", m.ID.ValueString())
+	}
+}
+
+// refresh loads the metadata into m, reporting false if it is gone.
+func (r *zoneMetadataResource) refresh(ctx context.Context, m *zoneMetadataModel, diags *diag.Diagnostics) bool {
+	zone := m.Zone.ValueString()
+	kind := m.Kind.ValueString()
+
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "kind", kind)
+	tflog.Debug(ctx, "Reading PowerDNS zone metadata")
+
+	allMetadata, err := r.clients.PDNS.ListZoneMetadata(ctx, zone)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			tflog.Warn(ctx, "Zone no longer exists; removing metadata from state")
+			return false
+		}
+		diags.AddError("Couldn't fetch zone metadata", fmt.Sprintf("couldn't fetch zone metadata for %s: %s", zone, err))
+		return false
+	}
+
+	values := getMetadataValues(allMetadata, kind)
+	if len(values) == 0 {
+		tflog.Warn(ctx, "Zone metadata not found; removing from state")
+		return false
+	}
+
+	set, d := types.SetValueFrom(ctx, types.StringType, values)
+	diags.Append(d...)
+	if d.HasError() {
+		return false
+	}
+	m.Metadata = set
+	return true
+}
+
+func (r *zoneMetadataResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan zoneMetadataModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	r.write(ctx, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+func (r *zoneMetadataResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state zoneMetadataModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if !r.refresh(ctx, &state, &resp.Diagnostics) {
+		if !resp.Diagnostics.HasError() {
+			resp.State.RemoveResource(ctx)
+		}
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+func (r *zoneMetadataResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan zoneMetadataModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	r.write(ctx, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+func (r *zoneMetadataResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state zoneMetadataModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	zone := state.Zone.ValueString()
+	kind := state.Kind.ValueString()
+
+	ctx = tflog.SetField(ctx, "zone", zone)
+	ctx = tflog.SetField(ctx, "kind", kind)
+	tflog.Debug(ctx, "Deleting PowerDNS zone metadata")
+
+	if err := r.clients.PDNS.DeleteZoneMetadata(ctx, zone, kind); err != nil {
+		resp.Diagnostics.AddError("Error deleting zone metadata", fmt.Sprintf("error deleting zone metadata %s for %s: %s", kind, zone, err))
+	}
 }

@@ -39,6 +39,12 @@ The following arguments are supported:
 - `kind` - (Required, Forces new resource) Metadata kind name exactly as expected by PowerDNS (for example `ALSO-NOTIFY`).
 - `metadata` - (Required) Set of values for the metadata kind.
 
+## Attribute Reference
+
+This resource exports the following attributes in addition to the arguments above:
+
+- `id` - The zone and metadata kind joined by `:::`, for example `example.com.:::ALSO-NOTIFY`.
+
 ## Importing
 
 Import format is `<zone>:::<kind>`.

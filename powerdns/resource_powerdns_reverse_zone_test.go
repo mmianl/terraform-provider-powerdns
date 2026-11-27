@@ -4,14 +4,14 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccPowerDNSReverseZone_CIDR(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSReverseZoneConfig_CIDR_8,
@@ -55,9 +55,9 @@ func TestAccPowerDNSReverseZone_CIDR(t *testing.T) {
 
 func TestAccPowerDNSReverseZone_InvalidCIDR(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPowerDNSReverseZoneConfig_InvalidCIDR,
@@ -69,9 +69,9 @@ func TestAccPowerDNSReverseZone_InvalidCIDR(t *testing.T) {
 
 func TestAccPowerDNSReverseZone_IPv6(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSReverseZoneConfig_IPv6,
@@ -88,9 +88,9 @@ func TestAccPowerDNSReverseZone_IPv6(t *testing.T) {
 
 func TestAccPowerDNSReverseZone_InvalidIPv6Prefix(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPowerDNSReverseZoneConfig_InvalidIPv6Prefix,

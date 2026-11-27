@@ -6,69 +6,9 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/go-cty/cty"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
-
-func TestRRSetDisabledConfigured(t *testing.T) {
-	testCases := []struct {
-		name     string
-		raw      cty.Value
-		expected bool
-	}{
-		{
-			name: "omitted",
-			raw: cty.ObjectVal(map[string]cty.Value{
-				"zone":     cty.StringVal("example.com."),
-				"name":     cty.StringVal("www.example.com."),
-				"type":     cty.StringVal("A"),
-				"ttl":      cty.NumberIntVal(300),
-				"disabled": cty.NullVal(cty.Bool),
-				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
-				"comments": cty.NullVal(cty.List(cty.String)),
-				"set_ptr":  cty.NullVal(cty.Bool),
-			}),
-			expected: false,
-		},
-		{
-			name: "explicit false",
-			raw: cty.ObjectVal(map[string]cty.Value{
-				"zone":     cty.StringVal("example.com."),
-				"name":     cty.StringVal("www.example.com."),
-				"type":     cty.StringVal("A"),
-				"ttl":      cty.NumberIntVal(300),
-				"disabled": cty.BoolVal(false),
-				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
-				"comments": cty.NullVal(cty.List(cty.String)),
-				"set_ptr":  cty.NullVal(cty.Bool),
-			}),
-			expected: true,
-		},
-		{
-			name: "explicit true",
-			raw: cty.ObjectVal(map[string]cty.Value{
-				"zone":     cty.StringVal("example.com."),
-				"name":     cty.StringVal("www.example.com."),
-				"type":     cty.StringVal("A"),
-				"ttl":      cty.NumberIntVal(300),
-				"disabled": cty.BoolVal(true),
-				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
-				"comments": cty.NullVal(cty.List(cty.String)),
-				"set_ptr":  cty.NullVal(cty.Bool),
-			}),
-			expected: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := rrSetDisabledConfigured(tc.raw); got != tc.expected {
-				t.Fatalf("rrSetDisabledConfigured() = %t, want %t", got, tc.expected)
-			}
-		})
-	}
-}
 
 func TestShouldPreserveRecordDisabledFlags(t *testing.T) {
 	testCases := []struct {
@@ -120,61 +60,19 @@ func TestShouldPreserveRecordDisabledFlags(t *testing.T) {
 
 func TestConfiguredRRSetDisabledValue(t *testing.T) {
 	testCases := []struct {
-		name     string
-		raw      cty.Value
-		disabled bool
-		expected bool
+		name       string
+		configured bool
+		disabled   bool
+		expected   bool
 	}{
-		{
-			name: "omitted keeps default false",
-			raw: cty.ObjectVal(map[string]cty.Value{
-				"zone":     cty.StringVal("example.com."),
-				"name":     cty.StringVal("www.example.com."),
-				"type":     cty.StringVal("A"),
-				"ttl":      cty.NumberIntVal(300),
-				"disabled": cty.NullVal(cty.Bool),
-				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
-				"comments": cty.NullVal(cty.List(cty.String)),
-				"set_ptr":  cty.NullVal(cty.Bool),
-			}),
-			disabled: true,
-			expected: false,
-		},
-		{
-			name: "explicit true is preserved",
-			raw: cty.ObjectVal(map[string]cty.Value{
-				"zone":     cty.StringVal("example.com."),
-				"name":     cty.StringVal("www.example.com."),
-				"type":     cty.StringVal("A"),
-				"ttl":      cty.NumberIntVal(300),
-				"disabled": cty.BoolVal(true),
-				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
-				"comments": cty.NullVal(cty.List(cty.String)),
-				"set_ptr":  cty.NullVal(cty.Bool),
-			}),
-			disabled: true,
-			expected: true,
-		},
-		{
-			name: "explicit false is preserved",
-			raw: cty.ObjectVal(map[string]cty.Value{
-				"zone":     cty.StringVal("example.com."),
-				"name":     cty.StringVal("www.example.com."),
-				"type":     cty.StringVal("A"),
-				"ttl":      cty.NumberIntVal(300),
-				"disabled": cty.BoolVal(false),
-				"records":  cty.SetVal([]cty.Value{cty.StringVal("192.0.2.1")}),
-				"comments": cty.NullVal(cty.List(cty.String)),
-				"set_ptr":  cty.NullVal(cty.Bool),
-			}),
-			disabled: false,
-			expected: false,
-		},
+		{name: "omitted keeps default false", configured: false, disabled: true, expected: false},
+		{name: "explicit true is preserved", configured: true, disabled: true, expected: true},
+		{name: "explicit false is preserved", configured: true, disabled: false, expected: false},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := configuredRRSetDisabledValue(tc.raw, tc.disabled); got != tc.expected {
+			if got := configuredRRSetDisabledValue(tc.configured, tc.disabled); got != tc.expected {
 				t.Fatalf("configuredRRSetDisabledValue() = %t, want %t", got, tc.expected)
 			}
 		})
@@ -183,8 +81,8 @@ func TestConfiguredRRSetDisabledValue(t *testing.T) {
 
 func TestAccPDNSRecord_Empty(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSRecordConfigRecordEmpty,
@@ -199,9 +97,9 @@ func TestAccPDNSRecord_A(t *testing.T) {
 	resourceID := `{"zone":"rec-a.sysa.xyz.","id":"test.rec-a.sysa.xyz.:::A"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigA,
@@ -225,9 +123,9 @@ func TestAccPDNSRecord_Disabled(t *testing.T) {
 	resourceID := `{"zone":"rec-adisabled.sysa.xyz.","id":"test.rec-adisabled.sysa.xyz.:::A"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigADisabled,
@@ -250,9 +148,9 @@ func TestAccPDNSRecord_DisabledRefreshNoDiff(t *testing.T) {
 	resourceName := "powerdns_record.test-a-disabled-refresh"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigADisabledRefresh,
@@ -278,9 +176,9 @@ func TestAccPDNSRecord_OmittedDisabledPreservesExistingFlags(t *testing.T) {
 	resourceName := "powerdns_record.test-a-omit-disabled"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigAOmittedDisabledInitial,
@@ -318,9 +216,9 @@ func TestAccPDNSRecord_WithComments(t *testing.T) {
 	resourceID := `{"zone":"rec-acomments.sysa.xyz.","id":"test.rec-acomments.sysa.xyz.:::A"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckComments(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheckComments(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigAWithComments,
@@ -346,9 +244,9 @@ func TestAccPDNSRecord_WithPtr(t *testing.T) {
 	resourceID := `{"zone":"rec-aptr.sysa.xyz.","id":"test.rec-aptr.sysa.xyz.:::A"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigAWithPtr,
@@ -372,9 +270,9 @@ func TestAccPDNSRecord_WithCount(t *testing.T) {
 	resourceID1 := `{"zone":"rec-count.sysa.xyz.","id":"test-1.rec-count.sysa.xyz.:::A"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigHyphenedWithCount,
@@ -404,9 +302,9 @@ func TestAccPDNSRecord_AAAA(t *testing.T) {
 	resourceID := `{"zone":"rec-aaaa.sysa.xyz.","id":"test.rec-aaaa.sysa.xyz.:::AAAA"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigAAAA,
@@ -429,9 +327,9 @@ func TestAccPDNSRecord_CNAME(t *testing.T) {
 	resourceID := `{"zone":"rec-cname.sysa.xyz.","id":"test.rec-cname.sysa.xyz.:::CNAME"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigCNAME,
@@ -454,9 +352,9 @@ func TestAccPDNSRecord_HINFO(t *testing.T) {
 	resourceID := `{"zone":"rec-hinfo.sysa.xyz.","id":"test.rec-hinfo.sysa.xyz.:::HINFO"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigHINFO,
@@ -479,9 +377,9 @@ func TestAccPDNSRecord_LOC(t *testing.T) {
 	resourceID := `{"zone":"rec-loc.sysa.xyz.","id":"test.rec-loc.sysa.xyz.:::LOC"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigLOC,
@@ -506,9 +404,9 @@ func TestAccPDNSRecord_MX(t *testing.T) {
 	resourceIDMulti := `{"zone":"rec-mx.sysa.xyz.","id":"multi.rec-mx.sysa.xyz.:::MX"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigMX,
@@ -543,9 +441,9 @@ func TestAccPDNSRecord_NAPTR(t *testing.T) {
 	resourceID := `{"zone":"rec-naptr.sysa.xyz.","id":"rec-naptr.sysa.xyz.:::NAPTR"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigNAPTR,
@@ -568,9 +466,9 @@ func TestAccPDNSRecord_NS(t *testing.T) {
 	resourceID := `{"zone":"rec-ns.sysa.xyz.","id":"lab.rec-ns.sysa.xyz.:::NS"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigNS,
@@ -593,9 +491,9 @@ func TestAccPDNSRecord_SPF(t *testing.T) {
 	resourceID := `{"zone":"rec-spf.sysa.xyz.","id":"rec-spf.sysa.xyz.:::SPF"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigSPF,
@@ -618,9 +516,9 @@ func TestAccPDNSRecord_SSHFP(t *testing.T) {
 	resourceID := `{"zone":"rec-sshfp.sysa.xyz.","id":"ssh.rec-sshfp.sysa.xyz.:::SSHFP"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigSSHFP,
@@ -643,9 +541,9 @@ func TestAccPDNSRecord_SRV(t *testing.T) {
 	resourceID := `{"zone":"rec-srv.sysa.xyz.","id":"_redis._tcp.rec-srv.sysa.xyz.:::SRV"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigSRV,
@@ -668,9 +566,9 @@ func TestAccPDNSRecord_TXT(t *testing.T) {
 	resourceID := `{"zone":"rec-txt.sysa.xyz.","id":"text.rec-txt.sysa.xyz.:::TXT"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigTXT,
@@ -693,9 +591,9 @@ func TestAccPDNSRecord_ALIAS(t *testing.T) {
 	resourceID := `{"zone":"rec-alias.sysa.xyz.","id":"alias.rec-alias.sysa.xyz.:::ALIAS"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordConfigALIAS,
@@ -715,12 +613,12 @@ func TestAccPDNSRecord_ALIAS(t *testing.T) {
 
 func TestAccPDNSRecord_SOA(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSRecordConfigSOA,
-				ExpectError: regexp.MustCompile("use the powerdns_record_soa resource instead"),
+				ExpectError: regexp.MustCompile(`use the\s+powerdns_record_soa\s+resource\s+instead`),
 			},
 		},
 	})
@@ -1133,9 +1031,9 @@ resource "powerdns_record" "test-soa" {
 // while the server keeps only one of them, leaving a plan that never converges.
 func TestAccPDNSRecordDuplicateRRSetIsRejected(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSRecordConfigDuplicateRRSet,

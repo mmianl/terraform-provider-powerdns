@@ -50,3 +50,9 @@ The following arguments are supported:
 - `cache_mem_size` - (Optional) Memory size in MB for a cache of the PowerDNS REST API requests. This can also be specified with the `PDNS_CACHE_MEM_SIZE` environment variable.
 - `cache_ttl` - (Optional) TTL in seconds for a cache of the PowerDNS REST API requests. This can also be specified with the `PDNS_CACHE_TTL` environment variable.
 - `request_timeout` - (Optional) Timeout in seconds for a single API request, defaulting to 60. A server that accepts a connection and then stops responding would otherwise hold an apply open indefinitely. Set it to `0` to leave requests unbounded. This can also be specified with the `PDNS_REQUEST_TIMEOUT` environment variable.
+
+## Upgrading
+
+The provider is built on the Terraform Plugin Framework and speaks protocol version 6, so it needs Terraform 1.0 or later. Existing state keeps working with no migration.
+
+Some values are compared by meaning, not by spelling, for example a zone `kind` in a different case, an IPv6 address in `masters` written another way, a TSIG key name with or without the trailing dot, or a cryptokey algorithm written as its number. State keeps the spelling from your configuration. If you change only the spelling, Terraform shows one in-place update that changes nothing on the server and never replaces the resource.

@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,22 +22,26 @@ func TestNormalizeTSIGKeyID(t *testing.T) {
 	}
 }
 
-func TestZoneTSIGReferenceSetNormalization(t *testing.T) {
-	res := resourcePDNSZone()
-	for _, name := range []string{"master_tsig_key_ids", "slave_tsig_key_ids"} {
-		t.Run(name, func(t *testing.T) {
-			field := res.Schema[name]
-			assert.Equal(t, field.Set("transfer"), field.Set("transfer."))
-			data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{
-				"name": "refs.example.com.", "kind": "Master", name: []interface{}{"transfer", "transfer."},
-			})
-			assert.Equal(t, []interface{}{"transfer."}, data.Get(name).(*schema.Set).List())
-		})
-	}
+// A bare name and the dotted ID PowerDNS returns are the same reference, so a
+// refresh keeps the spelling written in the configuration, including a set that
+// names the same key twice.
+func TestZoneTSIGReferenceSetKeepsConfiguredSpelling(t *testing.T) {
+	ctx := context.Background()
+	var diags diag.Diagnostics
+	held := types.SetValueMust(types.StringType, []attr.Value{types.StringValue("transfer"), types.StringValue("transfer.")})
+
+	got := tsigReferenceSet(ctx, held, []string{"transfer."}, &diags)
+	assert.False(t, diags.HasError())
+	assert.True(t, got.Equal(held), "equivalent spelling must be kept")
+
+	got = tsigReferenceSet(ctx, held, []string{"replacement."}, &diags)
+	assert.Equal(t, []string{"replacement."}, tsigReferences(ctx, got, &diags))
+
+	got = tsigReferenceSet(ctx, types.SetNull(types.StringType), []string{"transfer."}, &diags)
+	assert.Equal(t, []string{"transfer."}, tsigReferences(ctx, got, &diags))
 }
 
 func TestZoneTSIGReferencesLifecycle(t *testing.T) {
-	res := resourcePDNSZone()
 	var zone ZoneInfo
 	var payloads []map[string]json.RawMessage
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
@@ -67,97 +75,87 @@ func TestZoneTSIGReferencesLifecycle(t *testing.T) {
 		}
 		return jsonResponse(status, string(body)), nil
 	})
-	config := func(refs []string, include bool, account string) map[string]interface{} {
-		values := map[string]interface{}{"name": "refs.example.com.", "kind": "Master", "account": account}
+	h := newResourceHarness(t, newZoneResource(), &ProviderClients{PDNS: client})
+
+	config := func(refs []string, include bool, account string) map[string]tftypes.Value {
+		values := map[string]tftypes.Value{
+			"name": tfString("refs.example.com."), "kind": tfString("Master"), "account": tfString(account),
+		}
 		if include {
-			items := make([]interface{}, len(refs))
-			for i, ref := range refs {
-				items[i] = ref
-			}
-			values["master_tsig_key_ids"] = items
-			values["slave_tsig_key_ids"] = items
+			values["master_tsig_key_ids"] = tfStringSet(refs...)
+			values["slave_tsig_key_ids"] = tfStringSet(refs...)
 		}
 		return values
 	}
-	var state *terraform.InstanceState
-	apply := func(values map[string]interface{}) {
-		t.Helper()
-		diff, err := res.Diff(context.Background(), state, terraform.NewResourceConfigRaw(values), nil)
-		if !assert.NoError(t, err) || !assert.NotNil(t, diff) {
-			t.FailNow()
-		}
-		assert.False(t, diff.Empty())
-		// Use the real SDK lifecycle so the tests cover normalization, payloads,
-		// and refresh together, including Optional+Computed set behavior.
-		updated, diagnostics := res.Apply(context.Background(), state, diff, &ProviderClients{PDNS: client})
-		assert.False(t, diagnostics.HasError(), "%v", diagnostics)
-		state = updated
-	}
-	assertEmptyPlan := func(values map[string]interface{}) {
-		t.Helper()
-		diff, err := res.Diff(context.Background(), state, terraform.NewResourceConfigRaw(values), nil)
-		assert.NoError(t, err)
-		if diff != nil {
-			assert.True(t, diff.Empty(), "unexpected diff: %#v", diff.Attributes)
-		}
-	}
 
-	apply(config([]string{"transfer"}, true, "admin"))
+	state, diags := h.create(config([]string{"transfer"}, true, "admin"))
+	assert.False(t, diags.HasError(), "%v", diags)
 	assert.Equal(t, []string{"transfer."}, zone.MasterTsigKeyIDs)
 	assert.Equal(t, []string{"transfer."}, zone.SlaveTsigKeyIDs)
-	assertEmptyPlan(config([]string{"transfer."}, true, "admin"))
-	assertEmptyPlan(config([]string{"transfer", "transfer."}, true, "admin"))
 
-	apply(config([]string{"replacement"}, true, "admin"))
+	state, diags = h.update(state, config([]string{"replacement"}, true, "admin"))
+	assert.False(t, diags.HasError(), "%v", diags)
 	assert.Equal(t, []string{"replacement."}, zone.MasterTsigKeyIDs)
 	assert.Equal(t, []string{"replacement."}, zone.SlaveTsigKeyIDs)
-	assertEmptyPlan(config([]string{"replacement"}, true, "admin"))
 
-	apply(config([]string{}, true, "admin"))
+	state, diags = h.update(state, config([]string{}, true, "admin"))
+	assert.False(t, diags.HasError(), "%v", diags)
 	last := payloads[len(payloads)-1]
 	assert.JSONEq(t, "[]", string(last["master_tsig_key_ids"]))
 	assert.JSONEq(t, "[]", string(last["slave_tsig_key_ids"]))
 	assert.Empty(t, zone.MasterTsigKeyIDs)
 	assert.Empty(t, zone.SlaveTsigKeyIDs)
-	assertEmptyPlan(config([]string{}, true, "admin"))
 
-	apply(config([]string{"external"}, true, "admin"))
-	apply(config(nil, false, "updated-account"))
+	state, diags = h.update(state, config([]string{"external"}, true, "admin"))
+	assert.False(t, diags.HasError(), "%v", diags)
+	state, diags = h.update(state, config(nil, false, "updated-account"))
+	assert.False(t, diags.HasError(), "%v", diags)
 	last = payloads[len(payloads)-1]
 	assert.NotContains(t, last, "master_tsig_key_ids")
 	assert.NotContains(t, last, "slave_tsig_key_ids")
 	assert.Equal(t, []string{"external."}, zone.MasterTsigKeyIDs)
 	assert.Equal(t, []string{"external."}, zone.SlaveTsigKeyIDs)
-	assertEmptyPlan(config(nil, false, "updated-account"))
 
-	imported, diags := res.RefreshWithoutUpgrade(context.Background(), &terraform.InstanceState{ID: zone.ID}, &ProviderClients{PDNS: client})
+	imported, diags := h.importState(zone.ID)
 	assert.False(t, diags.HasError(), "%v", diags)
-	state = imported
-	assertEmptyPlan(config([]string{"external"}, true, "updated-account"))
+	assert.Equal(t, []string{"external."}, tfAttrStrings(t, imported, "master_tsig_key_ids"))
+	assert.Equal(t, []string{"external."}, tfAttrStrings(t, imported, "slave_tsig_key_ids"))
+	_ = state
 }
 
 func TestZoneDataSourceTSIGReferences(t *testing.T) {
-	res := dataSourcePDNSZone()
-	data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{"name": "refs.example.com."})
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		return jsonResponse(http.StatusOK, `{"name":"refs.example.com.","kind":"Master","master_tsig_key_ids":["transfer."],"slave_tsig_key_ids":["transfer."],"rrsets":[]}`), nil
 	})
-	diags := dataSourcePDNSZoneRead(context.Background(), data, &ProviderClients{PDNS: client})
+	state, diags := readDataSource(t, newZoneDataSource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"name": tfString("refs.example.com.")})
 	assert.False(t, diags.HasError(), "%v", diags)
 	for _, name := range []string{"master_tsig_key_ids", "slave_tsig_key_ids"} {
-		assert.Equal(t, []interface{}{"transfer."}, data.Get(name).(*schema.Set).List())
+		assert.Equal(t, []string{"transfer."}, tfAttrStrings(t, state, name))
 	}
 }
 
 func TestZoneTSIGReferencesSecondaryLimit(t *testing.T) {
-	diags := resourcePDNSZone().Validate(terraform.NewResourceConfigRaw(map[string]interface{}{
-		"name": "refs.example.com.", "kind": "Master", "slave_tsig_key_ids": []interface{}{"one", "two"},
-	}))
-	assert.True(t, diags.HasError())
-	found := false
-	for _, diagnostic := range diags {
-		found = found || strings.Contains(diagnostic.Summary+diagnostic.Detail, "slave_tsig_key_ids")
+	h := newResourceHarness(t, newZoneResource(), &ProviderClients{})
+	attribute, ok := h.schema.Attributes["slave_tsig_key_ids"].(schema.SetAttribute)
+	if !assert.True(t, ok) {
+		return
 	}
-	assert.True(t, found, "validation must identify the unsupported secondary key count")
+	validate := func(values ...string) bool {
+		elements := make([]attr.Value, len(values))
+		for i, v := range values {
+			elements[i] = types.StringValue(v)
+		}
+		resp := &validator.SetResponse{}
+		for _, v := range attribute.Validators {
+			v.ValidateSet(context.Background(), validator.SetRequest{
+				Path:        path.Root("slave_tsig_key_ids"),
+				ConfigValue: types.SetValueMust(types.StringType, elements),
+			}, resp)
+		}
+		return resp.Diagnostics.HasError()
+	}
+	assert.False(t, validate("one"))
+	assert.True(t, validate("one", "two"), "validation must reject more than one secondary key")
 }

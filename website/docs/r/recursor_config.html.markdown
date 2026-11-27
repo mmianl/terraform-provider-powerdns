@@ -43,6 +43,12 @@ This resource supports the following arguments:
 - Some configuration settings may require a recursor restart to take effect.
 - Deleting configuration parameters from the PowerDNS Recursor server is not supported. Destruction will only remove the state entries.
 
+## Attribute Reference
+
+This resource exports the following attributes in addition to the arguments above:
+
+- `id` - The name of the configuration setting.
+
 ## Importing
 
 An existing configuration setting can be imported using its name:

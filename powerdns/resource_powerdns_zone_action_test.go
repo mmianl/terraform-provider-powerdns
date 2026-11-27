@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,9 +53,9 @@ func TestZoneActionSurfacesServerError(t *testing.T) {
 
 func TestAccPDNSZoneNotify(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneNotifyConfig,
@@ -76,9 +76,9 @@ func TestAccPDNSZoneNotify(t *testing.T) {
 
 func TestAccPDNSZoneRectify(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneRectifyConfig,
@@ -99,8 +99,8 @@ func TestAccPDNSZoneRectify(t *testing.T) {
 
 func TestAccPDNSZoneActionMissingZone(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneNotifyMissingConfig,

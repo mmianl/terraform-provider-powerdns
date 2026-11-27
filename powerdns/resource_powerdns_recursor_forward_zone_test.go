@@ -8,9 +8,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,37 +46,29 @@ func TestRecursorForwardZoneImport(t *testing.T) {
 				assert.Equal(t, "/api/v1/servers/localhost/zones/example.com.", r.URL.Path)
 				return jsonResponse(http.StatusOK, tt.body), nil
 			})
-			res := resourcePDNSRecursorForwardZone()
-			data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{})
-			data.SetId("example.com.")
-			ctx := context.Background()
-			meta := &ProviderClients{Recursor: client}
-			imported, err := res.Importer.StateContext(ctx, data, meta)
-			if !assert.NoError(t, err) || !assert.Len(t, imported, 1) {
-				return
-			}
-			diags := res.ReadContext(ctx, imported[0], meta)
+			h := newResourceHarness(t, newRecursorForwardZoneResource(), &ProviderClients{Recursor: client})
+			imported, diags := h.importState("example.com.")
 			if tt.wantError != "" {
 				if assert.True(t, diags.HasError(), "unsupported zone must not be imported") {
-					assert.Contains(t, diags[0].Summary, tt.wantError)
+					assert.Contains(t, diags[0].Detail(), tt.wantError)
 				}
 				return
 			}
 			if !assert.False(t, diags.HasError(), "%v", diags) {
 				return
 			}
-			assert.Equal(t, "example.com.", imported[0].Get("zone"))
-			assert.Equal(t, "Forwarded", imported[0].Get("kind"))
-			assert.Equal(t, []interface{}{"192.0.2.1"}, imported[0].Get("servers"))
+			assert.Equal(t, "example.com.", tfAttrString(t, imported, "zone"))
+			assert.Equal(t, "Forwarded", tfAttrString(t, imported, "kind"))
+			assert.Equal(t, []string{"192.0.2.1"}, tfAttrStrings(t, imported, "servers"))
 		})
 	}
 }
 
 func TestAccPowerDNSRecursorForwardZone_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckRecursor(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPowerDNSRecursorForwardZoneDestroy,
+		PreCheck:                 func() { testAccPreCheckRecursor(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPowerDNSRecursorForwardZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSRecursorForwardZoneConfig,
@@ -112,20 +103,22 @@ resource "powerdns_recursor_forward_zone" "test" {
 // no diff and later flipping the setting on an update.
 func TestAccPowerDNSRecursorForwardZone_ImportRecursiveRejected(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckRecursor(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckRecursor(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				PreConfig: func() {
 					// PreConfig runs before the harness configures its provider.
 					// Use a fresh client so this test also works in isolation.
-					provider := Provider()
-					data := schema.TestResourceDataRaw(t, provider.Schema, map[string]interface{}{})
-					meta, diags := provider.ConfigureContextFunc(context.Background(), data)
-					if diags.HasError() {
-						t.Fatalf("failed to configure out-of-band client: %v", diags)
+					cfg, err := resolveConfig(providerModel{})
+					if err != nil {
+						t.Fatalf("failed to resolve out-of-band configuration: %v", err)
 					}
-					client := meta.(*ProviderClients)
+					_, recursor, err := cfg.Clients(context.Background())
+					if err != nil {
+						t.Fatalf("failed to configure out-of-band client: %v", err)
+					}
+					client := &ProviderClients{Recursor: recursor}
 					zone := &RecursorForwardZone{
 						Name:             "recursive.example.com.",
 						Type:             "Zone",
@@ -215,5 +208,21 @@ func testAccCheckPowerDNSRecursorForwardZoneExists(n string) resource.TestCheckF
 		}
 
 		return nil
+	}
+}
+
+func TestSameServerAddress(t *testing.T) {
+	for _, tc := range []struct {
+		configured, api string
+		want            bool
+	}{
+		{"192.0.2.1", "192.0.2.1", true},
+		{"pdns:5300", "172.23.0.2:5300", true},
+		{"ns.example.com", "192.0.2.9", true},
+		{"pdns:5300", "172.23.0.2:5301", false},
+		{"192.0.2.1", "192.0.2.2", false},
+		{"pdns:5300", "other:5300", false},
+	} {
+		assert.Equal(t, tc.want, sameServerAddress(tc.configured, tc.api), "%s vs %s", tc.configured, tc.api)
 	}
 }

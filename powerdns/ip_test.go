@@ -1,6 +1,9 @@
 package powerdns
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestValidateViewName(t *testing.T) {
 	tests := []struct {
@@ -181,9 +184,7 @@ func TestNormalizeMasterAddress(t *testing.T) {
 	}
 }
 
-func TestMasterAddressSetHashNormalizesIPv6(t *testing.T) {
-	masters := resourcePDNSZone().Schema["masters"]
-
+func TestMasterAddressSemanticEqualityNormalizesIPv6(t *testing.T) {
 	tests := []struct {
 		name       string
 		expanded   string
@@ -203,8 +204,11 @@ func TestMasterAddressSetHashNormalizesIPv6(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got, want := masters.Set(tt.expanded), masters.Set(tt.compressed); got != want {
-				t.Errorf("masters.Set(%q) = %d, want hash %d for %q", tt.expanded, got, want, tt.compressed)
+			prior := newSemanticString(masterAddressType, tt.expanded)
+			next := newSemanticString(masterAddressType, tt.compressed)
+			equal, diags := next.StringSemanticEquals(context.Background(), prior)
+			if diags.HasError() || !equal {
+				t.Errorf("%q and %q should be semantically equal (diags: %v)", tt.expanded, tt.compressed, diags)
 			}
 		})
 	}

@@ -5,7 +5,7 @@ The Terraform PowerDNS provider allows you to manage PowerDNS zones, records, vi
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads.html) 1.11.x
-- [Go](https://golang.org/doc/install) >=1.24.x (to build the provider plugin)
+- [Go](https://golang.org/doc/install) >=1.27.x (to build the provider plugin)
 - [Goreleaser](https://goreleaser.com) >=v6.3.x (for releasing provider plugin)
 
 ### PowerDNS versions
@@ -35,7 +35,7 @@ acceptance tests run against both LMDB and gpgsql for that reason:
 The tests ask the server what it supports and skip what it cannot do, so the
 same suite is meaningful against either backend.
 
-The Go ang Goreleaser minimum versions were set to be able to build plugin for Darwin/ARM64 architecture [see goreleaser notes.](https://goreleaser.com/deprecations/#builds-for-darwinarm64)
+The Go and Goreleaser minimum versions were set to be able to build plugin for Darwin/ARM64 architecture [see goreleaser notes.](https://goreleaser.com/deprecations/#builds-for-darwinarm64)
 
 ## Using the Provider
 
@@ -70,6 +70,10 @@ provider "powerdns" {
 - `powerdns_reverse_zone`
 - `powerdns_view_zone_association`
 - `powerdns_network`
+- `powerdns_tsigkey`
+- `powerdns_zone_cryptokey`
+- `powerdns_zone_notify`
+- `powerdns_zone_rectify`
 
 ### Supported recursor resources
 
@@ -86,6 +90,7 @@ The provider supports configuration via environment variables as an alternative 
 - `PDNS_SERVER_ID` - The ID of the PowerDNS Authoritative Server (defaults to `localhost`)
 - `PDNS_API_KEY` - The API key for authenticating with the PowerDNS server
 - `PDNS_RECURSOR_SERVER_URL` - The URL of the PowerDNS Recursor Server (e.g., `https://host:port/`)
+- `PDNS_RECURSOR_SERVER_ID` - The ID of the PowerDNS Recursor Server (defaults to `localhost`)
 
 When these environment variables are set, you can use the provider without explicit configuration:
 

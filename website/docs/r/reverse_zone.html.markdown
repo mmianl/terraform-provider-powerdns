@@ -50,6 +50,7 @@ This resource supports the following arguments:
 
 This resource exports the following attributes in addition to the arguments above:
 
+- `id` - The reverse zone name, with a trailing dot.
 - `name` - Computed zone name (e.g., '16.172.in-addr.arpa.' for IPv4 or '8.b.d.0.1.0.0.2.ip6.arpa.' for IPv6).
 
 ## Notes

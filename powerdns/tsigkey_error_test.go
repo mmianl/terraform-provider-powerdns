@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/go-cty/cty"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -46,27 +46,26 @@ func TestTSIGWriteOnlyErrorsRedactSecrets(t *testing.T) {
 					assert.NoError(t, err)
 					return jsonResponse(http.StatusUnprocessableEntity, string(body)), nil
 				})
-				res := resourcePDNSTSIGKey()
-				var state *terraform.InstanceState
-				version := 1
-				if operation == "update" {
-					version = 2
-					state = &terraform.InstanceState{ID: "tf-redacted.", Attributes: map[string]string{
-						"name": "tf-redacted", "algorithm": "hmac-sha256", "key_wo_version": "1",
-					}}
+				h := newResourceHarness(t, newTSIGKeyResource(), &ProviderClients{PDNS: client})
+				config := map[string]tftypes.Value{
+					"name": tfString("tf-redacted"), "algorithm": tfString("hmac-sha256"),
+					"key_wo": tfString(secret), "key_wo_version": tfInt(1),
 				}
-				diff, err := res.Diff(context.Background(), state, terraform.NewResourceConfigRaw(map[string]interface{}{
-					"name": "tf-redacted", "algorithm": "hmac-sha256", "key_wo": secret, "key_wo_version": version,
-				}), nil)
-				if !assert.NoError(t, err) || !assert.NotNil(t, diff) {
-					t.FailNow()
+				var diags diag.Diagnostics
+				if operation == "create" {
+					_, diags = h.create(config)
+				} else {
+					config["key_wo_version"] = tfInt(2)
+					prior := h.object(map[string]tftypes.Value{
+						"id": tfString("tf-redacted."), "name": tfString("tf-redacted"),
+						"algorithm": tfString("hmac-sha256"), "key_wo_version": tfInt(1),
+					})
+					_, diags = h.update(prior, config)
 				}
-				diff.RawConfig = cty.ObjectVal(map[string]cty.Value{"key_wo": cty.StringVal(secret)})
-				_, diags := res.Apply(context.Background(), state, diff, &ProviderClients{PDNS: client})
 				assert.True(t, diags.HasError())
 				assert.Equal(t, 1, mutations)
 				for _, diagnostic := range diags {
-					message := diagnostic.Summary + diagnostic.Detail
+					message := diagnostic.Summary() + diagnostic.Detail()
 					quoted := strconv.Quote(secret)
 					if strings.Contains(message, secret) || strings.Contains(message, quoted[1:len(quoted)-1]) {
 						t.Error("the Terraform diagnostic exposes submitted secret material")

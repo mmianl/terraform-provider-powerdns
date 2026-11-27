@@ -1,15 +1,11 @@
 package powerdns
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
 
-	"github.com/hashicorp/go-cty/cty"
-
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,21 +20,12 @@ func TestZoneFieldsCreateDefaults(t *testing.T) {
 				}
 				return jsonResponse(http.StatusOK, `{"name":"fields.example.","kind":"Native","api_rectify":true}`), nil
 			})
-			config := map[string]interface{}{"name": "fields.example.", "kind": "Native"}
+			config := map[string]tftypes.Value{"name": tfString("fields.example."), "kind": tfString("Native")}
 			if configured != nil {
-				config["api_rectify"] = configured
+				config["api_rectify"] = tfBool(configured.(bool))
 			}
-			res := resourcePDNSZone()
-			diff, err := res.Diff(context.Background(), nil, terraform.NewResourceConfigRaw(config), nil)
-			if !assert.NoError(t, err) || !assert.NotNil(t, diff) {
-				t.FailNow()
-			}
-			value := cty.NullVal(cty.Bool)
-			if configured != nil {
-				value = cty.BoolVal(configured.(bool))
-			}
-			diff.RawConfig = cty.ObjectVal(map[string]cty.Value{"api_rectify": value})
-			_, diags := res.Apply(context.Background(), nil, diff, &ProviderClients{PDNS: client})
+			h := newResourceHarness(t, newZoneResource(), &ProviderClients{PDNS: client})
+			_, diags := h.create(config)
 			assert.False(t, diags.HasError(), "%v", diags)
 			if configured == nil {
 				assert.NotContains(t, payload, "api_rectify", "omission must preserve the server default")
@@ -50,7 +37,6 @@ func TestZoneFieldsCreateDefaults(t *testing.T) {
 }
 
 func TestZoneFieldsUpdatePreservesUnmanagedSettings(t *testing.T) {
-	res := resourcePDNSZone()
 	zone := map[string]interface{}{
 		"id": "fields.example.", "name": "fields.example.", "kind": "Native", "account": "admin",
 		"dnssec": true, "api_rectify": true, "soa_edit": "INCEPTION-INCREMENT",
@@ -60,6 +46,7 @@ func TestZoneFieldsUpdatePreservesUnmanagedSettings(t *testing.T) {
 	var payload map[string]interface{}
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
 		if r.Method == http.MethodPut {
+			payload = nil
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 			for name, value := range payload {
 				zone[name] = value
@@ -71,60 +58,54 @@ func TestZoneFieldsUpdatePreservesUnmanagedSettings(t *testing.T) {
 		assert.NoError(t, err)
 		return jsonResponse(http.StatusOK, string(body)), nil
 	})
-	meta := &ProviderClients{PDNS: client}
-	state, diags := res.RefreshWithoutUpgrade(context.Background(), &terraform.InstanceState{ID: "fields.example."}, meta)
+	h := newResourceHarness(t, newZoneResource(), &ProviderClients{PDNS: client})
+
+	state, diags := h.importState("fields.example.")
 	if !assert.False(t, diags.HasError(), "%v", diags) {
 		t.FailNow()
 	}
-	config := map[string]interface{}{"name": "fields.example.", "kind": "Native", "account": "changed"}
-	apply := func() {
-		t.Helper()
-		diff, err := res.Diff(context.Background(), state, terraform.NewResourceConfigRaw(config), nil)
-		if !assert.NoError(t, err) || !assert.NotNil(t, diff) {
-			t.FailNow()
-		}
-		for _, change := range diff.Attributes {
-			assert.False(t, change.RequiresNew, "zone settings must update in place")
-		}
-		state, diags = res.Apply(context.Background(), state, diff, meta)
-		assert.False(t, diags.HasError(), "%v", diags)
+
+	config := map[string]tftypes.Value{
+		"name": tfString("fields.example."), "kind": tfString("Native"), "account": tfString("changed"),
 	}
-	apply()
+	state, diags = h.update(state, config)
+	assert.False(t, diags.HasError(), "%v", diags)
 	for _, name := range []string{"dnssec", "api_rectify", "soa_edit", "master_tsig_key_ids", "slave_tsig_key_ids"} {
 		assert.NotContains(t, payload, name, "an unrelated update must omit %s", name)
 	}
 	assert.Equal(t, true, zone["dnssec"])
 	assert.Equal(t, true, zone["api_rectify"])
 
-	config["dnssec"], config["api_rectify"], config["soa_edit"] = false, false, "INCEPTION"
-	apply()
+	config["dnssec"], config["api_rectify"], config["soa_edit"] = tfBool(false), tfBool(false), tfString("INCEPTION")
+	state, diags = h.update(state, config)
+	assert.False(t, diags.HasError(), "%v", diags)
 	assert.Equal(t, false, payload["dnssec"])
 	assert.Equal(t, false, payload["api_rectify"])
 	assert.Equal(t, "INCEPTION", payload["soa_edit"])
 	assert.NotContains(t, payload, "master_tsig_key_ids")
 	assert.NotContains(t, payload, "slave_tsig_key_ids")
-	diff, err := res.Diff(context.Background(), state, terraform.NewResourceConfigRaw(config), nil)
-	assert.NoError(t, err)
-	if diff != nil {
-		assert.True(t, diff.Empty(), "updated settings must converge")
+
+	for name, want := range map[string]int64{"serial": 42, "edited_serial": 43, "notified_serial": 40, "last_check": 7} {
+		assert.Equal(t, want, tfAttrInt(t, state, name), name)
 	}
-	for name, want := range map[string]string{"serial": "42", "edited_serial": "43", "notified_serial": "40", "last_check": "7"} {
-		assert.Equal(t, want, state.Attributes[name])
-	}
+	soaEdit := tfAttrString(t, state, "soa_edit")
+	assert.Equal(t, "INCEPTION", soaEdit)
 }
 
 func TestZoneDataSourceFields(t *testing.T) {
-	res := dataSourcePDNSZone()
-	data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{"name": "fields.example."})
 	client := newTestClient(func(r *http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusOK, `{"name":"fields.example.","kind":"Master","catalog":"catalog.example.","soa_edit":"INCEPTION-INCREMENT","dnssec":true,"api_rectify":true,"serial":42,"edited_serial":43,"notified_serial":40,"last_check":7,"rrsets":[]}`), nil
 	})
-	diags := dataSourcePDNSZoneRead(context.Background(), data, &ProviderClients{PDNS: client})
+	state, diags := readDataSource(t, newZoneDataSource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"name": tfString("fields.example.")})
 	assert.False(t, diags.HasError(), "%v", diags)
-	for name, want := range map[string]interface{}{
-		"catalog": "catalog.example.", "soa_edit": "INCEPTION-INCREMENT", "dnssec": true,
-		"api_rectify": true, "serial": 42, "edited_serial": 43, "notified_serial": 40, "last_check": 7,
-	} {
-		assert.Equal(t, want, data.Get(name), name)
+	assert.Equal(t, "catalog.example.", tfAttrString(t, state, "catalog"))
+	assert.Equal(t, "INCEPTION-INCREMENT", tfAttrString(t, state, "soa_edit"))
+	dnssec, _ := tfAttrBool(t, state, "dnssec")
+	rectify, _ := tfAttrBool(t, state, "api_rectify")
+	assert.True(t, dnssec)
+	assert.True(t, rectify)
+	for name, want := range map[string]int64{"serial": 42, "edited_serial": 43, "notified_serial": 40, "last_check": 7} {
+		assert.Equal(t, want, tfAttrInt(t, state, name), name)
 	}
 }

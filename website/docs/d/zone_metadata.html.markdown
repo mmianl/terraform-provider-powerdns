@@ -26,4 +26,5 @@ data "powerdns_zone_metadata" "also_notify" {
 
 ## Attribute Reference
 
+- `id` - The zone and metadata kind joined by `:::`.
 - `metadata` - Set of values for this metadata kind.

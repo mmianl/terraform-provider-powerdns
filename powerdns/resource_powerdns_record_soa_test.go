@@ -6,17 +6,17 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccPDNSRecordSOA_Basic(t *testing.T) {
 	resourceName := "powerdns_record_soa.test-soa"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordSOADestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordSOADestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordSOAConfigBasic,
@@ -44,9 +44,9 @@ func TestAccPDNSRecordSOA_Update(t *testing.T) {
 	resourceName := "powerdns_record_soa.test-soa-upd"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordSOADestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordSOADestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordSOAConfigUpdate1,
@@ -75,9 +75,9 @@ func TestAccPDNSRecordSOA_Import(t *testing.T) {
 	resourceID := `{"zone":"test-soa-imp-sysa.xyz.","id":"test-soa-imp-sysa.xyz.:::SOA"}`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSRecordSOADestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSRecordSOADestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSRecordSOAConfigImport,
@@ -91,6 +91,9 @@ func TestAccPDNSRecordSOA_Import(t *testing.T) {
 				ImportStateId:     resourceID,
 				ImportState:       true,
 				ImportStateVerify: true,
+				// A configured serial of 0 stays 0 in state, while an import
+				// reads the serial PowerDNS computed.
+				ImportStateVerifyIgnore: []string{"serial"},
 				ImportStateCheck: func(states []*terraform.InstanceState) error {
 					if len(states) != 1 {
 						return fmt.Errorf("expected 1 state, got %d", len(states))
@@ -119,12 +122,12 @@ func TestAccPDNSRecordSOA_Import(t *testing.T) {
 
 func TestAccPDNSRecordSOA_BlockedInRecord(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSRecordSOABlockedConfig,
-				ExpectError: regexp.MustCompile("use the powerdns_record_soa resource instead"),
+				ExpectError: regexp.MustCompile(`use the\s+powerdns_record_soa\s+resource\s+instead`),
 			},
 		},
 	})

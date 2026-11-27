@@ -3,16 +3,16 @@ package powerdns
 import (
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccDataSourcePDNSZoneCryptokeys_basic(t *testing.T) {
 	dataSourceName := "data.powerdns_zone_cryptokeys.test"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneCryptokeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneCryptokeysDataSourceConfig,

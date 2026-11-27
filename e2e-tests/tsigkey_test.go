@@ -84,7 +84,9 @@ func checkTSIGFixtures(t *testing.T, want map[string]tsigKeyExpectation) map[str
 		}
 		canonical := strings.TrimSuffix(expect.Name, ".")
 		public := output[name]
-		if key.ID != canonical+"." || key.Name != canonical || key.Algorithm != expect.Algorithm ||
+		// The ID is the dotted form PowerDNS reports; the name keeps the
+		// spelling from the configuration.
+		if key.ID != canonical+"." || key.Name != expect.Name || key.Algorithm != expect.Algorithm ||
 			public.ID != key.ID || public.Name != key.Name || public.Algorithm != key.Algorithm {
 			t.Fatalf("unexpected identity for %s: state id=%q name=%q algorithm=%q; output id=%q name=%q algorithm=%q", address, key.ID, key.Name, key.Algorithm, public.ID, public.Name, public.Algorithm)
 		}
@@ -94,7 +96,7 @@ func checkTSIGFixtures(t *testing.T, want map[string]tsigKeyExpectation) map[str
 		var live tsigKeyValues
 		path := tsigKeyPath(key.ID, expect.Algorithm)
 		doJSON(t, newRequest(t, http.MethodGet, authBaseURL(), path), &live)
-		if live.ID != key.ID || live.Name != key.Name || live.Algorithm != key.Algorithm {
+		if live.ID != key.ID || live.Name != canonical || live.Algorithm != key.Algorithm {
 			t.Fatalf("API identity differs from state for %s", address)
 		}
 		decoded, err := base64.StdEncoding.DecodeString(live.Key)
@@ -237,7 +239,7 @@ func TestPowerDNSTSIGKeys(t *testing.T) {
 		Metadata []string `json:"metadata"`
 	}
 	terraformOutput(t, "powerdns_zone_metadata_tsig_transfer", &metadata)
-	if metadata.Zone != "tsig.example.com." || metadata.Kind != "TSIG-ALLOW-AXFR" || !slices.Equal(metadata.Metadata, []string{live["generated"].Name}) {
+	if metadata.Zone != "tsig.example.com." || metadata.Kind != "TSIG-ALLOW-AXFR" || !slices.Equal(trimDots(metadata.Metadata), []string{strings.TrimSuffix(live["generated"].Name, ".")}) {
 		t.Fatal("unexpected TSIG transfer metadata in Terraform state")
 	}
 	var entries []zoneMetadata
@@ -246,12 +248,16 @@ func TestPowerDNSTSIGKeys(t *testing.T) {
 	for _, entry := range entries {
 		byKind[entry.Kind] = entry.Metadata
 	}
-	assertMetadataKindValues(t, byKind, "TSIG-ALLOW-AXFR", []string{live["generated"].Name})
+	// The zone metadata holds the key name as the resource exposes it, with the
+	// dot written in the configuration.
+	assertMetadataKindValues(t, byKind, "TSIG-ALLOW-AXFR", []string{live["generated"].Name + "."})
 
 	t.Log("Import a generated key without rotating its secret")
 	runTerraform(t, "state", "rm", "powerdns_tsigkey.generated")
 	runTerraform(t, "import", "-input=false", "-no-color", "powerdns_tsigkey.generated", live["generated"].ID)
-	apply(map[string][]string{})
+	// An import cannot know the spelling used in the configuration, so the
+	// first apply records it in state. The server keeps the same secret.
+	apply(map[string][]string{"powerdns_tsigkey.generated": {"update"}})
 	checkTSIGFixtures(t, want)
 	stablePlan()
 
@@ -412,4 +418,14 @@ func TestPowerDNSTSIGAlgorithmScope(t *testing.T) {
 			assertAlgorithms([]string{"hmac-sha256", peerAlgorithm})
 		}
 	}
+}
+
+// trimDots drops the trailing dot of each name: state keeps the spelling from
+// the configuration, while PowerDNS reports key names without it.
+func trimDots(names []string) []string {
+	out := make([]string, len(names))
+	for i, name := range names {
+		out[i] = strings.TrimSuffix(name, ".")
+	}
+	return out
 }

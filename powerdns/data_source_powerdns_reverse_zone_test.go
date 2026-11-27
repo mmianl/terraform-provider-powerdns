@@ -3,14 +3,14 @@ package powerdns
 import (
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccPowerDNSReverseZoneDataSource_CIDR(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSReverseZoneDataSourceConfig_CIDR,

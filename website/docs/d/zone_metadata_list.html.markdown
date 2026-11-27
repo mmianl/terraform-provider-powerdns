@@ -28,6 +28,7 @@ output "metadata_entries" {
 
 ## Attribute Reference
 
+- `id` - The zone name, with a trailing dot.
 - `entries` - Set of metadata entries. Each entry has:
-  - `kind` - Metadata kind key.
-  - `metadata` - Set of values for that key.
+- `kind` - Metadata kind key.
+- `metadata` - Set of values for that key.

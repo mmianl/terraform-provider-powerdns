@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestParseNetworkCIDR(t *testing.T) {
@@ -19,8 +19,8 @@ func TestParseNetworkCIDR(t *testing.T) {
 
 func TestAccPDNSNetworkBasic(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckViews(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckViews(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPDNSNetworkConfigBasic,
@@ -40,12 +40,12 @@ func TestAccPDNSNetworkBasic(t *testing.T) {
 
 func TestAccPDNSNetworkInvalidNetwork(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckViews(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckViews(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPDNSNetworkConfigInvalidNetwork,
-				ExpectError: regexp.MustCompile("invalid CIDR"),
+				ExpectError: regexp.MustCompile(`invalid\s+CIDR`),
 			},
 		},
 	})
@@ -53,8 +53,8 @@ func TestAccPDNSNetworkInvalidNetwork(t *testing.T) {
 
 func TestAccPDNSNetworkInvalidView(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckViews(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckViews(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPDNSNetworkConfigInvalidView,

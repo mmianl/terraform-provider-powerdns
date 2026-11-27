@@ -38,6 +38,7 @@ This resource supports the following arguments:
 
 ## Attribute Reference
 
+- `id` - The forward zone name, with a trailing dot.
 - `kind` - The zone kind reported by the Recursor API. Always `Forwarded` for zones managed by this resource.
 
 ## Notes
