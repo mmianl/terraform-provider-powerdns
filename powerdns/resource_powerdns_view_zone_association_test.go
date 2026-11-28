@@ -38,6 +38,35 @@ func TestAccPDNSViewZoneAssociationBasic(t *testing.T) {
 	})
 }
 
+func TestAccPDNSViewZoneAssociationVariant(t *testing.T) {
+	resourceName := "powerdns_view_zone_association.test"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:          func() { testAccPreCheckViews(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy: func(s *terraform.State) error {
+			return testAccCheckPDNSViewZoneAssociationDestroy(s)
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: testAccPDNSViewZoneAssociationConfigVariant,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("powerdns_zone.test", "name", "variant-association.example..internal"),
+					resource.TestCheckResourceAttr("powerdns_zone.test", "kind", "Native"),
+					resource.TestCheckResourceAttr(resourceName, "view", "test-variant-view"),
+					resource.TestCheckResourceAttr(resourceName, "zone", "variant-association.example..internal"),
+					testAccCheckPDNSViewContainsZone("test-variant-view", "variant-association.example..internal"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func TestAccPDNSViewZoneAssociationInvalidView(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheckViews(t) },
@@ -120,6 +149,17 @@ resource "powerdns_zone" "test" {
 
 resource "powerdns_view_zone_association" "test" {
   view = "test-association-view"
+  zone = powerdns_zone.test.name
+}`
+
+const testAccPDNSViewZoneAssociationConfigVariant = `
+resource "powerdns_zone" "test" {
+  name = "variant-association.example..internal"
+  kind = "Native"
+}
+
+resource "powerdns_view_zone_association" "test" {
+  view = "test-variant-view"
   zone = powerdns_zone.test.name
 }`
 
