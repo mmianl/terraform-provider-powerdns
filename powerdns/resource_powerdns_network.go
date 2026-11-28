@@ -61,10 +61,17 @@ func (r *networkResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"network": schema.StringAttribute{
-				Description:   "The network in CIDR notation, such as `192.0.2.0/24`. Changing it forces a new mapping.",
-				Required:      true,
-				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
-				Validators:    []validator.String{validateWith(validateCIDRString)},
+				Description: "The network in CIDR notation, such as `192.0.2.0/24`. Changing it forces a new mapping.",
+				Required:    true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIf(
+					func(_ context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+						// A different spelling of the same network is not a new mapping.
+						resp.RequiresReplace = req.ConfigValue.IsUnknown() || !sameCIDR(req.StateValue.ValueString(), req.PlanValue.ValueString())
+					},
+					"Changing the network forces a new mapping.",
+					"Changing the network forces a new mapping.",
+				)},
+				Validators: []validator.String{validateWith(validateCIDRString)},
 			},
 			"view": schema.StringAttribute{
 				Description: "The name of the view the network is mapped to.",
@@ -81,6 +88,17 @@ func (r *networkResource) Configure(_ context.Context, req resource.ConfigureReq
 
 func (r *networkResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
+}
+
+// sameCIDR reports whether a and b are the same network, however it is spelled,
+// such as an expanded and a compressed IPv6 address.
+func sameCIDR(a, b string) bool {
+	if a == b {
+		return true
+	}
+	_, netA, errA := net.ParseCIDR(a)
+	_, netB, errB := net.ParseCIDR(b)
+	return errA == nil && errB == nil && netA.String() == netB.String()
 }
 
 func parseNetworkCIDR(network string) (string, string, error) {
@@ -168,7 +186,10 @@ func (r *networkResource) refresh(ctx context.Context, m *networkModel, diags *d
 		return false
 	}
 
-	m.Network = types.StringValue(network.Network)
+	// Keep the spelling from the configuration when it names the same network.
+	if m.Network.IsNull() || m.Network.IsUnknown() || !sameCIDR(m.Network.ValueString(), network.Network) {
+		m.Network = types.StringValue(network.Network)
+	}
 	m.View = types.StringValue(network.View)
 	return true
 }

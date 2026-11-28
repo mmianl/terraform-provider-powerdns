@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"testing"
 
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
@@ -607,4 +609,33 @@ func TestTSIGKeyCreateKeepsStateWhenReadFails(t *testing.T) {
 	assertCreateKeepsState(t, newTSIGKeyResource(), &ProviderClients{PDNS: client},
 		map[string]tftypes.Value{"name": tfString("kept"), "algorithm": tfString("hmac-sha256")},
 		"kept.")
+}
+
+// While key_wo_version is unknown it is not clear whether the key becomes
+// write-only, so the planned secret must stay unknown instead of keeping the
+// stored one, which would be null once the version is known.
+func TestTSIGKeyModifyPlanLeavesSecretUnknownForUnknownVersion(t *testing.T) {
+	h := newResourceHarness(t, newTSIGKeyResource(), &ProviderClients{PDNS: newTestClient(nil)})
+	prior := h.object(map[string]tftypes.Value{
+		"id": tfString("tf-key."), "name": tfString("tf-key"),
+		"algorithm": tfString("hmac-sha256"), "key": tfString(testTSIGSecret),
+	})
+	config := h.object(map[string]tftypes.Value{
+		"name": tfString("tf-key"), "algorithm": tfString("hmac-sha256"),
+		"key_wo_version": tftypes.NewValue(tftypes.Number, tftypes.UnknownValue),
+	})
+	plan := h.plan(config, &prior)
+
+	resp := fwresource.ModifyPlanResponse{Plan: tfsdk.Plan{Schema: h.schema, Raw: plan}}
+	h.res.(fwresource.ResourceWithModifyPlan).ModifyPlan(context.Background(), fwresource.ModifyPlanRequest{
+		Config: tfsdk.Config{Schema: h.schema, Raw: config},
+		Plan:   tfsdk.Plan{Schema: h.schema, Raw: plan},
+		State:  tfsdk.State{Schema: h.schema, Raw: prior},
+	}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("ModifyPlan failed: %v", resp.Diagnostics)
+	}
+	if got := tfAttr(t, resp.Plan.Raw, "key"); got.IsKnown() {
+		t.Fatalf("planned key = %v, want unknown", got)
+	}
 }

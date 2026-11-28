@@ -130,14 +130,22 @@ func (r *tsigKeyResource) Configure(_ context.Context, req resource.ConfigureReq
 }
 
 // ModifyPlan drops the stored secret from the plan when the key is switched to
-// write-only mode, so the planned value matches what is saved afterwards.
+// write-only mode, so the planned value matches what is saved afterwards. While
+// key_wo_version is still unknown it is not yet clear which mode applies, so the
+// secret is left unknown instead of promising to keep the stored one.
 func (r *tsigKeyResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() || req.Config.Raw.IsNull() {
 		return
 	}
 	var config tsigKeyModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
-	if resp.Diagnostics.HasError() || config.KeyWOVersion.IsNull() || config.KeyWOVersion.IsUnknown() {
+	if resp.Diagnostics.HasError() || config.KeyWOVersion.IsNull() {
+		return
+	}
+	if config.KeyWOVersion.IsUnknown() {
+		if config.Key.IsNull() {
+			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("key"), types.StringUnknown())...)
+		}
 		return
 	}
 	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("key"), types.StringNull())...)

@@ -304,6 +304,12 @@ func sameServerAddress(configured, api string) bool {
 	if strings.EqualFold(configuredHost, apiHost) {
 		return true
 	}
+	// Two spellings of the same IP address, such as an expanded and a
+	// compressed IPv6 address.
+	configuredIP, apiIP := net.ParseIP(configuredHost), net.ParseIP(apiHost)
+	if configuredIP != nil && apiIP != nil {
+		return configuredIP.Equal(apiIP)
+	}
 	// A host name the Recursor replaced with its address.
 	return net.ParseIP(configuredHost) == nil && net.ParseIP(apiHost) != nil
 }

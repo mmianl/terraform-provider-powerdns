@@ -3,10 +3,14 @@ package powerdns
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
@@ -822,4 +826,48 @@ func TestZoneCreateKeepsStateWhenReadFails(t *testing.T) {
 		assert.Equal(t, "kept.example.", tfAttrString(t, state, "name"))
 		assert.True(t, tfAttr(t, state, "serial").IsNull(), "unknown values must not be saved")
 	}
+}
+
+func TestNormalizeMasterAddresses(t *testing.T) {
+	assert.Equal(t, []string{"192.0.2.1", "2001:db8::1"}, normalizeMasterAddresses([]string{"2001:0db8::1", "192.0.2.1", "2001:db8::1"}))
+	assert.Empty(t, normalizeMasterAddresses(nil))
+}
+
+func TestMasterSetKeepsEquivalentSpellings(t *testing.T) {
+	ctx := context.Background()
+	var diags diag.Diagnostics
+	held, d := types.SetValueFrom(ctx, types.StringType, []string{"2001:db8::1", "2001:0db8::1"})
+	assert.False(t, d.HasError())
+
+	got := masterSet(ctx, held, []string{"2001:db8::1"}, &diags)
+	assert.True(t, got.Equal(held), "the configured set must be kept when it means the same addresses")
+
+	got = masterSet(ctx, held, []string{"2001:db8::2"}, &diags)
+	assert.Equal(t, []string{"2001:db8::2"}, stringsFromSet(ctx, got, &diags))
+	assert.False(t, diags.HasError())
+}
+
+// Two spellings of one address are a single master. The zone must keep the
+// configured set instead of replacing it with the one address PowerDNS reports.
+func TestZoneKeepsDuplicateMasterSpellings(t *testing.T) {
+	var posted string
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			posted = string(body)
+			return jsonResponse(http.StatusCreated, `{"id":"slave.example."}`), nil
+		}
+		return jsonResponse(http.StatusOK, `{"id":"slave.example.","name":"slave.example.","kind":"Slave","masters":["2001:db8::1"]}`), nil
+	})
+	h := newResourceHarness(t, newZoneResource(), &ProviderClients{PDNS: client})
+	state, diags := h.create(map[string]tftypes.Value{
+		"name":    tfString("slave.example."),
+		"kind":    tfString("Slave"),
+		"masters": tfStringSet("2001:db8::1", "2001:0db8:0000::1"),
+	})
+	if diags.HasError() {
+		t.Fatalf("create failed: %v", diags)
+	}
+	assert.Equal(t, 1, strings.Count(posted, "2001:db8::1"), "the address must be sent once: %s", posted)
+	assert.ElementsMatch(t, []string{"2001:db8::1", "2001:0db8:0000::1"}, tfAttrStrings(t, state, "masters"))
 }

@@ -92,15 +92,6 @@ var caseInsensitiveStringType = semanticStringType{
 	equal: strings.EqualFold,
 }
 
-// masterAddressType treats equivalent spellings of an IPv4/IPv6 address
-// (optionally with a port) as the same value.
-var masterAddressType = semanticStringType{
-	name: "powerdns.MasterAddressType",
-	equal: func(prior, next string) bool {
-		return NormalizeMasterAddress(prior) == NormalizeMasterAddress(next)
-	},
-}
-
 // semanticInt64Type is an Int64 whose prior value can declare the new one
 // equivalent.
 type semanticInt64Type struct {

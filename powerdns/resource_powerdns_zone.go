@@ -115,7 +115,7 @@ func (r *zoneResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			"masters": schema.SetAttribute{
 				Description: "IP addresses of the primary servers, for a `Slave` zone.",
 				Optional:    true,
-				ElementType: masterAddressType,
+				ElementType: types.StringType,
 				Validators: []validator.Set{
 					setvalidator.ValueStringsAre(validateWith(ValidateMasterAddress)),
 				},
@@ -214,6 +214,45 @@ func sameStrings(a, b []string) bool {
 	return true
 }
 
+// masterAddresses returns the addresses in s as PowerDNS spells them, without
+// repeats, so equivalent spellings are sent once.
+func masterAddresses(ctx context.Context, s types.Set, diags *diag.Diagnostics) []string {
+	return normalizeMasterAddresses(stringsFromSet(ctx, s, diags))
+}
+
+func normalizeMasterAddresses(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = NormalizeMasterAddress(v)
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// masterSet builds the value to store for masters. When the set already held
+// means the same addresses as the server reports, it is kept as written, so
+// spelling differences and repeated spellings do not show up as a change.
+func masterSet(ctx context.Context, current types.Set, fromAPI []string, diags *diag.Diagnostics) types.Set {
+	api := normalizeMasterAddresses(fromAPI)
+	if !current.IsNull() && !current.IsUnknown() {
+		var held diag.Diagnostics
+		if sameStrings(masterAddresses(ctx, current, &held), api) && !held.HasError() {
+			return current
+		}
+	}
+	set, d := types.SetValueFrom(ctx, types.StringType, api)
+	diags.Append(d...)
+	return set
+}
+
 func (r *zoneResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan, config zoneModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -222,7 +261,7 @@ func (r *zoneResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	masters := stringsFromSet(ctx, plan.Masters, &resp.Diagnostics)
+	masters := masterAddresses(ctx, plan.Masters, &resp.Diagnostics)
 	zoneInfo := ZoneInfo{
 		Name:             plan.Name.ValueString(),
 		Kind:             plan.Kind.ValueString(),
@@ -320,12 +359,10 @@ func (r *zoneResource) refresh(ctx context.Context, m *zoneModel, diags *diag.Di
 	}
 
 	if strings.EqualFold(zoneInfo.Kind, "Slave") && (len(zoneInfo.Masters) != 0 || !m.Masters.IsNull()) {
-		set, d := types.SetValueFrom(ctx, masterAddressType, zoneInfo.Masters)
-		diags.Append(d...)
-		if d.HasError() {
+		m.Masters = masterSet(ctx, m.Masters, zoneInfo.Masters, diags)
+		if diags.HasError() {
 			return false
 		}
-		m.Masters = set
 	}
 	return true
 }
@@ -361,7 +398,7 @@ func (r *zoneResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	ctx = tflog.SetField(ctx, "zone_id", plan.ID.ValueString())
 	tflog.Debug(ctx, "Updating PowerDNS Zone")
 
-	masters := stringsFromSet(ctx, plan.Masters, &resp.Diagnostics)
+	masters := masterAddresses(ctx, plan.Masters, &resp.Diagnostics)
 	planMaster := tsigReferences(ctx, plan.MasterTsigKeyIDs, &resp.Diagnostics)
 	planSlave := tsigReferences(ctx, plan.SlaveTsigKeyIDs, &resp.Diagnostics)
 	stateMaster := tsigReferences(ctx, state.MasterTsigKeyIDs, &resp.Diagnostics)

@@ -268,3 +268,17 @@ func TestRecursorForwardZoneKeepsConfiguredHostName(t *testing.T) {
 	assert.False(t, diags.HasError(), "%v", diags)
 	assert.Equal(t, []string{"172.23.0.2:5301", "198.51.100.7"}, tfAttrStrings(t, state, "servers"))
 }
+
+func TestSameServerAddressIPv6Spellings(t *testing.T) {
+	for _, tc := range []struct {
+		configured, api string
+		want            bool
+	}{
+		{"[2001:0db8:0000::1]:5300", "[2001:db8::1]:5300", true},
+		{"2001:0db8:0000::1", "2001:db8::1", true},
+		{"[2001:0db8:0000::1]:5300", "[2001:db8::1]:5301", false},
+		{"[2001:0db8:0000::1]:5300", "[2001:db8::2]:5300", false},
+	} {
+		assert.Equal(t, tc.want, sameServerAddress(tc.configured, tc.api), "%s vs %s", tc.configured, tc.api)
+	}
+}
