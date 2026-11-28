@@ -25,7 +25,7 @@ import (
 // cryptokeyKeyTypes lists the key roles accepted by the PowerDNS API.
 var cryptokeyKeyTypes = []string{"ksk", "zsk", "csk"}
 
-// cryptokeyAlgorithmAliases maps the short mnemonics accepted on create to the
+// cryptokeyAlgorithmAliases maps the short mnemonics and numbers accepted on create to the
 // canonical names PowerDNS reports back, so that writing "ecdsa256" does not
 // look like a change once the server answers "ECDSAP256SHA256".
 var cryptokeyAlgorithmAliases = map[string]string{
@@ -38,6 +38,17 @@ var cryptokeyAlgorithmAliases = map[string]string{
 	"ed448":         "ED448",
 	"ecc-gost":      "ECC-GOST",
 	"rsasha1-nsec3": "RSASHA1-NSEC3-SHA1",
+
+	// The DNSSEC algorithm numbers, as listed by IANA.
+	"5":  "RSASHA1",
+	"7":  "RSASHA1-NSEC3-SHA1",
+	"8":  "RSASHA256",
+	"10": "RSASHA512",
+	"12": "ECC-GOST",
+	"13": "ECDSAP256SHA256",
+	"14": "ECDSAP384SHA384",
+	"15": "ED25519",
+	"16": "ED448",
 }
 
 // NormalizeCryptokeyAlgorithm resolves an algorithm mnemonic to the canonical
@@ -47,6 +58,16 @@ func NormalizeCryptokeyAlgorithm(algorithm string) string {
 		return canonical
 	}
 	return strings.ToUpper(algorithm)
+}
+
+// cryptokeyAlgorithmForAPI returns the algorithm in a form the PowerDNS API
+// accepts. The API knows the names but rejects the numbers, so a number is
+// sent as its name. Names are sent as written.
+func cryptokeyAlgorithmForAPI(algorithm string) string {
+	if _, err := strconv.Atoi(algorithm); err == nil {
+		return NormalizeCryptokeyAlgorithm(algorithm)
+	}
+	return algorithm
 }
 
 // cryptokeyAlgorithmType compares the resolved forms, so a mnemonic in the
@@ -235,7 +256,7 @@ func (r *zoneCryptokeyResource) Create(ctx context.Context, req resource.CreateR
 		KeyType:    plan.KeyType.ValueString(),
 		Active:     plan.Active.ValueBool(),
 		Published:  plan.Published.ValueBool(),
-		Algorithm:  plan.Algorithm.ValueString(),
+		Algorithm:  cryptokeyAlgorithmForAPI(plan.Algorithm.ValueString()),
 		Bits:       int(plan.Bits.ValueInt64()),
 		PrivateKey: plan.Content.ValueString(),
 	}

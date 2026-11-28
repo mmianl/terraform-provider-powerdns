@@ -62,7 +62,7 @@ This resource supports the following arguments:
 
 - `zone` - (Required) The zone this key belongs to. Changing this forces a new key.
 - `keytype` - (Required) The role of the key: `ksk`, `zsk` or `csk`. Changing this forces a new key.
-- `algorithm` - (Optional) The signing algorithm, for example `ecdsa256`, `ecdsa384`, `ed25519`, `rsasha256` or `rsasha512`. Changing this forces a new key.
+- `algorithm` - (Optional) The signing algorithm, for example `ecdsa256`, `ecdsa384`, `ed25519`, `rsasha256` or `rsasha512`, or the DNSSEC algorithm number such as `13`. All spellings of one algorithm are the same key. Changing this forces a new key.
 - `bits` - (Optional) The key size in bits. Required for the RSA algorithms; the server derives it for the ECDSA and Ed curves. Changing this forces a new key.
 - `content` - (Optional) An existing private key in ISC format to import. When omitted, PowerDNS generates the key material. Changing this forces a new key.
 - `active` - (Optional) Whether the key is used for signing. Defaults to `true`.

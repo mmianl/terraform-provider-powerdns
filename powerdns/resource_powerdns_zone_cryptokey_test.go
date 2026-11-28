@@ -264,6 +264,16 @@ func TestNormalizeCryptokeyAlgorithm(t *testing.T) {
 		"ecdsa384":        "ECDSAP384SHA384",
 		"rsasha256":       "RSASHA256",
 		"ed25519":         "ED25519",
+		// The algorithm numbers.
+		"5":  "RSASHA1",
+		"7":  "RSASHA1-NSEC3-SHA1",
+		"8":  "RSASHA256",
+		"10": "RSASHA512",
+		"12": "ECC-GOST",
+		"13": "ECDSAP256SHA256",
+		"14": "ECDSAP384SHA384",
+		"15": "ED25519",
+		"16": "ED448",
 		// Unknown values are simply upper-cased.
 		"something-else": "SOMETHING-ELSE",
 	}
@@ -273,6 +283,74 @@ func TestNormalizeCryptokeyAlgorithm(t *testing.T) {
 			t.Errorf("NormalizeCryptokeyAlgorithm(%q) = %q, want %q", input, got, want)
 		}
 	}
+}
+
+// Writing an algorithm as its number, its short name or its full name is the
+// same key, so changing between them must not replace it.
+func TestAccPDNSZoneCryptokeyAlgorithmSpellings(t *testing.T) {
+	const resourceName = "powerdns_zone_cryptokey.spelling"
+	var dnskey string
+	var steps []resource.TestStep
+	for _, algorithm := range []string{"ecdsa256", "13", "ECDSAP256SHA256", "ecdsa256"} {
+		config := fmt.Sprintf(`
+resource "powerdns_zone" "cryptokey-spelling" {
+  name = "cryptokey-spelling.sysa.abc."
+  kind = "Native"
+}
+
+resource "powerdns_zone_cryptokey" "spelling" {
+  zone      = powerdns_zone.cryptokey-spelling.name
+  keytype   = "csk"
+  algorithm = %q
+}`, algorithm)
+		steps = append(steps,
+			resource.TestStep{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "algorithm", algorithm),
+					func(s *terraform.State) error {
+						current := s.RootModule().Resources[resourceName].Primary.Attributes["dnskey"]
+						if dnskey != "" && current != dnskey {
+							return fmt.Errorf("writing the algorithm as %q replaced the key", algorithm)
+						}
+						dnskey = current
+						return nil
+					},
+				),
+			},
+			resource.TestStep{Config: config, PlanOnly: true},
+		)
+	}
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
+		Steps:                    steps,
+	})
+}
+
+func TestAccPDNSZoneCryptokeyNumericAlgorithmOnCreate(t *testing.T) {
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "powerdns_zone" "cryptokey-numeric" {
+  name = "cryptokey-numeric.sysa.abc."
+  kind = "Native"
+}
+
+resource "powerdns_zone_cryptokey" "numeric" {
+  zone      = powerdns_zone.cryptokey-numeric.name
+  keytype   = "csk"
+  algorithm = "13"
+}`,
+				Check: resource.TestCheckResourceAttr("powerdns_zone_cryptokey.numeric", "algorithm", "13"),
+			},
+		},
+	})
 }
 
 func testAccCheckPDNSZoneCryptokeyDestroy(s *terraform.State) error {
@@ -412,4 +490,11 @@ func TestCryptokeyCreateKeepsStateWhenReadFails(t *testing.T) {
 	assertCreateKeepsState(t, newZoneCryptokeyResource(), &ProviderClients{PDNS: client},
 		map[string]tftypes.Value{"zone": tfString("kept.example."), "keytype": tfString("csk"), "algorithm": tfString("ecdsa256")},
 		"kept.example.:7")
+}
+
+func TestCryptokeyAlgorithmForAPI(t *testing.T) {
+	assert.Equal(t, "ECDSAP256SHA256", cryptokeyAlgorithmForAPI("13"))
+	assert.Equal(t, "RSASHA256", cryptokeyAlgorithmForAPI("8"))
+	assert.Equal(t, "ecdsa256", cryptokeyAlgorithmForAPI("ecdsa256"))
+	assert.Equal(t, "ECDSAP256SHA256", cryptokeyAlgorithmForAPI("ECDSAP256SHA256"))
 }
