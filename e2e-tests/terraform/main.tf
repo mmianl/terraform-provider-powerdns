@@ -143,6 +143,15 @@ resource "powerdns_record_soa" "soa" {
   retry   = 3600
   expire  = 3600000
   minimum = 3600
+
+  # The zone has soa_edit_api set, so PowerDNS rewrites the SOA after every
+  # record change. On PostgreSQL a rewrite that overlaps this write can put the
+  # old TTL back, so this record is applied after the others in the zone.
+  depends_on = [
+    powerdns_record.test_ns,
+    powerdns_record.host01,
+    powerdns_record.host02_disabled,
+  ]
 }
 
 resource "powerdns_zone" "test_disabled_soa" {
