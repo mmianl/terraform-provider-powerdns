@@ -218,8 +218,9 @@ func TestSameServerAddress(t *testing.T) {
 		want            bool
 	}{
 		{"192.0.2.1", "192.0.2.1", true},
-		{"pdns:5300", "172.23.0.2:5300", true},
-		{"ns.example.com", "192.0.2.9", true},
+		{"pdns:5300", "172.23.0.2:5300", false},
+		{"ns.example.com", "192.0.2.9", false},
+		{"ns.example.com", "NS.example.com", true},
 		{"pdns:5300", "172.23.0.2:5301", false},
 		{"192.0.2.1", "192.0.2.2", false},
 		{"pdns:5300", "other:5300", false},
@@ -281,4 +282,99 @@ func TestSameServerAddressIPv6Spellings(t *testing.T) {
 	} {
 		assert.Equal(t, tc.want, sameServerAddress(tc.configured, tc.api), "%s vs %s", tc.configured, tc.api)
 	}
+}
+
+func TestReconcileServers(t *testing.T) {
+	t.Run("equivalent spellings keep the configured one", func(t *testing.T) {
+		servers, resolved := reconcileServers([]string{"[2001:0db8::1]:5300"}, []string{"[2001:db8::1]:5300"}, nil, false)
+		assert.Equal(t, []string{"[2001:0db8::1]:5300"}, servers)
+		assert.Empty(t, resolved)
+	})
+	t.Run("a host name is kept right after a write and remembered", func(t *testing.T) {
+		servers, resolved := reconcileServers([]string{"localhost"}, []string{"127.0.0.1"}, nil, true)
+		assert.Equal(t, []string{"localhost"}, servers)
+		assert.Equal(t, map[string]string{"localhost": "127.0.0.1"}, resolved)
+	})
+	t.Run("a host name is kept while it keeps the remembered address", func(t *testing.T) {
+		servers, _ := reconcileServers([]string{"localhost"}, []string{"127.0.0.1"}, map[string]string{"localhost": "127.0.0.1"}, false)
+		assert.Equal(t, []string{"localhost"}, servers)
+	})
+	t.Run("a changed address is drift", func(t *testing.T) {
+		servers, resolved := reconcileServers([]string{"localhost"}, []string{"192.0.2.99"}, map[string]string{"localhost": "127.0.0.1"}, false)
+		assert.Equal(t, []string{"192.0.2.99"}, servers)
+		assert.Empty(t, resolved)
+	})
+	t.Run("nothing remembered, as after an upgrade, trusts the first read", func(t *testing.T) {
+		servers, resolved := reconcileServers([]string{"localhost"}, []string{"127.0.0.1"}, nil, false)
+		assert.Equal(t, []string{"localhost"}, servers)
+		assert.Equal(t, map[string]string{"localhost": "127.0.0.1"}, resolved)
+	})
+	t.Run("a different port is drift", func(t *testing.T) {
+		servers, _ := reconcileServers([]string{"pdns:5300"}, []string{"172.23.0.2:5301"}, nil, true)
+		assert.Equal(t, []string{"172.23.0.2:5301"}, servers)
+	})
+	t.Run("an IP address is never matched to another", func(t *testing.T) {
+		servers, _ := reconcileServers([]string{"192.0.2.1"}, []string{"192.0.2.2"}, nil, true)
+		assert.Equal(t, []string{"192.0.2.2"}, servers)
+	})
+	t.Run("a different number of servers shows the server's list", func(t *testing.T) {
+		servers, _ := reconcileServers([]string{"localhost"}, []string{"127.0.0.1", "192.0.2.1"}, nil, true)
+		assert.Equal(t, []string{"127.0.0.1", "192.0.2.1"}, servers)
+	})
+}
+
+func TestResolvedServersWithoutPrivateState(t *testing.T) {
+	known, diags := loadResolvedServers(context.Background(), nil)
+	assert.Nil(t, known)
+	assert.False(t, diags.HasError())
+	assert.False(t, saveResolvedServers(context.Background(), nil, map[string]string{"a": "b"}).HasError())
+}
+
+// A host name stays quiet while the server keeps its address, and a change of
+// that address made outside Terraform is reported.
+func TestAccPowerDNSRecursorForwardZone_HostnameDrift(t *testing.T) {
+	const config = `
+resource "powerdns_recursor_forward_zone" "host" {
+  zone    = "hostname-drift.example."
+  servers = ["localhost"]
+}
+`
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheckRecursor(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPowerDNSRecursorForwardZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.host", "servers.0", "localhost"),
+			},
+			{Config: config, PlanOnly: true},
+			{
+				PreConfig: func() {
+					cfg, err := resolveConfig(providerModel{})
+					if err != nil {
+						t.Fatalf("failed to resolve out-of-band configuration: %v", err)
+					}
+					_, recursor, err := cfg.Clients(context.Background())
+					if err != nil {
+						t.Fatalf("failed to configure out-of-band client: %v", err)
+					}
+					ctx := context.Background()
+					if err := recursor.DeleteForwardZone(ctx, "hostname-drift.example."); err != nil {
+						t.Fatalf("failed to delete the zone out of band: %v", err)
+					}
+					zone := &RecursorForwardZone{Name: "hostname-drift.example.", Type: "Zone", Kind: "Forwarded", Servers: []string{"192.0.2.99"}}
+					if err := recursor.CreateForwardZone(ctx, zone); err != nil {
+						t.Fatalf("failed to change the zone out of band: %v", err)
+					}
+				},
+				Config:             config,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+			// Applying restores the configured server.
+			{Config: config},
+			{Config: config, PlanOnly: true},
+		},
+	})
 }

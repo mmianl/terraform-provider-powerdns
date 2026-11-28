@@ -2,9 +2,11 @@ package powerdns
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -79,10 +81,14 @@ func (r *recursorForwardZoneResource) ImportState(ctx context.Context, req resou
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
 }
 
-func (r *recursorForwardZoneResource) refresh(ctx context.Context, m *recursorForwardZoneModel, diags *diag.Diagnostics) bool {
+// refresh loads the zone into m. known holds the address each host name
+// resolved to the last time this provider wrote or read the zone, and
+// justWritten says the zone was written a moment ago. It returns whether the
+// zone exists and the addresses to remember for the next read.
+func (r *recursorForwardZoneResource) refresh(ctx context.Context, m *recursorForwardZoneModel, known map[string]string, justWritten bool, diags *diag.Diagnostics) (bool, map[string]string) {
 	client := r.clients.recursorClient(diags)
 	if client == nil {
-		return false
+		return false, nil
 	}
 	zoneName := m.ID.ValueString()
 
@@ -93,10 +99,10 @@ func (r *recursorForwardZoneResource) refresh(ctx context.Context, m *recursorFo
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			tflog.Warn(ctx, "Recursor forward zone not found; removing from state", map[string]any{"zone": zoneName})
-			return false
+			return false, nil
 		}
 		diags.AddError("Failed to read recursor forward zone", fmt.Sprintf("failed to read recursor forward zone %q: %s", zoneName, err))
-		return false
+		return false, nil
 	}
 
 	// Updates recreate a Forwarded zone, so accepting any other kind would
@@ -104,7 +110,7 @@ func (r *recursorForwardZoneResource) refresh(ctx context.Context, m *recursorFo
 	if zone.Kind != "Forwarded" {
 		diags.AddError("Unsupported recursor zone kind", fmt.Sprintf(
 			"recursor zone %q has kind %q on the server; this resource only manages Forwarded zones", zoneName, zone.Kind))
-		return false
+		return false, nil
 	}
 
 	// This resource only ever creates zones with recursion disabled, and the
@@ -115,7 +121,7 @@ func (r *recursorForwardZoneResource) refresh(ctx context.Context, m *recursorFo
 		diags.AddError("Unsupported recursor forward zone", fmt.Sprintf(
 			"recursor forward zone %q has recursion_desired=true on the server, which this resource cannot represent; "+
 				"it always manages zones with recursion disabled", zoneName))
-		return false
+		return false, nil
 	}
 
 	// The Recursor API appends ":53" to servers that were created without
@@ -126,28 +132,26 @@ func (r *recursorForwardZoneResource) refresh(ctx context.Context, m *recursorFo
 		servers[i] = strings.TrimSuffix(s, ":53")
 	}
 	// The Recursor also resolves a host name to its address before it stores
-	// the zone. Keep the host name from the plan or state when the server
-	// reports an address for it, otherwise every run would see a change.
+	// the zone. Keep the host name from the plan or state while the server
+	// still reports the address it had for it, otherwise every run would see a
+	// change. A different address is real drift and is shown.
+	var resolved map[string]string
 	if !m.Servers.IsNull() && !m.Servers.IsUnknown() {
 		var held diag.Diagnostics
 		current := stringsFromList(ctx, m.Servers, &held)
-		if !held.HasError() && len(current) == len(servers) {
-			for i := range servers {
-				if sameServerAddress(current[i], servers[i]) {
-					servers[i] = current[i]
-				}
-			}
+		if !held.HasError() {
+			servers, resolved = reconcileServers(current, servers, known, justWritten)
 		}
 	}
 	list, d := types.ListValueFrom(ctx, types.StringType, servers)
 	diags.Append(d...)
 	if d.HasError() {
-		return false
+		return false, nil
 	}
 	m.Zone = types.StringValue(zone.Name)
 	m.Kind = types.StringValue(zone.Kind)
 	m.Servers = list
-	return true
+	return true, resolved
 }
 
 func (r *recursorForwardZoneResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -184,7 +188,8 @@ func (r *recursorForwardZoneResource) Create(ctx context.Context, req resource.C
 
 	plan.ID = types.StringValue(zoneName)
 	tflog.Info(ctx, "Created recursor forward zone", map[string]any{"id": zoneName})
-	if !r.refresh(ctx, &plan, &resp.Diagnostics) {
+	found, resolved := r.refresh(ctx, &plan, nil, true, &resp.Diagnostics)
+	if !found {
 		if resp.Diagnostics.HasError() {
 			keepCreated(ctx, req.Plan, &resp.State, zoneName, &resp.Diagnostics)
 		} else {
@@ -192,6 +197,7 @@ func (r *recursorForwardZoneResource) Create(ctx context.Context, req resource.C
 		}
 		return
 	}
+	resp.Diagnostics.Append(saveResolvedServers(ctx, resp.Private, resolved)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -201,12 +207,16 @@ func (r *recursorForwardZoneResource) Read(ctx context.Context, req resource.Rea
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if !r.refresh(ctx, &state, &resp.Diagnostics) {
+	known, d := loadResolvedServers(ctx, req.Private)
+	resp.Diagnostics.Append(d...)
+	found, resolved := r.refresh(ctx, &state, known, false, &resp.Diagnostics)
+	if !found {
 		if !resp.Diagnostics.HasError() {
 			resp.State.RemoveResource(ctx)
 		}
 		return
 	}
+	resp.Diagnostics.Append(saveResolvedServers(ctx, resp.Private, resolved)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -250,12 +260,14 @@ func (r *recursorForwardZoneResource) Update(ctx context.Context, req resource.U
 		return
 	}
 
-	if !r.refresh(ctx, &plan, &resp.Diagnostics) {
+	found, resolved := r.refresh(ctx, &plan, nil, true, &resp.Diagnostics)
+	if !found {
 		if !resp.Diagnostics.HasError() {
 			resp.Diagnostics.AddError("Recursor forward zone not found after update", zoneName)
 		}
 		return
 	}
+	resp.Diagnostics.Append(saveResolvedServers(ctx, resp.Private, resolved)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -281,35 +293,115 @@ func (r *recursorForwardZoneResource) Delete(ctx context.Context, req resource.D
 	tflog.Info(ctx, "Successfully deleted recursor forward zone", map[string]any{"zone": zoneName})
 }
 
-// sameServerAddress reports whether the server entry written in the
-// configuration (a host name or an address, with an optional port) is what the
-// Recursor reports as api. The provider cannot resolve names, so a host name
-// matches any address on the same port.
+// splitServer splits a server entry into its host and port. An entry without
+// a port uses the default DNS port.
+func splitServer(entry string) (string, string) {
+	host, port, err := net.SplitHostPort(entry)
+	if err != nil {
+		return strings.Trim(entry, "[]"), "53"
+	}
+	return host, port
+}
+
+// sameServerAddress reports whether two server entries name the same address:
+// the same text, or two spellings of one IP address, on the same port. A host
+// name only matches itself, because the provider cannot resolve it.
 func sameServerAddress(configured, api string) bool {
 	if configured == api {
 		return true
 	}
-	split := func(entry string) (string, string) {
-		host, port, err := net.SplitHostPort(entry)
-		if err != nil {
-			return strings.Trim(entry, "[]"), "53"
-		}
-		return host, port
-	}
-	configuredHost, configuredPort := split(configured)
-	apiHost, apiPort := split(api)
+	configuredHost, configuredPort := splitServer(configured)
+	apiHost, apiPort := splitServer(api)
 	if configuredPort != apiPort {
 		return false
 	}
 	if strings.EqualFold(configuredHost, apiHost) {
 		return true
 	}
-	// Two spellings of the same IP address, such as an expanded and a
-	// compressed IPv6 address.
 	configuredIP, apiIP := net.ParseIP(configuredHost), net.ParseIP(apiHost)
-	if configuredIP != nil && apiIP != nil {
-		return configuredIP.Equal(apiIP)
+	return configuredIP != nil && apiIP != nil && configuredIP.Equal(apiIP)
+}
+
+// resolvedTo reports whether api could be the address the Recursor stored for
+// the host name in configured: a name that was replaced by an IP address on the
+// same port.
+func resolvedTo(configured, api string) bool {
+	configuredHost, configuredPort := splitServer(configured)
+	apiHost, apiPort := splitServer(api)
+	return configuredPort == apiPort && net.ParseIP(configuredHost) == nil && net.ParseIP(apiHost) != nil
+}
+
+// reconcileServers decides which spelling to keep for each server. An entry
+// that names the same address is kept as configured. A host name that the
+// Recursor replaced with an address is kept only while that address is the one
+// seen before (known) or the zone was just written (justWritten) or nothing is
+// known yet. Otherwise the address from the server is shown as a change. The
+// second result holds the addresses to remember for host names that were kept.
+func reconcileServers(configured, api []string, known map[string]string, justWritten bool) ([]string, map[string]string) {
+	if len(configured) != len(api) {
+		return api, nil
 	}
-	// A host name the Recursor replaced with its address.
-	return net.ParseIP(configuredHost) == nil && net.ParseIP(apiHost) != nil
+	servers := make([]string, len(api))
+	resolved := map[string]string{}
+	for i, address := range api {
+		servers[i] = address
+		switch {
+		case sameServerAddress(configured[i], address):
+			servers[i] = configured[i]
+		case resolvedTo(configured[i], address):
+			previous, seen := known[configured[i]]
+			if justWritten || !seen || previous == address {
+				servers[i] = configured[i]
+				resolved[configured[i]] = address
+			}
+		}
+	}
+	return servers, resolved
+}
+
+const resolvedServersKey = "resolved_servers"
+
+// privateStore is the private state of a resource, which is not shown in plans.
+type privateStore interface {
+	GetKey(ctx context.Context, key string) ([]byte, diag.Diagnostics)
+	SetKey(ctx context.Context, key string, value []byte) diag.Diagnostics
+}
+
+// hasPrivateState reports whether the store can be used. A request made
+// without private state, as in a unit test, has none.
+func hasPrivateState(store privateStore) bool {
+	if store == nil {
+		return false
+	}
+	v := reflect.ValueOf(store)
+	return v.Kind() != reflect.Pointer || !v.IsNil()
+}
+
+// loadResolvedServers reads the addresses remembered for host names.
+func loadResolvedServers(ctx context.Context, store privateStore) (map[string]string, diag.Diagnostics) {
+	if !hasPrivateState(store) {
+		return nil, nil
+	}
+	raw, diags := store.GetKey(ctx, resolvedServersKey)
+	if diags.HasError() || len(raw) == 0 {
+		return nil, diags
+	}
+	known := map[string]string{}
+	if err := json.Unmarshal(raw, &known); err != nil {
+		// Unreadable data is the same as nothing remembered.
+		return nil, nil
+	}
+	return known, diags
+}
+
+// saveResolvedServers remembers the addresses of the host names that were kept.
+func saveResolvedServers(ctx context.Context, store privateStore, resolved map[string]string) diag.Diagnostics {
+	if !hasPrivateState(store) {
+		return nil
+	}
+	raw, err := json.Marshal(resolved)
+	if err != nil {
+		return nil
+	}
+	return store.SetKey(ctx, resolvedServersKey, raw)
 }
