@@ -53,6 +53,4 @@ The following arguments are supported:
 
 ## Upgrading
 
-The provider is built on the Terraform Plugin Framework and speaks protocol version 6, so it needs Terraform 1.0 or later. Existing state keeps working with no migration.
-
-Some values are compared by meaning, not by spelling, for example a zone `kind` in a different case, an IPv6 address in `masters` written another way, a TSIG key name with or without the trailing dot, or a cryptokey algorithm written as its number. State keeps the spelling from your configuration. If you change only the spelling, Terraform shows one in-place update that changes nothing on the server and never replaces the resource.
+Version 3.0.0 is the first release built on the Terraform Plugin Framework. It needs Terraform 1.0 or later, and existing state keeps working with no re-import. Read the [upgrade guide](/docs/providers/powerdns/guides/upgrading-to-v3.html) before you upgrade. It explains how to back up the state, which changes the first plan can show, and how to roll back.
