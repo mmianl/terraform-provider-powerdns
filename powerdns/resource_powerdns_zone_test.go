@@ -3,11 +3,18 @@ package powerdns
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"regexp"
+	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/stretchr/testify/assert"
 )
 
 // volatileZoneSerials are maintained by PowerDNS rather than by configuration.
@@ -19,9 +26,9 @@ func TestAccPDNSZoneNative(t *testing.T) {
 	resourceName := "powerdns_zone.test-native"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigNative,
@@ -47,18 +54,19 @@ func TestAccPDNSZoneNativeMixedCaps(t *testing.T) {
 	resourceName := "powerdns_zone.test-native"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				// using mixed caps config to create resource with test-native name
 				Config: testPDNSZoneConfigNativeMixedCaps,
 			},
 			{
-				// using test-native config with Native to confirm plan doesn't generate diff
+				// re-planning the same config must not generate a diff even though
+				// PowerDNS reports the kind as Native
 				ResourceName:       resourceName,
-				Config:             testPDNSZoneConfigNative,
+				Config:             testPDNSZoneConfigNativeMixedCaps,
 				ExpectNonEmptyPlan: false,
 				PlanOnly:           true,
 			},
@@ -70,18 +78,19 @@ func TestAccPDNSZoneNativeSmallCaps(t *testing.T) {
 	resourceName := "powerdns_zone.test-native"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				// using small caps config to create resource with test-native name
 				Config: testPDNSZoneConfigNativeSmallCaps,
 			},
 			{
-				// using test-native config with Native to confirm plan doesn't generate diff
+				// re-planning the same config must not generate a diff even though
+				// PowerDNS reports the kind as Native
 				ResourceName:       resourceName,
-				Config:             testPDNSZoneConfigNative,
+				Config:             testPDNSZoneConfigNativeSmallCaps,
 				ExpectNonEmptyPlan: false,
 				PlanOnly:           true,
 			},
@@ -93,9 +102,9 @@ func TestAccPDNSZoneMaster(t *testing.T) {
 	resourceName := "powerdns_zone.test-master"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigMaster,
@@ -122,9 +131,9 @@ func TestAccPDNSZoneMasterSOAAPIEDIT(t *testing.T) {
 	resourceSOAEDITAPI := `DEFAULT`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigMasterSOAEDITAPI,
@@ -152,9 +161,9 @@ func TestAccPDNSZoneMasterSOAAPIEDITEmpty(t *testing.T) {
 	resourceSOAEDITAPI := `""`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigMasterSOAEDITAPIEmpty,
@@ -181,9 +190,9 @@ func TestAccPDNSZoneMasterSOAAPIEDITUndefined(t *testing.T) {
 	resourceName := "powerdns_zone.test-master-soa-edit-api-undefined"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigMasterSOAEDITAPIUndefined,
@@ -210,9 +219,9 @@ func TestAccPDNSZoneAccount(t *testing.T) {
 	resourceAccount := `test`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigAccount,
@@ -239,9 +248,9 @@ func TestAccPDNSZoneCatalog(t *testing.T) {
 	resourceName := "powerdns_zone.test-catalog"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckCatalog(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheckCatalog(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigCatalog,
@@ -268,9 +277,9 @@ func TestAccPDNSZoneDNSSec(t *testing.T) {
 	resourceName := "powerdns_zone.test-dnssec"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigDNSSec,
@@ -307,9 +316,9 @@ func TestAccPDNSZoneComputedSerials(t *testing.T) {
 	resourceName := "powerdns_zone.test-serials"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigComputedSerials,
@@ -330,9 +339,9 @@ func TestAccPDNSZoneAccountEmpty(t *testing.T) {
 	resourceAccount := ``
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigAccountEmpty,
@@ -360,9 +369,9 @@ func TestAccPDNSZoneAccountUndefined(t *testing.T) {
 	resourceAccount := `admin`
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigAccountUndefined,
@@ -389,9 +398,9 @@ func TestAccPDNSZoneSlave(t *testing.T) {
 	resourceName := "powerdns_zone.test-slave"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigSlave,
@@ -417,8 +426,8 @@ func TestAccPDNSZoneSlaveWithMasters(t *testing.T) {
 	resourceName := "powerdns_zone.test-slave-with-masters"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		//CheckDestroy: testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
@@ -447,8 +456,8 @@ func TestAccPDNSZoneSlaveWithMastersWithPort(t *testing.T) {
 	resourceName := "powerdns_zone.test-slave-with-masters-with-port"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		//CheckDestroy: testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
@@ -477,19 +486,19 @@ func TestAccPDNSZoneSlaveWithIPv6Masters(t *testing.T) {
 	resourceName := "powerdns_zone.test-slave-with-ipv6-masters"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneConfigSlaveWithIPv6Masters,
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPDNSZoneExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "masters.#", "2"),
-					// Stored in the canonical compressed form, which is also what
-					// PowerDNS returns — so a re-plan is empty.
+					// State keeps the configured spelling; PowerDNS returns the
+					// compressed form, which counts as the same address.
 					resource.TestCheckTypeSetElemAttr(resourceName, "masters.*",
-						"fd92:81e1:e314:ea7b:0:1234:5678:60ab"),
+						"fd92:81e1:e314:ea7b:0000:1234:5678:60ab"),
 					resource.TestCheckTypeSetElemAttr(resourceName, "masters.*", "192.168.123.45"),
 				),
 			},
@@ -500,8 +509,8 @@ func TestAccPDNSZoneSlaveWithIPv6Masters(t *testing.T) {
 func TestAccPDNSZoneSlaveWithMastersWithInvalidPort(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigSlaveWithMastersWithInvalidPort,
@@ -513,8 +522,8 @@ func TestAccPDNSZoneSlaveWithMastersWithInvalidPort(t *testing.T) {
 func TestAccPDNSZoneSlaveWithInvalidMasters(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigSlaveWithInvalidMasters,
@@ -527,8 +536,8 @@ func TestAccPDNSZoneSlaveWithInvalidMasters(t *testing.T) {
 func TestAccPDNSZoneMasterWithMasters(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigMasterWithMasters,
@@ -540,8 +549,8 @@ func TestAccPDNSZoneMasterWithMasters(t *testing.T) {
 
 func TestAccPDNSZoneInvalidDomain(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigInvalidDomain,
@@ -553,8 +562,8 @@ func TestAccPDNSZoneInvalidDomain(t *testing.T) {
 
 func TestAccPDNSZoneInvalidVariant(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigInvalidVariant,
@@ -566,8 +575,8 @@ func TestAccPDNSZoneInvalidVariant(t *testing.T) {
 
 func TestAccPDNSZoneInvalidVariantTrailingDot(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigInvalidVariantTrailingDot,
@@ -579,8 +588,8 @@ func TestAccPDNSZoneInvalidVariantTrailingDot(t *testing.T) {
 
 func TestAccPDNSZoneInvalidVariantMultipleSeparators(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneConfigInvalidVariantMultipleSeparators,
@@ -799,3 +808,66 @@ resource "powerdns_zone" "test-serials" {
 	name = "serials.sysa.abc."
 	kind = "Native"
 }`
+
+// When the server creates a zone but reading it back fails, Terraform must
+// still have the zone in state, or the next apply would create it again.
+func TestZoneCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPost {
+			return jsonResponse(http.StatusCreated, `{"id":"kept.example."}`), nil
+		}
+		return jsonResponse(http.StatusInternalServerError, `{"error":"boom"}`), nil
+	})
+	h := newResourceHarness(t, newZoneResource(), &ProviderClients{PDNS: client})
+	state, diags := h.create(map[string]tftypes.Value{"name": tfString("kept.example."), "kind": tfString("Native")})
+	assert.True(t, diags.HasError(), "the failed read must still be reported")
+	if assert.False(t, state.IsNull(), "the created zone must be saved") {
+		assert.Equal(t, "kept.example.", tfAttrString(t, state, "id"))
+		assert.Equal(t, "kept.example.", tfAttrString(t, state, "name"))
+		assert.True(t, tfAttr(t, state, "serial").IsNull(), "unknown values must not be saved")
+	}
+}
+
+func TestNormalizeMasterAddresses(t *testing.T) {
+	assert.Equal(t, []string{"192.0.2.1", "2001:db8::1"}, normalizeMasterAddresses([]string{"2001:0db8::1", "192.0.2.1", "2001:db8::1"}))
+	assert.Empty(t, normalizeMasterAddresses(nil))
+}
+
+func TestMasterSetKeepsEquivalentSpellings(t *testing.T) {
+	ctx := context.Background()
+	var diags diag.Diagnostics
+	held, d := types.SetValueFrom(ctx, types.StringType, []string{"2001:db8::1", "2001:0db8::1"})
+	assert.False(t, d.HasError())
+
+	got := masterSet(ctx, held, []string{"2001:db8::1"}, &diags)
+	assert.True(t, got.Equal(held), "the configured set must be kept when it means the same addresses")
+
+	got = masterSet(ctx, held, []string{"2001:db8::2"}, &diags)
+	assert.Equal(t, []string{"2001:db8::2"}, stringsFromSet(ctx, got, &diags))
+	assert.False(t, diags.HasError())
+}
+
+// Two spellings of one address are a single master. The zone must keep the
+// configured set instead of replacing it with the one address PowerDNS reports.
+func TestZoneKeepsDuplicateMasterSpellings(t *testing.T) {
+	var posted string
+	client := newTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			posted = string(body)
+			return jsonResponse(http.StatusCreated, `{"id":"slave.example."}`), nil
+		}
+		return jsonResponse(http.StatusOK, `{"id":"slave.example.","name":"slave.example.","kind":"Slave","masters":["2001:db8::1"]}`), nil
+	})
+	h := newResourceHarness(t, newZoneResource(), &ProviderClients{PDNS: client})
+	state, diags := h.create(map[string]tftypes.Value{
+		"name":    tfString("slave.example."),
+		"kind":    tfString("Slave"),
+		"masters": tfStringSet("2001:db8::1", "2001:0db8:0000::1"),
+	})
+	if diags.HasError() {
+		t.Fatalf("create failed: %v", diags)
+	}
+	assert.Equal(t, 1, strings.Count(posted, "2001:db8::1"), "the address must be sent once: %s", posted)
+	assert.ElementsMatch(t, []string{"2001:db8::1", "2001:0db8:0000::1"}, tfAttrStrings(t, state, "masters"))
+}

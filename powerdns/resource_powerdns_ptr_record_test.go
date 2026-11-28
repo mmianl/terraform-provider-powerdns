@@ -3,17 +3,19 @@ package powerdns
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccPowerDNSPTRRecord_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPowerDNSPTRRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPowerDNSPTRRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSPTRRecordConfig,
@@ -31,9 +33,9 @@ func TestAccPowerDNSPTRRecord_Basic(t *testing.T) {
 
 func TestAccPowerDNSPTRRecord_Update(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPowerDNSPTRRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPowerDNSPTRRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSPTRRecordConfig,
@@ -61,9 +63,9 @@ func TestAccPowerDNSPTRRecord_Update(t *testing.T) {
 
 func TestAccPowerDNSPTRRecord_IPv6(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPowerDNSPTRRecordDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPowerDNSPTRRecordDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSPTRRecordConfig_IPv6,
@@ -166,4 +168,14 @@ func testAccCheckPowerDNSPTRRecordExists(n string) resource.TestCheckFunc {
 
 		return nil
 	}
+}
+
+func TestPTRRecordCreateKeepsStateWhenReadFails(t *testing.T) {
+	// The overwrite guard reads the zone first and finds no records.
+	client := newTestClient(writesSucceedReadsFail(http.StatusNoContent, "", 1, `{"name":"2.0.192.in-addr.arpa.","rrsets":[]}`))
+	assertCreateKeepsState(t, newPTRRecordResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{
+			"ip_address": tfString("192.0.2.1"), "hostname": tfString("host.example.com."),
+			"ttl": tfInt(60), "reverse_zone": tfString("2.0.192.in-addr.arpa."),
+		}, "1.2.0.192.in-addr.arpa.:::PTR")
 }

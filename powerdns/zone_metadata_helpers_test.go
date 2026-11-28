@@ -1,28 +1,35 @@
 package powerdns
 
 import (
+	"context"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestExpandStringSet(t *testing.T) {
+func TestStringsFromSet(t *testing.T) {
+	ctx := context.Background()
+
 	t.Run("returns sorted values", func(t *testing.T) {
-		set := schema.NewSet(schema.HashString, []interface{}{"zeta", "alpha", "beta"})
+		set := types.SetValueMust(types.StringType, []attr.Value{types.StringValue("zeta"), types.StringValue("alpha"), types.StringValue("beta")})
 
-		got := expandStringSet(set)
+		var diags diag.Diagnostics
+		got := stringsFromSet(ctx, set, &diags)
 
+		assert.False(t, diags.HasError())
 		assert.Equal(t, []string{"alpha", "beta", "zeta"}, got)
 	})
 
-	t.Run("returns empty slice for empty set", func(t *testing.T) {
-		set := schema.NewSet(schema.HashString, []interface{}{})
-
-		got := expandStringSet(set)
-
-		assert.NotNil(t, got)
-		assert.Equal(t, 0, len(got))
+	t.Run("returns empty slice for empty or null set", func(t *testing.T) {
+		var diags diag.Diagnostics
+		for _, set := range []types.Set{types.SetValueMust(types.StringType, []attr.Value{}), types.SetNull(types.StringType)} {
+			got := stringsFromSet(ctx, set, &diags)
+			assert.NotNil(t, got)
+			assert.Equal(t, 0, len(got))
+		}
 	})
 }
 

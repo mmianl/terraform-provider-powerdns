@@ -90,6 +90,12 @@ This resource supports the following arguments:
 - For IPv6 addresses, the PTR record will be created with the format `X.Y.Z...ip6.arpa.` where X, Y, Z, etc. are the nibbles (4 bits) of the IP address in reverse order.
 - The reverse zone must be appropriate for the IP address type (in-addr.arpa for IPv4, ip6.arpa for IPv6).
 
+## Attribute Reference
+
+This resource exports the following attributes in addition to the arguments above:
+
+- `id` - The PTR record name and type joined by `:::`, for example `10.0.16.172.in-addr.arpa.:::PTR`.
+
 ## Importing
 
 An existing PTR record can be imported into this resource by supplying the zone name and record name. If the record is not found, an error will be returned.

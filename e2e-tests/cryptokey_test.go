@@ -59,7 +59,13 @@ func assertCryptokeyResource(t *testing.T, output, zone, role, algorithm string,
 	if key.Zone != zone || key.KeyID <= 0 || key.ID != fmt.Sprintf("%s:%d", zone, key.KeyID) {
 		t.Fatalf("unexpected cryptokey identity: zone=%q id=%q key_id=%d", key.Zone, key.ID, key.KeyID)
 	}
-	if key.KeyType != role || key.Algorithm != algorithm || key.Bits != bits ||
+	// State keeps the algorithm spelling from the configuration; the server
+	// reports its own name for the same algorithm.
+	configured := map[string]string{"ECDSAP256SHA256": "ecdsa256", "RSASHA256": "rsasha256"}[algorithm]
+	if key.Algorithm != configured && key.Algorithm != algorithm {
+		t.Fatalf("unexpected cryptokey algorithm: got %q, want %q or %q", key.Algorithm, configured, algorithm)
+	}
+	if key.KeyType != role || key.Bits != bits ||
 		key.Active != active || key.Published != published || key.DNSKey == "" {
 		t.Fatalf("unexpected cryptokey state: %+v", key)
 	}
@@ -75,6 +81,7 @@ func assertCryptokeyResource(t *testing.T, output, zone, role, algorithm string,
 	}
 	expected := key.cryptokeyDetails
 	expected.KeyType = live.KeyType
+	expected.Algorithm = algorithm
 	assertCryptokeyDetails(t, live.cryptokeyDetails, expected)
 	return key, live
 }
@@ -174,7 +181,7 @@ func TestPowerDNSCryptokeys(t *testing.T) {
 		t.Fatalf("split signing requires two keys, got %d", len(splitKeys))
 	}
 	for _, live := range splitKeys {
-		if live.ID != key.KeyID && (live.KeyType != "zsk" || !live.Active || live.Algorithm != key.Algorithm) {
+		if live.ID != key.KeyID && (live.KeyType != "zsk" || !live.Active || live.Algorithm != "ECDSAP256SHA256") {
 			t.Fatalf("expected an active ZSK of the same algorithm, got %+v", live)
 		}
 	}

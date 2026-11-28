@@ -1,80 +1,72 @@
 package powerdns
 
 import (
-	"fmt"
+	"context"
 	"os"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-framework/provider"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
 
-var testAccProvider *schema.Provider
+var testAccProvider *PowerDNSProvider
 
-// testAccProviderFactories is the replacement for the deprecated Providers
-// field on resource.TestCase. The factory is called per test, so each one gets
-// its own configured provider.
-var testAccProviderFactories map[string]func() (*schema.Provider, error)
+// testAccProtoV6ProviderFactories serves the framework provider over protocol
+// version 6. All tests share one provider instance so they can reach the
+// configured clients through testAccProvider.Meta().
+var testAccProtoV6ProviderFactories map[string]func() (tfprotov6.ProviderServer, error)
 
 func init() {
-	testAccProvider = Provider()
-	testAccProviderFactories = map[string]func() (*schema.Provider, error){
-		"powerdns": func() (*schema.Provider, error) {
-			return testAccProvider, nil
-		},
+	testAccProvider = New("test")().(*PowerDNSProvider)
+	testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
+		"powerdns": providerserver.NewProtocol6WithError(testAccProvider),
 	}
 }
 
-func TestProvider(t *testing.T) {
-	if err := Provider().InternalValidate(); err != nil {
-		t.Fatalf("err: %s", err)
+func TestProviderSchemaValid(t *testing.T) {
+	ctx := context.Background()
+	resp := &provider.SchemaResponse{}
+	testAccProvider.Schema(ctx, provider.SchemaRequest{}, resp)
+	if diags := resp.Schema.ValidateImplementation(ctx); diags.HasError() {
+		t.Fatalf("provider schema invalid: %v", diags)
 	}
-}
-
-func TestProviderImpl(t *testing.T) {
-	var _ = Provider()
 }
 
 func TestProviderServerIDDefault(t *testing.T) {
-	value, err := Provider().Schema["server_id"].DefaultValue()
+	t.Setenv("PDNS_SERVER_ID", "")
+
+	cfg, err := resolveConfig(providerModel{})
 	if err != nil {
-		t.Fatalf("getting server_id default: %v", err)
+		t.Fatalf("resolving config: %v", err)
 	}
-	if value != "localhost" {
-		t.Errorf("server_id default = %q, want %q", value, "localhost")
+	if cfg.ServerID != "localhost" {
+		t.Errorf("server_id default = %q, want %q", cfg.ServerID, "localhost")
 	}
 }
 
 func TestProviderServerIDEnvironmentOverride(t *testing.T) {
 	t.Setenv("PDNS_SERVER_ID", "zonecontrol-primary")
 
-	value, err := Provider().Schema["server_id"].DefaultValue()
+	cfg, err := resolveConfig(providerModel{})
 	if err != nil {
-		t.Fatalf("getting server_id default: %v", err)
+		t.Fatalf("resolving config: %v", err)
 	}
-	if value != "zonecontrol-primary" {
-		t.Errorf("server_id from environment = %q, want %q", value, "zonecontrol-primary")
+	if cfg.ServerID != "zonecontrol-primary" {
+		t.Errorf("server_id from environment = %q, want %q", cfg.ServerID, "zonecontrol-primary")
 	}
 }
 
-func TestProviderRecursorServerIDDefault(t *testing.T) {
-	value, err := Provider().Schema["recursor_server_id"].DefaultValue()
-	if err != nil {
-		t.Fatalf("getting recursor_server_id default: %v", err)
-	}
-	if value != "localhost" {
-		t.Errorf("recursor_server_id default = %q, want %q", value, "localhost")
-	}
-}
+func TestProviderServerIDConfigWinsOverEnvironment(t *testing.T) {
+	t.Setenv("PDNS_SERVER_ID", "from-env")
 
-func TestProviderRecursorServerIDEnvironmentOverride(t *testing.T) {
-	t.Setenv("PDNS_RECURSOR_SERVER_ID", "edge-recursor")
-
-	value, err := Provider().Schema["recursor_server_id"].DefaultValue()
+	cfg, err := resolveConfig(providerModel{ServerID: types.StringValue("from-config")})
 	if err != nil {
-		t.Fatalf("getting recursor_server_id default: %v", err)
+		t.Fatalf("resolving config: %v", err)
 	}
-	if value != "edge-recursor" {
-		t.Errorf("recursor_server_id from environment = %q, want %q", value, "edge-recursor")
+	if cfg.ServerID != "from-config" {
+		t.Errorf("server_id = %q, want %q", cfg.ServerID, "from-config")
 	}
 }
 
@@ -98,32 +90,49 @@ func testAccPreCheckRecursor(t *testing.T) {
 }
 
 func TestProviderRequestTimeoutDefault(t *testing.T) {
-	value, err := Provider().Schema["request_timeout"].DefaultValue()
+	t.Setenv("PDNS_REQUEST_TIMEOUT", "")
+
+	cfg, err := resolveConfig(providerModel{})
 	if err != nil {
-		t.Fatalf("getting request_timeout default: %v", err)
+		t.Fatalf("resolving config: %v", err)
 	}
-	if value != 60 {
-		t.Errorf("request_timeout default = %v, want 60", value)
+	if cfg.RequestTimeout != 60 {
+		t.Errorf("request_timeout default = %v, want 60", cfg.RequestTimeout)
 	}
 }
 
 func TestProviderRequestTimeoutEnvironmentOverride(t *testing.T) {
 	t.Setenv("PDNS_REQUEST_TIMEOUT", "5")
 
-	value, err := Provider().Schema["request_timeout"].DefaultValue()
+	cfg, err := resolveConfig(providerModel{})
 	if err != nil {
-		t.Fatalf("getting request_timeout default: %v", err)
+		t.Fatalf("resolving config: %v", err)
 	}
-	// EnvDefaultFunc hands back the raw string; the SDK converts it to the
-	// schema type when the value is read, so compare on the string here.
-	if fmt.Sprintf("%v", value) != "5" {
-		t.Errorf("request_timeout from environment = %v, want 5", value)
+	if cfg.RequestTimeout != 5 {
+		t.Errorf("request_timeout from environment = %v, want 5", cfg.RequestTimeout)
 	}
 }
 
 func TestProviderRequestTimeoutRejectsNegative(t *testing.T) {
-	_, errs := Provider().Schema["request_timeout"].ValidateFunc(-1, "request_timeout")
-	if len(errs) == 0 {
-		t.Error("request_timeout = -1 should fail validation, got no errors")
+	if _, err := resolveConfig(providerModel{RequestTimeout: types.Int64Value(-1)}); err == nil {
+		t.Error("request_timeout = -1 should fail validation, got no error")
+	}
+}
+
+func TestProviderBoolEnvironment(t *testing.T) {
+	t.Setenv("PDNS_CACHE_REQUESTS", "true")
+	t.Setenv("PDNS_INSECURE_HTTPS", "not-a-bool")
+
+	if _, err := resolveConfig(providerModel{}); err == nil {
+		t.Error("an unparsable PDNS_INSECURE_HTTPS should fail")
+	}
+
+	t.Setenv("PDNS_INSECURE_HTTPS", "")
+	cfg, err := resolveConfig(providerModel{})
+	if err != nil {
+		t.Fatalf("resolving config: %v", err)
+	}
+	if !cfg.CacheEnable || cfg.InsecureHTTPS {
+		t.Errorf("cache_requests=%v insecure_https=%v, want true/false", cfg.CacheEnable, cfg.InsecureHTTPS)
 	}
 }

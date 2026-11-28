@@ -1,17 +1,19 @@
 package powerdns
 
 import (
+	"net/http"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccPDNSZoneMetadata_basic(t *testing.T) {
 	resourceName := "powerdns_zone_metadata.test-also-notify"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneMetadataConfigBasic,
@@ -72,3 +74,10 @@ resource "powerdns_zone_metadata" "test-also-notify" {
   metadata = ["192.0.2.99"]
 }
 `
+
+func TestZoneMetadataCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusNoContent, "", 0, ""))
+	assertCreateKeepsState(t, newZoneMetadataResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"zone": tfString("kept.example."), "kind": tfString("ALSO-NOTIFY"), "metadata": tfStringSet("192.0.2.1")},
+		"kept.example.:::ALSO-NOTIFY")
+}

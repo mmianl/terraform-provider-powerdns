@@ -5,33 +5,45 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-func dataSourcePDNSTSIGKey() *schema.Resource {
-	return &schema.Resource{
-		ReadContext: dataSourcePDNSTSIGKeyRead,
+var (
+	_ datasource.DataSource              = &tsigKeyDataSource{}
+	_ datasource.DataSourceWithConfigure = &tsigKeyDataSource{}
+)
 
-		Schema: map[string]*schema.Schema{
-			"id": {
-				Type:        schema.TypeString,
+func newTSIGKeyDataSource() datasource.DataSource { return &tsigKeyDataSource{} }
+
+type tsigKeyDataSource struct {
+	clients *ProviderClients
+}
+
+type tsigKeyDataSourceModel struct {
+	ID        types.String `tfsdk:"id"`
+	Name      types.String `tfsdk:"name"`
+	Algorithm types.String `tfsdk:"algorithm"`
+	Key       types.String `tfsdk:"key"`
+}
+
+func (d *tsigKeyDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_tsigkey"
+}
+
+func (d *tsigKeyDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "Reads a PowerDNS TSIG key.",
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
 				Required:    true,
 				Description: "The ID of the TSIG key to retrieve, e.g. \"mykey.\".",
 			},
-			"name": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The name of the TSIG key",
-			},
-			"algorithm": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The TSIG algorithm of the key",
-			},
-			"key": {
-				Type:        schema.TypeString,
+			"name":      schema.StringAttribute{Computed: true, Description: "The name of the TSIG key"},
+			"algorithm": schema.StringAttribute{Computed: true, Description: "The TSIG algorithm of the key"},
+			"key": schema.StringAttribute{
 				Computed:    true,
 				Sensitive:   true,
 				Description: "The base64 encoded secret of the key",
@@ -40,32 +52,34 @@ func dataSourcePDNSTSIGKey() *schema.Resource {
 	}
 }
 
-func dataSourcePDNSTSIGKeyRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
+func (d *tsigKeyDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	d.clients = clientsFromProviderData(req.ProviderData, &resp.Diagnostics)
+}
 
-	keyID := d.Get("id").(string)
+func (d *tsigKeyDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data tsigKeyDataSourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	keyID := data.ID.ValueString()
 	ctx = tflog.SetField(ctx, "tsigkey_id", keyID)
 	tflog.Info(ctx, "Reading TSIG key data source")
 
-	tsigKey, err := client.PDNS.GetTSIGKey(ctx, keyID, "")
+	tsigKey, err := d.clients.PDNS.GetTSIGKey(ctx, keyID, "")
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return diag.FromErr(fmt.Errorf("TSIG key %s not found", keyID))
+			resp.Diagnostics.AddError("TSIG key not found", fmt.Sprintf("TSIG key %s not found", keyID))
+			return
 		}
-		return diag.FromErr(fmt.Errorf("couldn't fetch TSIG key %s: %w", keyID, err))
+		resp.Diagnostics.AddError("Could not fetch TSIG key", fmt.Sprintf("couldn't fetch TSIG key %s: %s", keyID, err))
+		return
 	}
 
-	d.SetId(tsigKey.ID)
-
-	if err := d.Set("name", tsigKey.Name); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting TSIG key name: %w", err))
-	}
-	if err := d.Set("algorithm", tsigKey.Algorithm); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting TSIG key algorithm: %w", err))
-	}
-	if err := d.Set("key", tsigKey.Key); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting TSIG key material: %w", err))
-	}
-
-	return nil
+	data.ID = types.StringValue(tsigKey.ID)
+	data.Name = types.StringValue(tsigKey.Name)
+	data.Algorithm = types.StringValue(tsigKey.Algorithm)
+	data.Key = types.StringValue(tsigKey.Key)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

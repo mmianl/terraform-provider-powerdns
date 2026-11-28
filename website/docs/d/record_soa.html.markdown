@@ -38,6 +38,7 @@ The following arguments are supported:
 
 This data source exports the following attributes:
 
+- `id` - The record name and type joined by `:::`.
 - `ttl` - The TTL of the SOA record in seconds.
 - `disabled` - Whether the SOA record is disabled.
 - `mname` - The primary nameserver for the zone (MNAME field).

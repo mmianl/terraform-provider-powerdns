@@ -7,35 +7,98 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
-func resourcePDNSNetwork() *schema.Resource {
-	return &schema.Resource{
-		CreateContext: resourcePDNSNetworkCreate,
-		ReadContext:   resourcePDNSNetworkRead,
-		UpdateContext: resourcePDNSNetworkUpdate,
-		DeleteContext: resourcePDNSNetworkDelete,
-		Importer: &schema.ResourceImporter{
-			StateContext: schema.ImportStatePassthroughContext,
-		},
-		Schema: map[string]*schema.Schema{
-			"network": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ForceNew:     true,
-				ValidateFunc: validation.IsCIDR,
+var (
+	_ resource.Resource                = &networkResource{}
+	_ resource.ResourceWithConfigure   = &networkResource{}
+	_ resource.ResourceWithImportState = &networkResource{}
+)
+
+func newNetworkResource() resource.Resource { return &networkResource{} }
+
+type networkResource struct {
+	clients *ProviderClients
+}
+
+type networkModel struct {
+	ID      types.String `tfsdk:"id"`
+	Network types.String `tfsdk:"network"`
+	View    types.String `tfsdk:"view"`
+}
+
+func validateCIDRString(v interface{}, k string) ([]string, []error) {
+	value, ok := v.(string)
+	if !ok {
+		return nil, []error{fmt.Errorf("expected type of %q to be string", k)}
+	}
+	if _, _, err := net.ParseCIDR(value); err != nil {
+		return nil, []error{fmt.Errorf("expected %q to contain a valid CIDR, got: %s with err: %s", k, value, err)}
+	}
+	return nil, nil
+}
+
+func (r *networkResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_network"
+}
+
+func (r *networkResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "Maps a network (CIDR) to a PowerDNS view.",
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Description:   "The network in CIDR notation.",
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"view": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ValidateFunc: validateViewName,
+			"network": schema.StringAttribute{
+				Description: "The network in CIDR notation, such as `192.0.2.0/24`. Changing it forces a new mapping.",
+				Required:    true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIf(
+					func(_ context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+						// A different spelling of the same network is not a new mapping.
+						resp.RequiresReplace = req.ConfigValue.IsUnknown() || !sameCIDR(req.StateValue.ValueString(), req.PlanValue.ValueString())
+					},
+					"Changing the network forces a new mapping.",
+					"Changing the network forces a new mapping.",
+				)},
+				Validators: []validator.String{validateWith(validateCIDRString)},
+			},
+			"view": schema.StringAttribute{
+				Description: "The name of the view the network is mapped to.",
+				Required:    true,
+				Validators:  []validator.String{validateWith(validateViewName)},
 			},
 		},
 	}
+}
+
+func (r *networkResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.clients = clientsFromProviderData(req.ProviderData, &resp.Diagnostics)
+}
+
+func (r *networkResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
+}
+
+// sameCIDR reports whether a and b are the same network, however it is spelled,
+// such as an expanded and a compressed IPv6 address.
+func sameCIDR(a, b string) bool {
+	if a == b {
+		return true
+	}
+	_, netA, errA := net.ParseCIDR(a)
+	_, netB, errB := net.ParseCIDR(b)
+	return errA == nil && errB == nil && netA.String() == netB.String()
 }
 
 func parseNetworkCIDR(network string) (string, string, error) {
@@ -47,82 +110,123 @@ func parseNetworkCIDR(network string) (string, string, error) {
 	return ip.String(), strconv.Itoa(prefixlen), nil
 }
 
-func resourcePDNSNetworkCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	return resourcePDNSNetworkUpsert(ctx, d, meta)
+func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan networkModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	r.upsert(ctx, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		if !plan.ID.IsNull() && !plan.ID.IsUnknown() {
+			keepCreated(ctx, req.Plan, &resp.State, plan.ID.ValueString(), &resp.Diagnostics)
+		}
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func resourcePDNSNetworkUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	return resourcePDNSNetworkUpsert(ctx, d, meta)
+func (r *networkResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan networkModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	r.upsert(ctx, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func resourcePDNSNetworkUpsert(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
-	network := d.Get("network").(string)
-	view := d.Get("view").(string)
+func (r *networkResource) upsert(ctx context.Context, m *networkModel, diags *diag.Diagnostics) {
+	network := m.Network.ValueString()
+	view := m.View.ValueString()
 
 	ip, prefixlen, err := parseNetworkCIDR(network)
 	if err != nil {
-		return diag.FromErr(err)
+		diags.AddError("Invalid network", err.Error())
+		return
 	}
 
 	ctx = tflog.SetField(ctx, "network", network)
 	ctx = tflog.SetField(ctx, "view", view)
 	tflog.Debug(ctx, "Creating or updating PowerDNS network")
 
-	if err := client.PDNS.SetNetwork(ctx, ip, prefixlen, view); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to set network %s: %w", network, err))
+	if err := r.clients.PDNS.SetNetwork(ctx, ip, prefixlen, view); err != nil {
+		diags.AddError("Failed to set network", fmt.Sprintf("failed to set network %s: %s", network, err))
+		return
 	}
 
-	d.SetId(network)
-	return resourcePDNSNetworkRead(ctx, d, meta)
+	m.ID = types.StringValue(network)
+	if !r.refresh(ctx, m, diags) && !diags.HasError() {
+		diags.AddError("Network not found after write", network)
+	}
 }
 
-func resourcePDNSNetworkRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
-	networkCIDR := d.Id()
+// refresh loads the network into m, reporting false if it no longer exists.
+func (r *networkResource) refresh(ctx context.Context, m *networkModel, diags *diag.Diagnostics) bool {
+	networkCIDR := m.ID.ValueString()
 
 	ip, prefixlen, err := parseNetworkCIDR(networkCIDR)
 	if err != nil {
-		return diag.FromErr(err)
+		diags.AddError("Invalid network id", err.Error())
+		return false
 	}
 
 	ctx = tflog.SetField(ctx, "network", networkCIDR)
 	tflog.Debug(ctx, "Reading PowerDNS network")
 
-	network, err := client.PDNS.GetNetwork(ctx, ip, prefixlen)
+	network, err := r.clients.PDNS.GetNetwork(ctx, ip, prefixlen)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			d.SetId("")
-			return nil
+			return false
 		}
-		return diag.FromErr(fmt.Errorf("failed to get network %s: %w", networkCIDR, err))
+		diags.AddError("Failed to get network", fmt.Sprintf("failed to get network %s: %s", networkCIDR, err))
+		return false
 	}
 
-	if err := d.Set("network", network.Network); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting network: %w", err))
+	// Keep the spelling from the configuration when it names the same network.
+	if m.Network.IsNull() || m.Network.IsUnknown() || !sameCIDR(m.Network.ValueString(), network.Network) {
+		m.Network = types.StringValue(network.Network)
 	}
-	if err := d.Set("view", network.View); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting view: %w", err))
-	}
-
-	return nil
+	m.View = types.StringValue(network.View)
+	return true
 }
 
-func resourcePDNSNetworkDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
-	networkCIDR := d.Id()
+func (r *networkResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state networkModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if !r.refresh(ctx, &state, &resp.Diagnostics) {
+		if !resp.Diagnostics.HasError() {
+			resp.State.RemoveResource(ctx)
+		}
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+func (r *networkResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state networkModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	networkCIDR := state.ID.ValueString()
 
 	ip, prefixlen, err := parseNetworkCIDR(networkCIDR)
 	if err != nil {
-		return diag.FromErr(err)
+		resp.Diagnostics.AddError("Invalid network id", err.Error())
+		return
 	}
 
 	ctx = tflog.SetField(ctx, "network", networkCIDR)
 	tflog.Debug(ctx, "Deleting PowerDNS network")
 
-	if err := client.PDNS.DeleteNetwork(ctx, ip, prefixlen); err != nil && !errors.Is(err, ErrNotFound) {
-		return diag.FromErr(fmt.Errorf("failed to delete network %s: %w", networkCIDR, err))
+	if err := r.clients.PDNS.DeleteNetwork(ctx, ip, prefixlen); err != nil && !errors.Is(err, ErrNotFound) {
+		resp.Diagnostics.AddError("Failed to delete network", fmt.Sprintf("failed to delete network %s: %s", networkCIDR, err))
 	}
-
-	return nil
 }

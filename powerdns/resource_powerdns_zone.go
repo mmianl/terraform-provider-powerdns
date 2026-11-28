@@ -4,127 +4,54 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
-func resourcePDNSZone() *schema.Resource {
-	return &schema.Resource{
-		CreateContext: resourcePDNSZoneCreate,
-		ReadContext:   resourcePDNSZoneRead,
-		UpdateContext: resourcePDNSZoneUpdate,
-		DeleteContext: resourcePDNSZoneDelete,
+var (
+	_ resource.Resource                = &zoneResource{}
+	_ resource.ResourceWithConfigure   = &zoneResource{}
+	_ resource.ResourceWithImportState = &zoneResource{}
+)
 
-		Importer: &schema.ResourceImporter{
-			StateContext: schema.ImportStatePassthroughContext,
-		},
+func newZoneResource() resource.Resource { return &zoneResource{} }
 
-		Schema: map[string]*schema.Schema{
-			"name": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ForceNew:     true,
-				ValidateFunc: ValidateZoneName,
-			},
+type zoneResource struct {
+	clients *ProviderClients
+}
 
-			"kind": {
-				Type:     schema.TypeString,
-				Required: true,
-				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return strings.EqualFold(old, new)
-				},
-			},
-
-			"account": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				Default:      "admin",
-				ForceNew:     false,
-				ValidateFunc: validation.StringLenBetween(0, 40),
-			},
-
-			"catalog": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				ForceNew:     false,
-				ValidateFunc: ValidateZoneName,
-			},
-
-			"masters": {
-				Type: schema.TypeSet,
-				// TypeSet identities are computed before an element StateFunc runs.
-				// Hashing the canonical form makes expanded and compressed IPv6
-				// spellings represent the same set element.
-				Set: func(value interface{}) int {
-					return schema.HashString(NormalizeMasterAddress(value.(string)))
-				},
-				Elem: &schema.Schema{
-					Type:         schema.TypeString,
-					ValidateFunc: ValidateMasterAddress,
-					// PowerDNS returns IPv6 addresses in compressed form. Normalizing
-					// the configured value prevents a perpetual diff when users write
-					// an equivalent expanded address.
-					StateFunc: func(value interface{}) string {
-						return NormalizeMasterAddress(value.(string))
-					},
-				},
-				Optional: true,
-			},
-
-			"soa_edit_api": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Computed: true,
-				ForceNew: false,
-			},
-			"soa_edit": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Computed: true,
-				ForceNew: false,
-			},
-
-			"dnssec": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Computed: true,
-				ForceNew: false,
-			},
-
-			"api_rectify": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Computed: true,
-				ForceNew: false,
-			},
-
-			"serial": {
-				Type:     schema.TypeInt,
-				Computed: true,
-			},
-
-			"notified_serial": {
-				Type:     schema.TypeInt,
-				Computed: true,
-			},
-
-			"edited_serial": {
-				Type:     schema.TypeInt,
-				Computed: true,
-			},
-
-			"last_check": {
-				Type:     schema.TypeInt,
-				Computed: true,
-			},
-			"master_tsig_key_ids": zoneTSIGReferencesSchema("TSIG key IDs allowed to authenticate AXFR requests for this zone.", 0),
-			"slave_tsig_key_ids":  zoneTSIGReferencesSchema("TSIG key IDs used to sign requests to this zone's primary server.", 1),
-		},
-	}
+type zoneModel struct {
+	ID               types.String        `tfsdk:"id"`
+	Name             types.String        `tfsdk:"name"`
+	Kind             semanticStringValue `tfsdk:"kind"`
+	Account          types.String        `tfsdk:"account"`
+	Catalog          types.String        `tfsdk:"catalog"`
+	Masters          types.Set           `tfsdk:"masters"`
+	SoaEditAPI       types.String        `tfsdk:"soa_edit_api"`
+	SoaEdit          types.String        `tfsdk:"soa_edit"`
+	DNSSec           types.Bool          `tfsdk:"dnssec"`
+	APIRectify       types.Bool          `tfsdk:"api_rectify"`
+	Serial           types.Int64         `tfsdk:"serial"`
+	NotifiedSerial   types.Int64         `tfsdk:"notified_serial"`
+	EditedSerial     types.Int64         `tfsdk:"edited_serial"`
+	LastCheck        types.Int64         `tfsdk:"last_check"`
+	MasterTsigKeyIDs types.Set           `tfsdk:"master_tsig_key_ids"`
+	SlaveTsigKeyIDs  types.Set           `tfsdk:"slave_tsig_key_ids"`
 }
 
 // NormalizeTSIGKeyID accepts a bare name or the dotted ID returned by PowerDNS.
@@ -135,230 +62,409 @@ func NormalizeTSIGKeyID(keyID string) string {
 	return keyID + "."
 }
 
-func zoneTSIGReferencesSchema(description string, maxItems int) *schema.Schema {
-	return &schema.Schema{
-		Type:        schema.TypeSet,
-		Optional:    true,
-		Computed:    true,
-		MaxItems:    maxItems,
-		Description: description + " Bare names are normalized to dotted IDs; set [] to clear existing references.",
-		// A set computes identity before applying its element StateFunc.
-		Set: func(value interface{}) int {
-			return schema.HashString(NormalizeTSIGKeyID(value.(string)))
-		},
-		Elem: &schema.Schema{
-			Type: schema.TypeString,
-			StateFunc: func(value interface{}) string {
-				return NormalizeTSIGKeyID(value.(string))
+func (r *zoneResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_zone"
+}
+
+func zoneTSIGReferencesAttribute(description string, maxItems int) schema.SetAttribute {
+	attr := schema.SetAttribute{
+		Optional:      true,
+		Computed:      true,
+		ElementType:   types.StringType,
+		PlanModifiers: []planmodifier.Set{setplanmodifier.UseStateForUnknown()},
+		Description:   description + " Bare names are normalized to dotted IDs; set [] to clear existing references.",
+	}
+	if maxItems > 0 {
+		attr.Validators = []validator.Set{setvalidator.SizeAtMost(maxItems)}
+	}
+	return attr
+}
+
+func (r *zoneResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "Manages a PowerDNS zone.",
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Description:   "The zone name, with a trailing dot.",
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"name": schema.StringAttribute{
+				Description:   "The zone name. It must end with a trailing dot. Changing it forces a new zone.",
+				Required:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				Validators:    []validator.String{validateWith(ValidateZoneName)},
+			},
+			"kind": schema.StringAttribute{
+				Description: "The zone kind: `Native`, `Master`, `Slave`, `Producer` or `Consumer`. Case does not matter.",
+				Required:    true,
+				CustomType:  caseInsensitiveStringType,
+			},
+			"account": schema.StringAttribute{
+				Description: "The account the zone belongs to. Defaults to `admin`.",
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString("admin"),
+				Validators:  []validator.String{stringvalidator.LengthBetween(0, 40)},
+			},
+			"catalog": schema.StringAttribute{
+				Description: "The catalog zone this zone is a member of.",
+				Optional:    true,
+				Validators:  []validator.String{validateWith(ValidateZoneName)},
+			},
+			"masters": schema.SetAttribute{
+				Description: "IP addresses of the primary servers, for a `Slave` zone.",
+				Optional:    true,
+				ElementType: types.StringType,
+				Validators: []validator.Set{
+					setvalidator.ValueStringsAre(validateWith(ValidateMasterAddress)),
+				},
+			},
+			"soa_edit_api": schema.StringAttribute{
+				Description:   "The SOA-EDIT-API setting, which controls how the serial changes on API edits. Read from the server when not set.",
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"soa_edit": schema.StringAttribute{
+				Description:   "The SOA-EDIT setting, which controls how the serial is changed when answering. Read from the server when not set.",
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"dnssec": schema.BoolAttribute{
+				Description:   "Whether DNSSEC is enabled for the zone. Read from the server when not set.",
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"api_rectify": schema.BoolAttribute{
+				Description:   "Whether PowerDNS rectifies the zone after each API change. Read from the server when not set.",
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"serial":          schema.Int64Attribute{Computed: true, Description: "The current SOA serial of the zone."},
+			"notified_serial": schema.Int64Attribute{Computed: true, Description: "The last serial a NOTIFY was sent for."},
+			"edited_serial":   schema.Int64Attribute{Computed: true, Description: "The SOA serial after the SOA-EDIT-API rules were applied."},
+			"last_check":      schema.Int64Attribute{Computed: true, Description: "The time of the last check against the primary server, as a Unix timestamp."},
+			"master_tsig_key_ids": zoneTSIGReferencesAttribute(
+				"TSIG key IDs allowed to authenticate AXFR requests for this zone.", 0),
+			"slave_tsig_key_ids": zoneTSIGReferencesAttribute(
+				"TSIG key IDs used to sign requests to this zone's primary server.", 1),
 		},
 	}
 }
 
-func zoneTSIGReferences(d *schema.ResourceData, name string) []string {
-	values := d.Get(name).(*schema.Set).List()
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		result = append(result, NormalizeTSIGKeyID(value.(string)))
-	}
-	return result
+func (r *zoneResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.clients = clientsFromProviderData(req.ProviderData, &resp.Diagnostics)
 }
 
-func resourcePDNSZoneCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
+func (r *zoneResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
+}
 
-	// Each element is validated by the schema's ValidateFunc, which runs on
-	// create and on update alike.
-	var masters []string
-	for _, masterAddress := range d.Get("masters").(*schema.Set).List() {
-		masters = append(masters, masterAddress.(string))
-	}
+// tsigReferences returns the normalized, sorted, de-duplicated key IDs held by
+// a set. A bare name and its dotted ID are one reference.
+func tsigReferences(ctx context.Context, s types.Set, diags *diag.Diagnostics) []string {
+	values := stringsFromSet(ctx, s, diags)
+	return normalizeTSIGReferences(values)
+}
 
-	zoneInfo := ZoneInfo{
-		Name:             d.Get("name").(string),
-		Kind:             d.Get("kind").(string),
-		Catalog:          d.Get("catalog").(string),
-		Account:          d.Get("account").(string),
-		Nameservers:      []string{},
-		SoaEdit:          d.Get("soa_edit").(string),
-		SoaEditAPI:       d.Get("soa_edit_api").(string),
-		DNSSec:           d.Get("dnssec").(bool),
-		MasterTsigKeyIDs: zoneTSIGReferences(d, "master_tsig_key_ids"),
-		SlaveTsigKeyIDs:  zoneTSIGReferences(d, "slave_tsig_key_ids"),
-	}
-
-	// Inspect configuration because an explicit false must be sent, while an
-	// omitted Optional+Computed boolean must preserve the server default.
-	if config := d.GetRawConfig(); !config.IsNull() {
-		value := config.GetAttr("api_rectify")
-		if value.IsKnown() && !value.IsNull() {
-			apiRectify := d.Get("api_rectify").(bool)
-			zoneInfo.APIRectify = &apiRectify
+func normalizeTSIGReferences(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = NormalizeTSIGKeyID(v)
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
 		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// tsigReferenceSet builds the value to store for a TSIG reference set. When
+// the set already held in state or plan means the same references as the
+// server reports, it is kept as written, so a bare name or a repeated
+// spelling in the configuration does not show up as a change.
+func tsigReferenceSet(ctx context.Context, current types.Set, fromAPI []string, diags *diag.Diagnostics) types.Set {
+	api := normalizeTSIGReferences(fromAPI)
+	if !current.IsNull() && !current.IsUnknown() {
+		var held diag.Diagnostics
+		if sameStrings(tsigReferences(ctx, current, &held), api) && !held.HasError() {
+			return current
+		}
+	}
+	set, d := types.SetValueFrom(ctx, types.StringType, api)
+	diags.Append(d...)
+	return set
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// masterAddresses returns the addresses in s as PowerDNS spells them, without
+// repeats, so equivalent spellings are sent once.
+func masterAddresses(ctx context.Context, s types.Set, diags *diag.Diagnostics) []string {
+	return normalizeMasterAddresses(stringsFromSet(ctx, s, diags))
+}
+
+func normalizeMasterAddresses(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = NormalizeMasterAddress(v)
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// masterSet builds the value to store for masters. When the set already held
+// means the same addresses as the server reports, it is kept as written, so
+// spelling differences and repeated spellings do not show up as a change.
+func masterSet(ctx context.Context, current types.Set, fromAPI []string, diags *diag.Diagnostics) types.Set {
+	api := normalizeMasterAddresses(fromAPI)
+	if !current.IsNull() && !current.IsUnknown() {
+		var held diag.Diagnostics
+		if sameStrings(masterAddresses(ctx, current, &held), api) && !held.HasError() {
+			return current
+		}
+	}
+	set, d := types.SetValueFrom(ctx, types.StringType, api)
+	diags.Append(d...)
+	return set
+}
+
+func (r *zoneResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan, config zoneModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	masters := masterAddresses(ctx, plan.Masters, &resp.Diagnostics)
+	zoneInfo := ZoneInfo{
+		Name:             plan.Name.ValueString(),
+		Kind:             plan.Kind.ValueString(),
+		Catalog:          plan.Catalog.ValueString(),
+		Account:          plan.Account.ValueString(),
+		Nameservers:      []string{},
+		SoaEdit:          plan.SoaEdit.ValueString(),
+		SoaEditAPI:       plan.SoaEditAPI.ValueString(),
+		DNSSec:           plan.DNSSec.ValueBool(),
+		MasterTsigKeyIDs: tsigReferences(ctx, plan.MasterTsigKeyIDs, &resp.Diagnostics),
+		SlaveTsigKeyIDs:  tsigReferences(ctx, plan.SlaveTsigKeyIDs, &resp.Diagnostics),
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// An explicit false must be sent, while an omitted Optional+Computed
+	// boolean must preserve the server default.
+	if !config.APIRectify.IsNull() && !config.APIRectify.IsUnknown() {
+		apiRectify := config.APIRectify.ValueBool()
+		zoneInfo.APIRectify = &apiRectify
 	}
 
 	if len(masters) != 0 {
-		if strings.EqualFold(zoneInfo.Kind, "Slave") {
-			zoneInfo.Masters = masters
-		} else {
-			return diag.FromErr(fmt.Errorf("masters attribute is supported only for Slave kind"))
+		if !strings.EqualFold(zoneInfo.Kind, "Slave") {
+			resp.Diagnostics.AddError("Invalid masters", "masters attribute is supported only for Slave kind")
+			return
 		}
+		zoneInfo.Masters = masters
 	}
 
 	ctx = tflog.SetField(ctx, "zone_name", zoneInfo.Name)
 	ctx = tflog.SetField(ctx, "zone_kind", zoneInfo.Kind)
 	tflog.Debug(ctx, "Creating PowerDNS Zone")
 
-	createdZoneInfo, err := client.PDNS.CreateZone(ctx, zoneInfo)
+	created, err := r.clients.PDNS.CreateZone(ctx, zoneInfo)
 	if err != nil {
-		return diag.FromErr(err)
+		resp.Diagnostics.AddError("Error creating PowerDNS Zone", err.Error())
+		return
 	}
 
-	d.SetId(createdZoneInfo.ID)
-	tflog.Info(ctx, "Created PowerDNS Zone", map[string]any{"id": createdZoneInfo.ID})
-	return resourcePDNSZoneRead(ctx, d, meta)
+	plan.ID = types.StringValue(created.ID)
+	tflog.Info(ctx, "Created PowerDNS Zone", map[string]any{"id": created.ID})
+
+	found := r.refresh(ctx, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		keepCreated(ctx, req.Plan, &resp.State, created.ID, &resp.Diagnostics)
+		return
+	}
+	if !found {
+		resp.Diagnostics.AddError("Zone not found after creation", fmt.Sprintf("zone %s disappeared right after it was created", created.ID))
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func resourcePDNSZoneRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
-
-	ctx = tflog.SetField(ctx, "zone_id", d.Id())
-	tflog.Debug(ctx, "Reading PowerDNS Zone")
-
-	zoneInfo, err := client.PDNS.GetZone(ctx, d.Id())
+// refresh loads the zone from PowerDNS into m. It reports false when the zone
+// no longer exists.
+func (r *zoneResource) refresh(ctx context.Context, m *zoneModel, diags *diag.Diagnostics) bool {
+	zoneInfo, err := r.clients.PDNS.GetZone(ctx, m.ID.ValueString())
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			tflog.Warn(ctx, "Zone no longer exists; removing from state")
-			d.SetId("")
-			return nil
+			return false
 		}
-		return diag.FromErr(fmt.Errorf("couldn't fetch PowerDNS Zone: %w", err))
+		diags.AddError("Couldn't fetch PowerDNS Zone", err.Error())
+		return false
 	}
-
 	if zoneInfo.Name == "" {
 		tflog.Warn(ctx, "Zone not found; removing from state")
-		d.SetId("")
-		return nil
+		return false
 	}
 
-	if err := d.Set("name", zoneInfo.Name); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS Name: %w", err))
-	}
-	if err := d.Set("kind", zoneInfo.Kind); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS Kind: %w", err))
-	}
-	if err := d.Set("account", zoneInfo.Account); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS Account: %w", err))
-	}
-	if err := d.Set("catalog", zoneInfo.Catalog); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS Catalog: %w", err))
-	}
-	if err := d.Set("soa_edit_api", zoneInfo.SoaEditAPI); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit API: %w", err))
-	}
-	if err := d.Set("soa_edit", zoneInfo.SoaEdit); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS SOA Edit: %w", err))
-	}
-	if err := d.Set("dnssec", zoneInfo.DNSSec); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS DNSSEC: %w", err))
-	}
+	m.Name = types.StringValue(zoneInfo.Name)
+	m.Kind = newSemanticString(caseInsensitiveStringType, zoneInfo.Kind)
+	m.Account = types.StringValue(zoneInfo.Account)
+	m.Catalog = stringOrNull(zoneInfo.Catalog)
+	m.SoaEditAPI = types.StringValue(zoneInfo.SoaEditAPI)
+	m.SoaEdit = types.StringValue(zoneInfo.SoaEdit)
+	m.DNSSec = types.BoolValue(zoneInfo.DNSSec)
 	if zoneInfo.APIRectify != nil {
-		if err := d.Set("api_rectify", *zoneInfo.APIRectify); err != nil {
-			return diag.FromErr(fmt.Errorf("error setting PowerDNS API Rectify: %w", err))
-		}
+		m.APIRectify = types.BoolValue(*zoneInfo.APIRectify)
+	} else if m.APIRectify.IsUnknown() {
+		m.APIRectify = types.BoolNull()
 	}
-	if err := d.Set("serial", zoneInfo.Serial); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS Serial: %w", err))
-	}
-	if err := d.Set("notified_serial", zoneInfo.NotifiedSerial); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS Notified Serial: %w", err))
-	}
-	if err := d.Set("edited_serial", zoneInfo.EditedSerial); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS Edited Serial: %w", err))
-	}
-	if err := d.Set("last_check", zoneInfo.LastCheck); err != nil {
-		return diag.FromErr(fmt.Errorf("error setting PowerDNS Last Check: %w", err))
-	}
-	for name, values := range map[string][]string{
-		"master_tsig_key_ids": zoneInfo.MasterTsigKeyIDs,
-		"slave_tsig_key_ids":  zoneInfo.SlaveTsigKeyIDs,
-	} {
-		if err := d.Set(name, values); err != nil {
-			return diag.FromErr(fmt.Errorf("error setting PowerDNS %s: %w", name, err))
-		}
+	m.Serial = types.Int64Value(zoneInfo.Serial)
+	m.NotifiedSerial = types.Int64Value(zoneInfo.NotifiedSerial)
+	m.EditedSerial = types.Int64Value(zoneInfo.EditedSerial)
+	m.LastCheck = types.Int64Value(zoneInfo.LastCheck)
+
+	m.MasterTsigKeyIDs = tsigReferenceSet(ctx, m.MasterTsigKeyIDs, zoneInfo.MasterTsigKeyIDs, diags)
+	m.SlaveTsigKeyIDs = tsigReferenceSet(ctx, m.SlaveTsigKeyIDs, zoneInfo.SlaveTsigKeyIDs, diags)
+	if diags.HasError() {
+		return false
 	}
 
-	if strings.EqualFold(zoneInfo.Kind, "Slave") {
-		if err := d.Set("masters", zoneInfo.Masters); err != nil {
-			return diag.FromErr(fmt.Errorf("error setting PowerDNS Masters: %w", err))
+	if strings.EqualFold(zoneInfo.Kind, "Slave") && (len(zoneInfo.Masters) != 0 || !m.Masters.IsNull()) {
+		m.Masters = masterSet(ctx, m.Masters, zoneInfo.Masters, diags)
+		if diags.HasError() {
+			return false
 		}
 	}
-
-	return nil
+	return true
 }
 
-func resourcePDNSZoneUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	ctx = tflog.SetField(ctx, "zone_id", d.Id())
+func (r *zoneResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state zoneModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx = tflog.SetField(ctx, "zone_id", state.ID.ValueString())
+	tflog.Debug(ctx, "Reading PowerDNS Zone")
+
+	if !r.refresh(ctx, &state, &resp.Diagnostics) {
+		if !resp.Diagnostics.HasError() {
+			resp.State.RemoveResource(ctx)
+		}
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+func (r *zoneResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan, state zoneModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	plan.ID = state.ID
+	ctx = tflog.SetField(ctx, "zone_id", plan.ID.ValueString())
 	tflog.Debug(ctx, "Updating PowerDNS Zone")
 
-	client := meta.(*ProviderClients)
-
-	if d.HasChanges("kind", "account", "catalog", "soa_edit_api", "soa_edit", "dnssec", "api_rectify", "masters", "master_tsig_key_ids", "slave_tsig_key_ids") {
-		var masters []string
-		for _, m := range d.Get("masters").(*schema.Set).List() {
-			masters = append(masters, m.(string))
-		}
-
-		zoneInfo := ZoneInfoUpd{
-			Name:       d.Get("name").(string),
-			Kind:       d.Get("kind").(string),
-			Catalog:    d.Get("catalog").(string),
-			Account:    d.Get("account").(string),
-			SoaEditAPI: d.Get("soa_edit_api").(string),
-			Masters:    masters,
-		}
-		// Only send these optional settings when changed, including false and
-		// empty values, so unrelated updates preserve server-managed settings.
-		if d.HasChange("soa_edit") {
-			value := d.Get("soa_edit").(string)
-			zoneInfo.SoaEdit = &value
-		}
-		if d.HasChange("dnssec") {
-			value := d.Get("dnssec").(bool)
-			zoneInfo.DNSSec = &value
-		}
-		if d.HasChange("api_rectify") {
-			value := d.Get("api_rectify").(bool)
-			zoneInfo.APIRectify = &value
-		}
-		// Pointer fields distinguish clearing an explicitly managed set from
-		// omitting it during an unrelated zone update.
-		if d.HasChange("master_tsig_key_ids") {
-			values := zoneTSIGReferences(d, "master_tsig_key_ids")
-			zoneInfo.MasterTsigKeyIDs = &values
-		}
-		if d.HasChange("slave_tsig_key_ids") {
-			values := zoneTSIGReferences(d, "slave_tsig_key_ids")
-			zoneInfo.SlaveTsigKeyIDs = &values
-		}
-
-		if err := client.PDNS.UpdateZone(ctx, d.Id(), zoneInfo); err != nil {
-			return diag.FromErr(fmt.Errorf("error updating PowerDNS Zone: %w", err))
-		}
+	masters := masterAddresses(ctx, plan.Masters, &resp.Diagnostics)
+	planMaster := tsigReferences(ctx, plan.MasterTsigKeyIDs, &resp.Diagnostics)
+	planSlave := tsigReferences(ctx, plan.SlaveTsigKeyIDs, &resp.Diagnostics)
+	stateMaster := tsigReferences(ctx, state.MasterTsigKeyIDs, &resp.Diagnostics)
+	stateSlave := tsigReferences(ctx, state.SlaveTsigKeyIDs, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	return resourcePDNSZoneRead(ctx, d, meta)
+	zoneInfo := ZoneInfoUpd{
+		Name:       plan.Name.ValueString(),
+		Kind:       plan.Kind.ValueString(),
+		Catalog:    plan.Catalog.ValueString(),
+		Account:    plan.Account.ValueString(),
+		SoaEditAPI: plan.SoaEditAPI.ValueString(),
+		Masters:    masters,
+	}
+	// Only send these optional settings when changed, including false and
+	// empty values, so unrelated updates preserve server-managed settings.
+	if !plan.SoaEdit.Equal(state.SoaEdit) {
+		value := plan.SoaEdit.ValueString()
+		zoneInfo.SoaEdit = &value
+	}
+	if !plan.DNSSec.Equal(state.DNSSec) {
+		value := plan.DNSSec.ValueBool()
+		zoneInfo.DNSSec = &value
+	}
+	if !plan.APIRectify.Equal(state.APIRectify) {
+		value := plan.APIRectify.ValueBool()
+		zoneInfo.APIRectify = &value
+	}
+	// Pointer fields distinguish clearing an explicitly managed set from
+	// omitting it during an unrelated zone update.
+	if !sameStrings(planMaster, stateMaster) {
+		zoneInfo.MasterTsigKeyIDs = &planMaster
+	}
+	if !sameStrings(planSlave, stateSlave) {
+		zoneInfo.SlaveTsigKeyIDs = &planSlave
+	}
+
+	if err := r.clients.PDNS.UpdateZone(ctx, plan.ID.ValueString(), zoneInfo); err != nil {
+		resp.Diagnostics.AddError("Error updating PowerDNS Zone", err.Error())
+		return
+	}
+
+	if !r.refresh(ctx, &plan, &resp.Diagnostics) {
+		if !resp.Diagnostics.HasError() {
+			resp.Diagnostics.AddError("Zone not found after update", plan.ID.ValueString())
+		}
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func resourcePDNSZoneDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
+func (r *zoneResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state zoneModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
-	ctx = tflog.SetField(ctx, "zone_id", d.Id())
+	ctx = tflog.SetField(ctx, "zone_id", state.ID.ValueString())
 	tflog.Debug(ctx, "Deleting PowerDNS Zone")
 
-	if err := client.PDNS.DeleteZone(ctx, d.Id()); err != nil {
-		return diag.FromErr(fmt.Errorf("error deleting PowerDNS Zone: %w", err))
+	if err := r.clients.PDNS.DeleteZone(ctx, state.ID.ValueString()); err != nil {
+		resp.Diagnostics.AddError("Error deleting PowerDNS Zone", err.Error())
+		return
 	}
 	tflog.Info(ctx, "Deleted PowerDNS Zone")
-	return nil
 }

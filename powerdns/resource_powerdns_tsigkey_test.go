@@ -9,10 +9,11 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/go-cty/cty"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestTSIGKeyUpdateSendsSecretOnlyForRotation(t *testing.T) {
@@ -30,29 +31,6 @@ func TestTSIGKeyUpdateSendsSecretOnlyForRotation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			state := &terraform.InstanceState{
-				ID: "tf-old.",
-				Attributes: map[string]string{
-					"name": "tf-old", "algorithm": "hmac-sha256",
-					"key_wo_version": fmt.Sprint(tt.oldVersion),
-				},
-			}
-			if tt.oldVersion == 0 {
-				state.Attributes["key"] = testTSIGSecret
-			}
-			diff := &terraform.InstanceDiff{
-				Attributes: map[string]*terraform.ResourceAttrDiff{},
-				// Deliberately change the write-only input even when its version
-				// is unchanged, to ensure that does not request a rotation.
-				RawConfig: cty.ObjectVal(map[string]cty.Value{"key_wo": cty.StringVal(testTSIGSecretRotated)}),
-			}
-			name := "tf-old"
-			if tt.newVersion != tt.oldVersion {
-				diff.Attributes["key_wo_version"] = &terraform.ResourceAttrDiff{Old: fmt.Sprint(tt.oldVersion), New: fmt.Sprint(tt.newVersion)}
-			}
-			if tt.storedRotation {
-				diff.Attributes["key"] = &terraform.ResourceAttrDiff{Old: testTSIGSecret, New: testTSIGSecretRotated}
-			}
 			secret := testTSIGSecret
 			puts := 0
 			client := newTestClient(func(r *http.Request) (*http.Response, error) {
@@ -78,13 +56,33 @@ func TestTSIGKeyUpdateSendsSecretOnlyForRotation(t *testing.T) {
 						}
 						secret = key
 					}
-					if payload["name"] != name {
+					if payload["name"] != "tf-old" {
 						t.Error("update did not send the requested name")
 					}
 				}
-				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":%q,"name":%q,"algorithm":"hmac-sha256","key":%q}`, name+".", name, secret)), nil
+				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":%q,"name":%q,"algorithm":"hmac-sha256","key":%q}`, "tf-old.", "tf-old", secret)), nil
 			})
-			updated, diags := resourcePDNSTSIGKey().Apply(context.Background(), state, diff, &ProviderClients{PDNS: client})
+			h := newResourceHarness(t, newTSIGKeyResource(), &ProviderClients{PDNS: client})
+
+			prior := map[string]tftypes.Value{
+				"id": tfString("tf-old."), "name": tfString("tf-old"), "algorithm": tfString("hmac-sha256"),
+			}
+			config := map[string]tftypes.Value{"name": tfString("tf-old"), "algorithm": tfString("hmac-sha256")}
+			if tt.oldVersion != 0 {
+				prior["key_wo_version"] = tfInt(int64(tt.oldVersion))
+				// Deliberately change the write-only input even when its version
+				// is unchanged, to ensure that does not request a rotation.
+				config["key_wo"] = tfString(testTSIGSecretRotated)
+				config["key_wo_version"] = tfInt(int64(tt.newVersion))
+			} else {
+				prior["key"] = tfString(testTSIGSecret)
+				config["key"] = tfString(testTSIGSecret)
+				if tt.storedRotation {
+					config["key"] = tfString(testTSIGSecretRotated)
+				}
+			}
+			state := h.object(prior)
+			updated, diags := h.update(state, config)
 			if diags.HasError() {
 				t.Fatalf("update failed: %v", diags)
 			}
@@ -92,49 +90,26 @@ func TestTSIGKeyUpdateSendsSecretOnlyForRotation(t *testing.T) {
 			if tt.wantKey {
 				wantPuts = 1
 			}
-			if puts != wantPuts || updated.ID != name+"." {
-				t.Fatalf("update calls=%d id=%q, want %d updates and id %q", puts, updated.ID, wantPuts, name+".")
+			if id := tfAttrString(t, updated, "id"); puts != wantPuts || id != "tf-old." {
+				t.Fatalf("update calls=%d id=%q, want %d updates and id %q", puts, id, wantPuts, "tf-old.")
 			}
 		})
 	}
 }
 
-func TestTSIGKeyNameTrailingDotDoesNotPlanRename(t *testing.T) {
-	for _, name := range []string{"transfer-key", "transfer-key.", "renamed-key"} {
-		t.Run(name, func(t *testing.T) {
-			res := resourcePDNSTSIGKey()
-			state := &terraform.InstanceState{
-				ID: "transfer-key.",
-				Attributes: map[string]string{
-					"name": "transfer-key", "algorithm": "hmac-sha256", "key": testTSIGSecret,
-				},
-			}
-			diff, err := res.Diff(context.Background(), state, terraform.NewResourceConfigRaw(map[string]interface{}{
-				"name": name, "algorithm": "hmac-sha256", "key": testTSIGSecret,
-			}), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			changed := diff != nil && !diff.Empty()
-			if changed != (name == "renamed-key") {
-				t.Fatalf("name %q produces a rename: %t", name, changed)
-			}
-			if changed && !diff.RequiresNew() {
-				t.Fatal("a genuine rename must replace the key so dependent references see the new ID")
-			}
-		})
-	}
-}
-
-func TestTSIGKeyNameNormalizedInPlan(t *testing.T) {
-	diff, err := resourcePDNSTSIGKey().Diff(context.Background(), nil, terraform.NewResourceConfigRaw(map[string]interface{}{
-		"name": "transfer-key.", "algorithm": "hmac-sha256",
-	}), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if name := diff.Attributes["name"]; name == nil || name.New != "transfer-key" {
-		t.Fatal("the planned name must match the API spelling for dependent resources")
+// A trailing dot on the name is optional, so a refresh keeps whichever spelling
+// the configuration uses, while a different name is a genuinely different key.
+func TestTSIGKeyNameSemanticEquality(t *testing.T) {
+	ctx := context.Background()
+	prior := newSemanticString(tsigNameType, "transfer-key")
+	for name, want := range map[string]bool{"transfer-key": true, "transfer-key.": true, "renamed-key": false} {
+		equal, diags := newSemanticString(tsigNameType, name).StringSemanticEquals(ctx, prior)
+		if diags.HasError() {
+			t.Fatal(diags)
+		}
+		if equal != want {
+			t.Fatalf("name %q equal to transfer-key: got %t, want %t", name, equal, want)
+		}
 	}
 }
 
@@ -178,18 +153,13 @@ func TestTSIGKeyDeletePreservesOtherAlgorithms(t *testing.T) {
 				return jsonResponse(http.StatusNoContent, ``), nil
 			})
 			// An imported resource identifies its managed algorithm through state.
-			state := &terraform.InstanceState{
-				ID: "shared-key.",
-				Attributes: map[string]string{
-					"name": "shared-key", "algorithm": "hmac-sha256", "key": testTSIGSecret,
-				},
-			}
-			result, diags := resourcePDNSTSIGKey().Apply(context.Background(), state, &terraform.InstanceDiff{Destroy: true}, &ProviderClients{PDNS: client})
-			if diags.HasError() {
+			h := newResourceHarness(t, newTSIGKeyResource(), &ProviderClients{PDNS: client})
+			state := h.object(map[string]tftypes.Value{
+				"id": tfString("shared-key."), "name": tfString("shared-key"),
+				"algorithm": tfString("hmac-sha256"), "key": tfString(testTSIGSecret),
+			})
+			if diags := h.destroy(state); diags.HasError() {
 				t.Fatalf("destroy failed: %v", diags)
-			}
-			if result != nil && result.ID != "" {
-				t.Fatal("destroy retained the managed key in state")
 			}
 			if _, exists := keys["hmac-sha256"]; exists {
 				t.Fatal("destroy did not remove the managed algorithm")
@@ -211,25 +181,22 @@ func TestTSIGKeyReadWriteOnlyClearsPersistedSecret(t *testing.T) {
 			name = "API omits secret"
 		}
 		t.Run(name, func(t *testing.T) {
-			res := resourcePDNSTSIGKey()
-			data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{
-				"name": "tf-transition", "algorithm": "hmac-sha256", "key_wo_version": 1,
-			})
-			data.SetId("tf-transition.")
-			// Model a generated or explicit secret retained in prior state.
-			if err := data.Set("key", testTSIGSecret); err != nil {
-				t.Fatal(err)
-			}
 			client := newTestClient(func(r *http.Request) (*http.Response, error) {
 				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":"tf-transition.","name":"tf-transition","algorithm":"hmac-sha256","key":%q}`, returnedSecret)), nil
 			})
-			state := data.State()
+			h := newResourceHarness(t, newTSIGKeyResource(), &ProviderClients{PDNS: client})
+			// Model a generated or explicit secret retained in prior state.
+			state := h.object(map[string]tftypes.Value{
+				"id": tfString("tf-transition."), "name": tfString("tf-transition"),
+				"algorithm": tfString("hmac-sha256"), "key_wo_version": tfInt(1),
+				"key": tfString(testTSIGSecret),
+			})
 			for i := 0; i < 2; i++ {
-				refreshed, diags := res.RefreshWithoutUpgrade(context.Background(), state, &ProviderClients{PDNS: client})
+				refreshed, diags := h.read(state)
 				if diags.HasError() {
 					t.Fatalf("refresh failed: %v", diags)
 				}
-				if refreshed.Attributes["key"] != "" || refreshed.Attributes["key_wo"] != "" {
+				if !tfAttr(t, refreshed, "key").IsNull() || !tfAttr(t, refreshed, "key_wo").IsNull() {
 					t.Fatal("write-only mode retained secret material in state")
 				}
 				state = refreshed
@@ -261,9 +228,9 @@ resource "powerdns_tsigkey" "test-transition" {
   key_wo_version = 1
 }`, name, testTSIGSecret)
 			resource.Test(t, resource.TestCase{
-				PreCheck:          func() { testAccPreCheck(t) },
-				ProviderFactories: testAccProviderFactories,
-				CheckDestroy:      testAccCheckPDNSTSIGKeyDestroy,
+				PreCheck:                 func() { testAccPreCheck(t) },
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				CheckDestroy:             testAccCheckPDNSTSIGKeyDestroy,
 				Steps: []resource.TestStep{
 					{
 						Config: initial,
@@ -289,9 +256,9 @@ func TestAccPDNSTSIGKeyGenerated(t *testing.T) {
 	resourceName := "powerdns_tsigkey.test-generated"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSTSIGKeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSTSIGKeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSTSIGKeyConfigGenerated,
@@ -316,9 +283,9 @@ func TestAccPDNSTSIGKeyWriteOnly(t *testing.T) {
 	resourceName := "powerdns_tsigkey.test-wo"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSTSIGKeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSTSIGKeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSTSIGKeyConfigWriteOnly(testTSIGSecret, 1),
@@ -352,9 +319,9 @@ func TestAccPDNSTSIGKeyWriteOnlyRenameReplacesKey(t *testing.T) {
 	renamed := testPDNSTSIGKeyConfigWriteOnlyNamed("tf-wo-renamed", testTSIGSecretRotated, 1)
 	rotated := testPDNSTSIGKeyConfigWriteOnlyNamed("tf-wo-renamed", testTSIGSecret, 2)
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSTSIGKeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSTSIGKeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: initial,
@@ -398,24 +365,35 @@ resource "powerdns_tsigkey" "test-dotted" {
 	initial := config("tf-dotted.")
 	renamed := config("tf-dotted-renamed.")
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSTSIGKeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSTSIGKeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: initial,
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceName, "name", "tf-dotted"),
+					// State keeps the spelling from the configuration.
+					resource.TestCheckResourceAttr(resourceName, "name", "tf-dotted."),
 					resource.TestCheckResourceAttr(resourceName, "id", "tf-dotted."),
 				),
 			},
 			{Config: initial, PlanOnly: true},
+			{
+				// Dropping the trailing dot is the same key: it is updated in
+				// place and never replaced.
+				Config: config("tf-dotted"),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", "tf-dotted"),
+					resource.TestCheckResourceAttr(resourceName, "id", "tf-dotted."),
+					testAccCheckPDNSTSIGKeySecret(resourceName, testTSIGSecret),
+				),
+			},
 			{Config: config("tf-dotted"), PlanOnly: true},
 			{ResourceName: resourceName, ImportState: true, ImportStateVerify: true},
 			{
 				Config: renamed,
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceName, "name", "tf-dotted-renamed"),
+					resource.TestCheckResourceAttr(resourceName, "name", "tf-dotted-renamed."),
 					resource.TestCheckResourceAttr(resourceName, "id", "tf-dotted-renamed."),
 					testAccCheckPDNSTSIGKeySecret(resourceName, testTSIGSecret),
 				),
@@ -429,9 +407,9 @@ func TestAccPDNSTSIGKeyExplicitSecret(t *testing.T) {
 	resourceName := "powerdns_tsigkey.test-explicit"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSTSIGKeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSTSIGKeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSTSIGKeyConfigExplicit,
@@ -457,9 +435,9 @@ func TestAccPDNSTSIGKeyAlgorithmForcesNew(t *testing.T) {
 	resourceName := "powerdns_tsigkey.test-algorithm"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSTSIGKeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSTSIGKeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSTSIGKeyConfigAlgorithm,
@@ -483,13 +461,13 @@ func TestAccPDNSTSIGKeyAlgorithmForcesNew(t *testing.T) {
 
 func TestAccPDNSTSIGKeyInvalidAlgorithm(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSTSIGKeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSTSIGKeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSTSIGKeyConfigInvalidAlgorithm,
-				ExpectError: regexp.MustCompile(`expected algorithm to be one of`),
+				ExpectError: regexp.MustCompile(`algorithm\s+value\s+must\s+be\s+one\s+of`),
 			},
 		},
 	})
@@ -624,4 +602,40 @@ resource "powerdns_tsigkey" "test-wo" {
 	key_wo         = %q
 	key_wo_version = %d
 }`, name, secret, version)
+}
+
+func TestTSIGKeyCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusCreated, `{"id":"kept.","name":"kept","algorithm":"hmac-sha256"}`, 0, ""))
+	assertCreateKeepsState(t, newTSIGKeyResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"name": tfString("kept"), "algorithm": tfString("hmac-sha256")},
+		"kept.")
+}
+
+// While key_wo_version is unknown it is not clear whether the key becomes
+// write-only, so the planned secret must stay unknown instead of keeping the
+// stored one, which would be null once the version is known.
+func TestTSIGKeyModifyPlanLeavesSecretUnknownForUnknownVersion(t *testing.T) {
+	h := newResourceHarness(t, newTSIGKeyResource(), &ProviderClients{PDNS: newTestClient(nil)})
+	prior := h.object(map[string]tftypes.Value{
+		"id": tfString("tf-key."), "name": tfString("tf-key"),
+		"algorithm": tfString("hmac-sha256"), "key": tfString(testTSIGSecret),
+	})
+	config := h.object(map[string]tftypes.Value{
+		"name": tfString("tf-key"), "algorithm": tfString("hmac-sha256"),
+		"key_wo_version": tftypes.NewValue(tftypes.Number, tftypes.UnknownValue),
+	})
+	plan := h.plan(config, &prior)
+
+	resp := fwresource.ModifyPlanResponse{Plan: tfsdk.Plan{Schema: h.schema, Raw: plan}}
+	h.res.(fwresource.ResourceWithModifyPlan).ModifyPlan(context.Background(), fwresource.ModifyPlanRequest{
+		Config: tfsdk.Config{Schema: h.schema, Raw: config},
+		Plan:   tfsdk.Plan{Schema: h.schema, Raw: plan},
+		State:  tfsdk.State{Schema: h.schema, Raw: prior},
+	}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("ModifyPlan failed: %v", resp.Diagnostics)
+	}
+	if got := tfAttr(t, resp.Plan.Raw, "key"); got.IsKnown() {
+		t.Fatalf("planned key = %v, want unknown", got)
+	}
 }

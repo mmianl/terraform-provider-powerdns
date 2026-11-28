@@ -1,17 +1,19 @@
 package powerdns
 
 import (
+	"net/http"
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccPowerDNSReverseZone_CIDR(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSReverseZoneConfig_CIDR_8,
@@ -55,9 +57,9 @@ func TestAccPowerDNSReverseZone_CIDR(t *testing.T) {
 
 func TestAccPowerDNSReverseZone_InvalidCIDR(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPowerDNSReverseZoneConfig_InvalidCIDR,
@@ -69,9 +71,9 @@ func TestAccPowerDNSReverseZone_InvalidCIDR(t *testing.T) {
 
 func TestAccPowerDNSReverseZone_IPv6(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSReverseZoneConfig_IPv6,
@@ -88,9 +90,9 @@ func TestAccPowerDNSReverseZone_IPv6(t *testing.T) {
 
 func TestAccPowerDNSReverseZone_InvalidIPv6Prefix(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPowerDNSReverseZoneConfig_InvalidIPv6Prefix,
@@ -186,3 +188,10 @@ resource "powerdns_reverse_zone" "test_ipv6" {
   nameservers = ["ns1.example.com."]
 }
 `
+
+func TestReverseZoneCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusCreated, `{"id":"2.0.192.in-addr.arpa.","name":"2.0.192.in-addr.arpa."}`, 0, ""))
+	assertCreateKeepsState(t, newReverseZoneResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"cidr": tfString("192.0.2.0/24"), "kind": tfString("Native")},
+		"2.0.192.in-addr.arpa.")
+}

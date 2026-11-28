@@ -8,9 +8,12 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,42 +25,30 @@ func TestCryptokeyRoleChangesRequireReplacement(t *testing.T) {
 		oldRole := roles.requested
 		for _, newRole := range []string{"csk", "ksk", "zsk"} {
 			t.Run(oldRole+"_reported_as_"+roles.reported+"_to_"+newRole, func(t *testing.T) {
-				res := resourcePDNSZoneCryptokey()
-				data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{
-					"zone": "example.com.", "keytype": oldRole, "algorithm": "ecdsa256",
-				})
-				data.SetId("example.com.:1")
 				client := newTestClient(func(r *http.Request) (*http.Response, error) {
 					assert.Equal(t, http.MethodGet, r.Method)
 					return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":1,"keytype":%q,"algorithm":"ECDSAP256SHA256","bits":256,"active":true,"published":true}`, roles.reported)), nil
 				})
-				ctx := context.Background()
-				state := data.State()
+				h := newResourceHarness(t, newZoneCryptokeyResource(), &ProviderClients{PDNS: client})
+				state := h.object(map[string]tftypes.Value{
+					"id": tfString("example.com.:1"), "zone": tfString("example.com."),
+					"keytype": tfString(oldRole), "algorithm": tfString("ecdsa256"),
+				})
 				// Refresh twice to ensure the requested role survives in saved state.
 				for i := 0; i < 2; i++ {
-					refreshed, diags := res.RefreshWithoutUpgrade(ctx, state, &ProviderClients{PDNS: client})
-					if !assert.False(t, diags.HasError(), "%v", diags) || !assert.NotNil(t, refreshed) {
+					refreshed, diags := h.read(state)
+					if !assert.False(t, diags.HasError(), "%v", diags) {
 						return
 					}
 					state = refreshed
-					assert.Equal(t, oldRole, state.Attributes["keytype"])
+					assert.Equal(t, oldRole, tfAttrString(t, state, "keytype"))
 				}
-				diff, err := res.Diff(ctx, state, terraform.NewResourceConfigRaw(map[string]interface{}{
-					"zone": "example.com.", "keytype": newRole, "algorithm": "ecdsa256",
-				}), nil)
-				if !assert.NoError(t, err) {
-					return
-				}
-				if oldRole == newRole {
-					assert.True(t, diff == nil || diff.Empty(), "unchanged role must produce an empty plan")
-				} else if assert.NotNil(t, diff, "a role change must produce a diff") {
-					assert.True(t, diff.RequiresNew(), "a role change must replace the key")
-					if change := diff.Attributes["keytype"]; assert.NotNil(t, change) {
-						assert.Equal(t, oldRole, change.Old)
-						assert.Equal(t, newRole, change.New)
-						assert.True(t, change.RequiresNew)
-					}
-				}
+				// The role is replace-only: an unchanged role is the same value, any
+				// other role is a different one and therefore forces a new key.
+				equal, diags := newSemanticString(caseInsensitiveStringType, newRole).StringSemanticEquals(
+					context.Background(), newSemanticString(caseInsensitiveStringType, tfAttrString(t, state, "keytype")))
+				assert.False(t, diags.HasError())
+				assert.Equal(t, oldRole == newRole, equal)
 			})
 		}
 	}
@@ -69,12 +60,10 @@ func TestCryptokeyImportUsesServerRole(t *testing.T) {
 			client := newTestClient(func(r *http.Request) (*http.Response, error) {
 				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":1,"keytype":%q,"algorithm":"ECDSAP256SHA256","bits":256,"active":true,"published":true}`, role)), nil
 			})
-			res := resourcePDNSZoneCryptokey()
-			data := res.Data(nil)
-			data.SetId("example.com.:1")
-			imported, err := res.Importer.StateContext(context.Background(), data, &ProviderClients{PDNS: client})
-			if assert.NoError(t, err) && assert.Len(t, imported, 1) {
-				assert.Equal(t, role, imported[0].Get("keytype"))
+			h := newResourceHarness(t, newZoneCryptokeyResource(), &ProviderClients{PDNS: client})
+			imported, diags := h.importState("example.com.:1")
+			if assert.False(t, diags.HasError(), "%v", diags) {
+				assert.Equal(t, role, tfAttrString(t, imported, "keytype"))
 			}
 		})
 	}
@@ -88,14 +77,13 @@ func TestCryptokeyReadUsesSeparateServerRoles(t *testing.T) {
 			client := newTestClient(func(r *http.Request) (*http.Response, error) {
 				return jsonResponse(http.StatusOK, fmt.Sprintf(`{"id":1,"keytype":%q,"active":true,"published":true}`, roles.reported)), nil
 			})
-			res := resourcePDNSZoneCryptokey()
-			data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{
-				"zone": "example.com.", "keytype": roles.previous,
+			h := newResourceHarness(t, newZoneCryptokeyResource(), &ProviderClients{PDNS: client})
+			state := h.object(map[string]tftypes.Value{
+				"id": tfString("example.com.:1"), "zone": tfString("example.com."), "keytype": tfString(roles.previous),
 			})
-			data.SetId("example.com.:1")
-			diags := res.ReadContext(context.Background(), data, &ProviderClients{PDNS: client})
+			refreshed, diags := h.read(state)
 			if assert.False(t, diags.HasError(), "%v", diags) {
-				assert.Equal(t, roles.reported, data.Get("keytype"), "changes between KSK/CSK and ZSK are not normalizations")
+				assert.Equal(t, roles.reported, tfAttrString(t, refreshed, "keytype"), "changes between KSK/CSK and ZSK are not normalizations")
 			}
 		})
 	}
@@ -138,10 +126,10 @@ resource "powerdns_zone_cryptokey" "role-change" {
 		)
 	}
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneCryptokeyDestroy,
-		Steps:             steps,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
+		Steps:                    steps,
 	})
 }
 
@@ -149,9 +137,9 @@ func TestAccPDNSZoneCryptokeyGenerated(t *testing.T) {
 	resourceName := "powerdns_zone_cryptokey.test-generated"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneCryptokeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneCryptokeyConfigGenerated,
@@ -170,8 +158,9 @@ func TestAccPDNSZoneCryptokeyGenerated(t *testing.T) {
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
-				// The private key is never returned on a plain read.
-				ImportStateVerifyIgnore: []string{"content"},
+				// The private key is never returned on a plain read, and the algorithm
+				// keeps the configured spelling in state.
+				ImportStateVerifyIgnore: []string{"content", "algorithm"},
 			},
 		},
 	})
@@ -181,9 +170,9 @@ func TestAccPDNSZoneCryptokeyActiveToggle(t *testing.T) {
 	resourceName := "powerdns_zone_cryptokey.test-toggle"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneCryptokeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testPDNSZoneCryptokeyConfigToggle,
@@ -211,9 +200,9 @@ func TestAccPDNSZoneCryptokeyRSAWithBits(t *testing.T) {
 	resourceName := "powerdns_zone_cryptokey.test-rsa"
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneCryptokeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				// RSA requires an explicit key size.
@@ -221,7 +210,8 @@ func TestAccPDNSZoneCryptokeyRSAWithBits(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckPDNSZoneCryptokeyExists(resourceName),
 					resource.TestCheckResourceAttr(resourceName, "bits", "2048"),
-					resource.TestCheckResourceAttr(resourceName, "algorithm", "RSASHA256"),
+					// State keeps the spelling from the configuration.
+					resource.TestCheckResourceAttr(resourceName, "algorithm", "rsasha256"),
 				),
 			},
 			{
@@ -235,13 +225,13 @@ func TestAccPDNSZoneCryptokeyRSAWithBits(t *testing.T) {
 
 func TestAccPDNSZoneCryptokeyInvalidKeytype(t *testing.T) {
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPDNSZoneCryptokeyDestroy,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config:      testPDNSZoneCryptokeyConfigInvalidKeytype,
-				ExpectError: regexp.MustCompile(`expected keytype to be one of`),
+				ExpectError: regexp.MustCompile(`keytype\s+value\s+must\s+be\s+one\s+of`),
 			},
 		},
 	})
@@ -274,6 +264,16 @@ func TestNormalizeCryptokeyAlgorithm(t *testing.T) {
 		"ecdsa384":        "ECDSAP384SHA384",
 		"rsasha256":       "RSASHA256",
 		"ed25519":         "ED25519",
+		// The algorithm numbers.
+		"5":  "RSASHA1",
+		"7":  "RSASHA1-NSEC3-SHA1",
+		"8":  "RSASHA256",
+		"10": "RSASHA512",
+		"12": "ECC-GOST",
+		"13": "ECDSAP256SHA256",
+		"14": "ECDSAP384SHA384",
+		"15": "ED25519",
+		"16": "ED448",
 		// Unknown values are simply upper-cased.
 		"something-else": "SOMETHING-ELSE",
 	}
@@ -283,6 +283,74 @@ func TestNormalizeCryptokeyAlgorithm(t *testing.T) {
 			t.Errorf("NormalizeCryptokeyAlgorithm(%q) = %q, want %q", input, got, want)
 		}
 	}
+}
+
+// Writing an algorithm as its number, its short name or its full name is the
+// same key, so changing between them must not replace it.
+func TestAccPDNSZoneCryptokeyAlgorithmSpellings(t *testing.T) {
+	const resourceName = "powerdns_zone_cryptokey.spelling"
+	var dnskey string
+	var steps []resource.TestStep
+	for _, algorithm := range []string{"ecdsa256", "13", "ECDSAP256SHA256", "ecdsa256"} {
+		config := fmt.Sprintf(`
+resource "powerdns_zone" "cryptokey-spelling" {
+  name = "cryptokey-spelling.sysa.abc."
+  kind = "Native"
+}
+
+resource "powerdns_zone_cryptokey" "spelling" {
+  zone      = powerdns_zone.cryptokey-spelling.name
+  keytype   = "csk"
+  algorithm = %q
+}`, algorithm)
+		steps = append(steps,
+			resource.TestStep{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "algorithm", algorithm),
+					func(s *terraform.State) error {
+						current := s.RootModule().Resources[resourceName].Primary.Attributes["dnskey"]
+						if dnskey != "" && current != dnskey {
+							return fmt.Errorf("writing the algorithm as %q replaced the key", algorithm)
+						}
+						dnskey = current
+						return nil
+					},
+				),
+			},
+			resource.TestStep{Config: config, PlanOnly: true},
+		)
+	}
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
+		Steps:                    steps,
+	})
+}
+
+func TestAccPDNSZoneCryptokeyNumericAlgorithmOnCreate(t *testing.T) {
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPDNSZoneCryptokeyDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "powerdns_zone" "cryptokey-numeric" {
+  name = "cryptokey-numeric.sysa.abc."
+  kind = "Native"
+}
+
+resource "powerdns_zone_cryptokey" "numeric" {
+  zone      = powerdns_zone.cryptokey-numeric.name
+  keytype   = "csk"
+  algorithm = "13"
+}`,
+				Check: resource.TestCheckResourceAttr("powerdns_zone_cryptokey.numeric", "algorithm", "13"),
+			},
+		},
+	})
 }
 
 func testAccCheckPDNSZoneCryptokeyDestroy(s *terraform.State) error {
@@ -392,3 +460,41 @@ resource "powerdns_zone_cryptokey" "test-rsa" {
 	algorithm = "rsasha256"
 	bits      = 2048
 }`
+
+// An unknown key size cannot be compared yet, so the key is replaced.
+func TestCryptokeyUnknownBitsRequireReplace(t *testing.T) {
+	h := newResourceHarness(t, newZoneCryptokeyResource(), &ProviderClients{})
+	attribute := h.schema.Attributes["bits"]
+	modifiers := attribute.(interface {
+		Int64PlanModifiers() []planmodifier.Int64
+	}).Int64PlanModifiers()
+
+	present := tfsdk.State{Raw: tftypes.NewValue(tftypes.String, "x")}
+	run := func(config, plan, state types.Int64) bool {
+		resp := &planmodifier.Int64Response{PlanValue: plan}
+		for _, m := range modifiers {
+			m.PlanModifyInt64(context.Background(), planmodifier.Int64Request{
+				ConfigValue: config, PlanValue: plan, StateValue: state,
+				State: present, Plan: tfsdk.Plan{Raw: tftypes.NewValue(tftypes.String, "x")},
+			}, resp)
+		}
+		return resp.RequiresReplace
+	}
+	assert.True(t, run(types.Int64Unknown(), types.Int64Unknown(), types.Int64Value(2048)))
+	assert.False(t, run(types.Int64Null(), types.Int64Value(2048), types.Int64Value(2048)))
+	assert.True(t, run(types.Int64Value(4096), types.Int64Value(4096), types.Int64Value(2048)))
+}
+
+func TestCryptokeyCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestClient(writesSucceedReadsFail(http.StatusCreated, `{"id":7,"keytype":"csk","algorithm":"ECDSAP256SHA256","bits":256}`, 0, ""))
+	assertCreateKeepsState(t, newZoneCryptokeyResource(), &ProviderClients{PDNS: client},
+		map[string]tftypes.Value{"zone": tfString("kept.example."), "keytype": tfString("csk"), "algorithm": tfString("ecdsa256")},
+		"kept.example.:7")
+}
+
+func TestCryptokeyAlgorithmForAPI(t *testing.T) {
+	assert.Equal(t, "ECDSAP256SHA256", cryptokeyAlgorithmForAPI("13"))
+	assert.Equal(t, "RSASHA256", cryptokeyAlgorithmForAPI("8"))
+	assert.Equal(t, "ecdsa256", cryptokeyAlgorithmForAPI("ecdsa256"))
+	assert.Equal(t, "ECDSAP256SHA256", cryptokeyAlgorithmForAPI("ECDSAP256SHA256"))
+}

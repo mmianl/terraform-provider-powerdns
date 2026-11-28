@@ -4,16 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccPowerDNSRecursorConfig_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckRecursor(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckRecursor(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSRecursorConfigConfig,
@@ -72,4 +74,11 @@ func testAccCheckPowerDNSRecursorConfigExists(n string) resource.TestCheckFunc {
 
 		return nil
 	}
+}
+
+func TestRecursorConfigCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestRecursorClient("localhost", writesSucceedReadsFail(http.StatusOK, "", 0, ""))
+	assertCreateKeepsState(t, newRecursorConfigResource(), &ProviderClients{Recursor: client},
+		map[string]tftypes.Value{"name": tfString("allow-from"), "value": tfStringSet("127.0.0.0/8")},
+		"allow-from")
 }

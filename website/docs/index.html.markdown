@@ -50,3 +50,7 @@ The following arguments are supported:
 - `cache_mem_size` - (Optional) Memory size in MB for a cache of the PowerDNS REST API requests. This can also be specified with the `PDNS_CACHE_MEM_SIZE` environment variable.
 - `cache_ttl` - (Optional) TTL in seconds for a cache of the PowerDNS REST API requests. This can also be specified with the `PDNS_CACHE_TTL` environment variable.
 - `request_timeout` - (Optional) Timeout in seconds for a single API request, defaulting to 60. A server that accepts a connection and then stops responding would otherwise hold an apply open indefinitely. Set it to `0` to leave requests unbounded. This can also be specified with the `PDNS_REQUEST_TIMEOUT` environment variable.
+
+## Upgrading
+
+Version 3.0.0 is the first release built on the Terraform Plugin Framework. It needs Terraform 1.0 or later, and existing state keeps working with no re-import. Read the [upgrade guide](/docs/providers/powerdns/guides/upgrading-to-v3.html) before you upgrade. It explains how to back up the state, which changes the first plan can show, and how to roll back.

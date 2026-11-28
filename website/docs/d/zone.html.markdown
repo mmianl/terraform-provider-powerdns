@@ -67,6 +67,7 @@ This resource supports the following arguments:
 
 This resource exports the following attributes in addition to the arguments above:
 
+- `id` - The zone name, with a trailing dot.
 - `kind` - The kind of zone (Master, Slave, etc.).
 - `account` - The account associated with the zone (defaults to "admin").
 - `masters` - Set of master servers for this zone (Slave zones only).

@@ -137,6 +137,7 @@ Manage each TSIG metadata kind through either these zone attributes or a
 
 In addition to the arguments above, the following attributes are exported:
 
+- `id` - The zone name, with a trailing dot.
 - `serial` - The current serial of the zone.
 - `notified_serial` - The last serial this zone was notified for.
 - `edited_serial` - The SOA serial after applying the SOA edit rule.

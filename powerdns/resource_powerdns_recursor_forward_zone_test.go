@@ -8,9 +8,9 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,37 +47,29 @@ func TestRecursorForwardZoneImport(t *testing.T) {
 				assert.Equal(t, "/api/v1/servers/localhost/zones/example.com.", r.URL.Path)
 				return jsonResponse(http.StatusOK, tt.body), nil
 			})
-			res := resourcePDNSRecursorForwardZone()
-			data := schema.TestResourceDataRaw(t, res.Schema, map[string]interface{}{})
-			data.SetId("example.com.")
-			ctx := context.Background()
-			meta := &ProviderClients{Recursor: client}
-			imported, err := res.Importer.StateContext(ctx, data, meta)
-			if !assert.NoError(t, err) || !assert.Len(t, imported, 1) {
-				return
-			}
-			diags := res.ReadContext(ctx, imported[0], meta)
+			h := newResourceHarness(t, newRecursorForwardZoneResource(), &ProviderClients{Recursor: client})
+			imported, diags := h.importState("example.com.")
 			if tt.wantError != "" {
 				if assert.True(t, diags.HasError(), "unsupported zone must not be imported") {
-					assert.Contains(t, diags[0].Summary, tt.wantError)
+					assert.Contains(t, diags[0].Detail(), tt.wantError)
 				}
 				return
 			}
 			if !assert.False(t, diags.HasError(), "%v", diags) {
 				return
 			}
-			assert.Equal(t, "example.com.", imported[0].Get("zone"))
-			assert.Equal(t, "Forwarded", imported[0].Get("kind"))
-			assert.Equal(t, []interface{}{"192.0.2.1"}, imported[0].Get("servers"))
+			assert.Equal(t, "example.com.", tfAttrString(t, imported, "zone"))
+			assert.Equal(t, "Forwarded", tfAttrString(t, imported, "kind"))
+			assert.Equal(t, []string{"192.0.2.1"}, tfAttrStrings(t, imported, "servers"))
 		})
 	}
 }
 
 func TestAccPowerDNSRecursorForwardZone_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckRecursor(t) },
-		ProviderFactories: testAccProviderFactories,
-		CheckDestroy:      testAccCheckPowerDNSRecursorForwardZoneDestroy,
+		PreCheck:                 func() { testAccPreCheckRecursor(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPowerDNSRecursorForwardZoneDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccPowerDNSRecursorForwardZoneConfig,
@@ -112,20 +104,22 @@ resource "powerdns_recursor_forward_zone" "test" {
 // no diff and later flipping the setting on an update.
 func TestAccPowerDNSRecursorForwardZone_ImportRecursiveRejected(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheckRecursor(t) },
-		ProviderFactories: testAccProviderFactories,
+		PreCheck:                 func() { testAccPreCheckRecursor(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				PreConfig: func() {
 					// PreConfig runs before the harness configures its provider.
 					// Use a fresh client so this test also works in isolation.
-					provider := Provider()
-					data := schema.TestResourceDataRaw(t, provider.Schema, map[string]interface{}{})
-					meta, diags := provider.ConfigureContextFunc(context.Background(), data)
-					if diags.HasError() {
-						t.Fatalf("failed to configure out-of-band client: %v", diags)
+					cfg, err := resolveConfig(providerModel{})
+					if err != nil {
+						t.Fatalf("failed to resolve out-of-band configuration: %v", err)
 					}
-					client := meta.(*ProviderClients)
+					_, recursor, err := cfg.Clients(context.Background())
+					if err != nil {
+						t.Fatalf("failed to configure out-of-band client: %v", err)
+					}
+					client := &ProviderClients{Recursor: recursor}
 					zone := &RecursorForwardZone{
 						Name:             "recursive.example.com.",
 						Type:             "Zone",
@@ -216,4 +210,171 @@ func testAccCheckPowerDNSRecursorForwardZoneExists(n string) resource.TestCheckF
 
 		return nil
 	}
+}
+
+func TestSameServerAddress(t *testing.T) {
+	for _, tc := range []struct {
+		configured, api string
+		want            bool
+	}{
+		{"192.0.2.1", "192.0.2.1", true},
+		{"pdns:5300", "172.23.0.2:5300", false},
+		{"ns.example.com", "192.0.2.9", false},
+		{"ns.example.com", "NS.example.com", true},
+		{"pdns:5300", "172.23.0.2:5301", false},
+		{"192.0.2.1", "192.0.2.2", false},
+		{"pdns:5300", "other:5300", false},
+	} {
+		assert.Equal(t, tc.want, sameServerAddress(tc.configured, tc.api), "%s vs %s", tc.configured, tc.api)
+	}
+}
+
+func TestRecursorForwardZoneCreateKeepsStateWhenReadFails(t *testing.T) {
+	client := newTestRecursorClient("localhost", writesSucceedReadsFail(http.StatusCreated, "", 0, ""))
+	assertCreateKeepsState(t, newRecursorForwardZoneResource(), &ProviderClients{Recursor: client},
+		map[string]tftypes.Value{"zone": tfString("kept.example."), "servers": tfStringList("192.0.2.53")},
+		"kept.example.")
+}
+
+// The Recursor stores an address in place of a host name. The host name written
+// in the configuration stays in state, on create and on every refresh.
+func TestRecursorForwardZoneKeepsConfiguredHostName(t *testing.T) {
+	client := newTestRecursorClient("localhost", func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet {
+			return jsonResponse(http.StatusCreated, ""), nil
+		}
+		return jsonResponse(http.StatusOK,
+			`{"name":"kept.example.","kind":"Forwarded","servers":["172.23.0.2:5300","192.0.2.9:53"],"recursion_desired":false}`), nil
+	})
+	h := newResourceHarness(t, newRecursorForwardZoneResource(), &ProviderClients{Recursor: client})
+	state, diags := h.create(map[string]tftypes.Value{
+		"zone": tfString("kept.example."), "servers": tfStringList("pdns:5300", "192.0.2.9"),
+	})
+	assert.False(t, diags.HasError(), "%v", diags)
+	assert.Equal(t, []string{"pdns:5300", "192.0.2.9"}, tfAttrStrings(t, state, "servers"))
+
+	state, diags = h.read(state)
+	assert.False(t, diags.HasError(), "%v", diags)
+	assert.Equal(t, []string{"pdns:5300", "192.0.2.9"}, tfAttrStrings(t, state, "servers"))
+
+	// A change of port or of an address written as an address is not hidden. The
+	// provider cannot resolve names, so a host name matches any address on its
+	// port.
+	other := newTestRecursorClient("localhost", func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK,
+			`{"name":"kept.example.","kind":"Forwarded","servers":["172.23.0.2:5301","198.51.100.7:53"],"recursion_desired":false}`), nil
+	})
+	changed := newResourceHarness(t, newRecursorForwardZoneResource(), &ProviderClients{Recursor: other})
+	state, diags = changed.read(state)
+	assert.False(t, diags.HasError(), "%v", diags)
+	assert.Equal(t, []string{"172.23.0.2:5301", "198.51.100.7"}, tfAttrStrings(t, state, "servers"))
+}
+
+func TestSameServerAddressIPv6Spellings(t *testing.T) {
+	for _, tc := range []struct {
+		configured, api string
+		want            bool
+	}{
+		{"[2001:0db8:0000::1]:5300", "[2001:db8::1]:5300", true},
+		{"2001:0db8:0000::1", "2001:db8::1", true},
+		{"[2001:0db8:0000::1]:5300", "[2001:db8::1]:5301", false},
+		{"[2001:0db8:0000::1]:5300", "[2001:db8::2]:5300", false},
+	} {
+		assert.Equal(t, tc.want, sameServerAddress(tc.configured, tc.api), "%s vs %s", tc.configured, tc.api)
+	}
+}
+
+func TestReconcileServers(t *testing.T) {
+	t.Run("equivalent spellings keep the configured one", func(t *testing.T) {
+		servers, resolved := reconcileServers([]string{"[2001:0db8::1]:5300"}, []string{"[2001:db8::1]:5300"}, nil, false)
+		assert.Equal(t, []string{"[2001:0db8::1]:5300"}, servers)
+		assert.Empty(t, resolved)
+	})
+	t.Run("a host name is kept right after a write and remembered", func(t *testing.T) {
+		servers, resolved := reconcileServers([]string{"localhost"}, []string{"127.0.0.1"}, nil, true)
+		assert.Equal(t, []string{"localhost"}, servers)
+		assert.Equal(t, map[string]string{"localhost": "127.0.0.1"}, resolved)
+	})
+	t.Run("a host name is kept while it keeps the remembered address", func(t *testing.T) {
+		servers, _ := reconcileServers([]string{"localhost"}, []string{"127.0.0.1"}, map[string]string{"localhost": "127.0.0.1"}, false)
+		assert.Equal(t, []string{"localhost"}, servers)
+	})
+	t.Run("a changed address is drift", func(t *testing.T) {
+		servers, resolved := reconcileServers([]string{"localhost"}, []string{"192.0.2.99"}, map[string]string{"localhost": "127.0.0.1"}, false)
+		assert.Equal(t, []string{"192.0.2.99"}, servers)
+		assert.Empty(t, resolved)
+	})
+	t.Run("nothing remembered, as after an upgrade, trusts the first read", func(t *testing.T) {
+		servers, resolved := reconcileServers([]string{"localhost"}, []string{"127.0.0.1"}, nil, false)
+		assert.Equal(t, []string{"localhost"}, servers)
+		assert.Equal(t, map[string]string{"localhost": "127.0.0.1"}, resolved)
+	})
+	t.Run("a different port is drift", func(t *testing.T) {
+		servers, _ := reconcileServers([]string{"pdns:5300"}, []string{"172.23.0.2:5301"}, nil, true)
+		assert.Equal(t, []string{"172.23.0.2:5301"}, servers)
+	})
+	t.Run("an IP address is never matched to another", func(t *testing.T) {
+		servers, _ := reconcileServers([]string{"192.0.2.1"}, []string{"192.0.2.2"}, nil, true)
+		assert.Equal(t, []string{"192.0.2.2"}, servers)
+	})
+	t.Run("a different number of servers shows the server's list", func(t *testing.T) {
+		servers, _ := reconcileServers([]string{"localhost"}, []string{"127.0.0.1", "192.0.2.1"}, nil, true)
+		assert.Equal(t, []string{"127.0.0.1", "192.0.2.1"}, servers)
+	})
+}
+
+func TestResolvedServersWithoutPrivateState(t *testing.T) {
+	known, diags := loadResolvedServers(context.Background(), nil)
+	assert.Nil(t, known)
+	assert.False(t, diags.HasError())
+	assert.False(t, saveResolvedServers(context.Background(), nil, map[string]string{"a": "b"}).HasError())
+}
+
+// A host name stays quiet while the server keeps its address, and a change of
+// that address made outside Terraform is reported.
+func TestAccPowerDNSRecursorForwardZone_HostnameDrift(t *testing.T) {
+	const config = `
+resource "powerdns_recursor_forward_zone" "host" {
+  zone    = "hostname-drift.example."
+  servers = ["localhost"]
+}
+`
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheckRecursor(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPowerDNSRecursorForwardZoneDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  resource.TestCheckResourceAttr("powerdns_recursor_forward_zone.host", "servers.0", "localhost"),
+			},
+			{Config: config, PlanOnly: true},
+			{
+				PreConfig: func() {
+					cfg, err := resolveConfig(providerModel{})
+					if err != nil {
+						t.Fatalf("failed to resolve out-of-band configuration: %v", err)
+					}
+					_, recursor, err := cfg.Clients(context.Background())
+					if err != nil {
+						t.Fatalf("failed to configure out-of-band client: %v", err)
+					}
+					ctx := context.Background()
+					if err := recursor.DeleteForwardZone(ctx, "hostname-drift.example."); err != nil {
+						t.Fatalf("failed to delete the zone out of band: %v", err)
+					}
+					zone := &RecursorForwardZone{Name: "hostname-drift.example.", Type: "Zone", Kind: "Forwarded", Servers: []string{"192.0.2.99"}}
+					if err := recursor.CreateForwardZone(ctx, zone); err != nil {
+						t.Fatalf("failed to change the zone out of band: %v", err)
+					}
+				},
+				Config:             config,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+			// Applying restores the configured server.
+			{Config: config},
+			{Config: config, PlanOnly: true},
+		},
+	})
 }

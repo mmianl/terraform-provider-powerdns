@@ -4,131 +4,116 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-func dataSourcePDNSRecordSOA() *schema.Resource {
-	return &schema.Resource{
-		ReadContext: dataSourcePDNSRecordSOARead,
+var (
+	_ datasource.DataSource              = &recordSOADataSource{}
+	_ datasource.DataSourceWithConfigure = &recordSOADataSource{}
+)
 
-		Schema: map[string]*schema.Schema{
-			"zone": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ValidateFunc: ValidateZoneName,
-				Description:  "The name of the zone containing the SOA record. Must be a fully qualified domain name ending with a trailing dot.",
+func newRecordSOADataSource() datasource.DataSource { return &recordSOADataSource{} }
+
+type recordSOADataSource struct {
+	clients *ProviderClients
+}
+
+type recordSOADataSourceModel struct {
+	ID       types.String `tfsdk:"id"`
+	Zone     types.String `tfsdk:"zone"`
+	Name     types.String `tfsdk:"name"`
+	TTL      types.Int64  `tfsdk:"ttl"`
+	Disabled types.Bool   `tfsdk:"disabled"`
+	Mname    types.String `tfsdk:"mname"`
+	Rname    types.String `tfsdk:"rname"`
+	Serial   types.Int64  `tfsdk:"serial"`
+	Refresh  types.Int64  `tfsdk:"refresh"`
+	Retry    types.Int64  `tfsdk:"retry"`
+	Expire   types.Int64  `tfsdk:"expire"`
+	Minimum  types.Int64  `tfsdk:"minimum"`
+}
+
+func (d *recordSOADataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_record_soa"
+}
+
+func (d *recordSOADataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "Reads the SOA record of a PowerDNS zone.",
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{Computed: true, Description: "The record name and type joined by `:::`."},
+			"zone": schema.StringAttribute{
+				Required:    true,
+				Validators:  []validator.String{validateWith(ValidateZoneName)},
+				Description: "The name of the zone containing the SOA record. Must be a fully qualified domain name ending with a trailing dot.",
 			},
-			"name": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ValidateFunc: ValidateFQDN,
-				Description:  "The name of the SOA record (usually the same as the zone name). Must be a fully qualified domain name ending with a trailing dot.",
+			"name": schema.StringAttribute{
+				Required:    true,
+				Validators:  []validator.String{validateWith(ValidateFQDN)},
+				Description: "The name of the SOA record (usually the same as the zone name). Must be a fully qualified domain name ending with a trailing dot.",
 			},
-			"ttl": {
-				Type:        schema.TypeInt,
-				Computed:    true,
-				Description: "The TTL of the SOA record.",
-			},
-			"disabled": {
-				Type:        schema.TypeBool,
-				Computed:    true,
-				Description: "Whether the SOA record is disabled.",
-			},
-			"mname": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "Primary nameserver (MNAME).",
-			},
-			"rname": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "Responsible person email in DNS format (RNAME).",
-			},
-			"serial": {
-				Type:        schema.TypeInt,
-				Computed:    true,
-				Description: "SOA serial number.",
-			},
-			"refresh": {
-				Type:        schema.TypeInt,
-				Computed:    true,
-				Description: "Refresh interval in seconds.",
-			},
-			"retry": {
-				Type:        schema.TypeInt,
-				Computed:    true,
-				Description: "Retry interval in seconds.",
-			},
-			"expire": {
-				Type:        schema.TypeInt,
-				Computed:    true,
-				Description: "Expire time in seconds.",
-			},
-			"minimum": {
-				Type:        schema.TypeInt,
-				Computed:    true,
-				Description: "Minimum TTL (negative caching) in seconds.",
-			},
+			"ttl":      schema.Int64Attribute{Computed: true, Description: "The TTL of the SOA record."},
+			"disabled": schema.BoolAttribute{Computed: true, Description: "Whether the SOA record is disabled."},
+			"mname":    schema.StringAttribute{Computed: true, Description: "Primary nameserver (MNAME)."},
+			"rname":    schema.StringAttribute{Computed: true, Description: "Responsible person email in DNS format (RNAME)."},
+			"serial":   schema.Int64Attribute{Computed: true, Description: "SOA serial number."},
+			"refresh":  schema.Int64Attribute{Computed: true, Description: "Refresh interval in seconds."},
+			"retry":    schema.Int64Attribute{Computed: true, Description: "Retry interval in seconds."},
+			"expire":   schema.Int64Attribute{Computed: true, Description: "Expire time in seconds."},
+			"minimum":  schema.Int64Attribute{Computed: true, Description: "Minimum TTL (negative caching) in seconds."},
 		},
 	}
 }
 
-func dataSourcePDNSRecordSOARead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client := meta.(*ProviderClients)
+func (d *recordSOADataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	d.clients = clientsFromProviderData(req.ProviderData, &resp.Diagnostics)
+}
 
-	zone := d.Get("zone").(string)
-	name := d.Get("name").(string)
+func (d *recordSOADataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data recordSOADataSourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	zone := data.Zone.ValueString()
+	name := data.Name.ValueString()
 
 	ctx = tflog.SetField(ctx, "zone", zone)
 	ctx = tflog.SetField(ctx, "name", name)
 	tflog.Info(ctx, "Reading SOA record data source")
 
-	records, err := client.PDNS.ListRecordsInRRSet(ctx, zone, name, "SOA")
+	records, err := d.clients.PDNS.ListRecordsInRRSet(ctx, zone, name, "SOA")
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("couldn't fetch SOA record for %s in zone %s: %w", name, zone, err))
+		resp.Diagnostics.AddError("Could not fetch SOA record", fmt.Sprintf("couldn't fetch SOA record for %s in zone %s: %s", name, zone, err))
+		return
 	}
-
 	if len(records) == 0 {
-		return diag.FromErr(fmt.Errorf("SOA record for %s not found in zone %s", name, zone))
+		resp.Diagnostics.AddError("SOA record not found", fmt.Sprintf("SOA record for %s not found in zone %s", name, zone))
+		return
 	}
 
 	mname, rname, serial, refresh, retry, expire, minimum, err := parseSOAContent(records[0].Content)
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("error parsing SOA content: %w", err))
+		resp.Diagnostics.AddError("Error parsing SOA content", err.Error())
+		return
 	}
 
-	d.SetId(records[0].ID())
-
-	if err := d.Set("ttl", records[0].TTL); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("disabled", records[0].Disabled); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("mname", mname); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("rname", rname); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("serial", serial); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("refresh", refresh); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("retry", retry); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("expire", expire); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("minimum", minimum); err != nil {
-		return diag.FromErr(err)
-	}
+	data.ID = types.StringValue(records[0].ID())
+	data.TTL = types.Int64Value(int64(records[0].TTL))
+	data.Disabled = types.BoolValue(records[0].Disabled)
+	data.Mname = types.StringValue(mname)
+	data.Rname = types.StringValue(rname)
+	data.Serial = types.Int64Value(int64(serial))
+	data.Refresh = types.Int64Value(int64(refresh))
+	data.Retry = types.Int64Value(int64(retry))
+	data.Expire = types.Int64Value(int64(expire))
+	data.Minimum = types.Int64Value(int64(minimum))
 
 	tflog.Info(ctx, "Successfully retrieved SOA record")
-	return nil
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

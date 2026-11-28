@@ -28,6 +28,7 @@ output "ds_records" {
 
 ## Attribute Reference
 
+- `id` - The zone name, with a trailing dot.
 - `cryptokeys` - A list of all DNSSEC keys for the zone. Each entry has the following attributes:
   - `key_id` - The numeric ID PowerDNS assigned to this key.
   - `keytype` - The role of the key: `ksk`, `zsk` or `csk`.
