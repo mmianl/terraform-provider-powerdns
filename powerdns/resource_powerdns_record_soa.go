@@ -40,10 +40,12 @@ type recordSOAModel struct {
 	Mname    types.String       `tfsdk:"mname"`
 	Rname    types.String       `tfsdk:"rname"`
 	Serial   semanticInt64Value `tfsdk:"serial"`
-	Refresh  types.Int64        `tfsdk:"refresh"`
-	Retry    types.Int64        `tfsdk:"retry"`
-	Expire   types.Int64        `tfsdk:"expire"`
-	Minimum  types.Int64        `tfsdk:"minimum"`
+	// ServerSerial is the serial PowerDNS reports, whatever serial is set to.
+	ServerSerial types.Int64 `tfsdk:"server_serial"`
+	Refresh      types.Int64 `tfsdk:"refresh"`
+	Retry        types.Int64 `tfsdk:"retry"`
+	Expire       types.Int64 `tfsdk:"expire"`
+	Minimum      types.Int64 `tfsdk:"minimum"`
 }
 
 func (r *recordSOAResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -101,8 +103,15 @@ func (r *recordSOAResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				// An omitted serial is left unknown whenever the record changes,
 				// because PowerDNS may advance it as part of the edit. It keeps
 				// its value only when nothing else changes.
-				CustomType:  soaSerialType,
-				Description: "SOA serial number. If omitted or 0, PowerDNS manages it via soa_edit_api.",
+				CustomType: soaSerialType,
+				Description: "SOA serial number. If omitted or 0, PowerDNS manages it via soa_edit_api and the " +
+					"value in state is not compared with the server; use `server_serial` for the number PowerDNS holds. " +
+					"A non-zero value is sent to PowerDNS as written.",
+			},
+			"server_serial": schema.Int64Attribute{
+				Computed: true,
+				Description: "The serial PowerDNS reports for the SOA record. It is read from the server on every " +
+					"refresh, whatever `serial` is set to, and changes when PowerDNS advances the serial.",
 			},
 			"refresh": schema.Int64Attribute{
 				Required:    true,
@@ -128,11 +137,11 @@ func (r *recordSOAResource) Configure(_ context.Context, req resource.ConfigureR
 	r.clients = clientsFromProviderData(req.ProviderData, &resp.Diagnostics)
 }
 
-func buildSOAContent(m recordSOAModel) string {
+func buildSOAContent(m recordSOAModel, serial int64) string {
 	return fmt.Sprintf("%s %s %d %d %d %d %d",
 		m.Mname.ValueString(),
 		m.Rname.ValueString(),
-		m.Serial.ValueInt64(),
+		serial,
 		m.Refresh.ValueInt64(),
 		m.Retry.ValueInt64(),
 		m.Expire.ValueInt64(),
@@ -179,6 +188,7 @@ func (m *recordSOAModel) populate(rec Record) error {
 	m.Mname = types.StringValue(mname)
 	m.Rname = types.StringValue(rname)
 	m.Serial = newSemanticInt64(soaSerialType, int64(serial))
+	m.ServerSerial = types.Int64Value(int64(serial))
 	m.Refresh = types.Int64Value(int64(refresh))
 	m.Retry = types.Int64Value(int64(retry))
 	m.Expire = types.Int64Value(int64(expire))
@@ -186,7 +196,8 @@ func (m *recordSOAModel) populate(rec Record) error {
 	return nil
 }
 
-func (r *recordSOAResource) upsert(ctx context.Context, m *recordSOAModel, diags *diag.Diagnostics) {
+// upsert writes the record with the given serial and reads it back.
+func (r *recordSOAResource) upsert(ctx context.Context, m *recordSOAModel, serial int64, diags *diag.Diagnostics) {
 	zone := m.Zone.ValueString()
 	name := m.Name.ValueString()
 	ttl := int(m.TTL.ValueInt64())
@@ -200,7 +211,7 @@ func (r *recordSOAResource) upsert(ctx context.Context, m *recordSOAModel, diags
 				Name:     name,
 				Type:     "SOA",
 				TTL:      ttl,
-				Content:  buildSOAContent(*m),
+				Content:  buildSOAContent(*m, serial),
 				Disabled: m.Disabled.ValueBool(),
 			},
 		},
@@ -260,7 +271,7 @@ func (r *recordSOAResource) Create(ctx context.Context, req resource.CreateReque
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	r.upsert(ctx, &plan, &resp.Diagnostics)
+	r.upsert(ctx, &plan, plan.Serial.ValueInt64(), &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		if !plan.ID.IsNull() && !plan.ID.IsUnknown() {
 			keepCreated(ctx, req.Plan, &resp.State, plan.ID.ValueString(), &resp.Diagnostics)
@@ -277,12 +288,16 @@ func (r *recordSOAResource) Update(ctx context.Context, req resource.UpdateReque
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	// With no serial configured, send the current one and let PowerDNS advance
-	// it. Sending 0 would reset it on servers that do not manage serials.
-	if plan.Serial.IsUnknown() {
-		plan.Serial = state.Serial
+	// With no serial configured, or 0, send the one PowerDNS holds and let it
+	// advance it. Sending 0 would reset it on servers that do not manage serials.
+	serial := plan.Serial.ValueInt64()
+	if plan.Serial.IsUnknown() || serial == 0 {
+		serial = state.ServerSerial.ValueInt64()
+		if serial == 0 {
+			serial = state.Serial.ValueInt64()
+		}
 	}
-	r.upsert(ctx, &plan, &resp.Diagnostics)
+	r.upsert(ctx, &plan, serial, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
